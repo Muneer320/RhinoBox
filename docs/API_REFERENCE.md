@@ -14,12 +14,14 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
 ## Endpoints Overview
 
-| Method | Endpoint        | Purpose                                        |
-| ------ | --------------- | ---------------------------------------------- |
-| GET    | `/healthz`      | Health check probe                             |
-| POST   | `/ingest`       | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media` | Media-specific ingestion                       |
-| POST   | `/ingest/json`  | JSON-specific ingestion                        |
+| Method | Endpoint              | Purpose                                        |
+| ------ | --------------------- | ---------------------------------------------- |
+| GET    | `/healthz`            | Health check probe                             |
+| POST   | `/ingest`             | **Unified ingestion** - handles all data types |
+| POST   | `/ingest/media`       | Media-specific ingestion                       |
+| POST   | `/ingest/json`        | JSON-specific ingestion                        |
+| PATCH  | `/files/{file_id}/move` | Move/recategorize a single file              |
+| PATCH  | `/files/batch/move`   | Batch move/recategorize multiple files         |
 
 ---
 
@@ -516,6 +518,236 @@ r.Use(cors.Handler(cors.Options{
     AllowedMethods: []string{"GET", "POST"},
 }))
 ```
+
+---
+
+## PATCH `/files/{file_id}/move`
+
+Move or recategorize a single file to a new location while maintaining metadata integrity.
+
+### URL Parameters
+
+- `file_id` - File hash or path to identify the file
+
+### Request Body
+
+```json
+{
+  "new_category": "images/jpg/vacation/2025",
+  "reason": "better organization"
+}
+```
+
+### Fields
+
+- `new_category` **(required)** - Target category path (e.g., `images/png`, `documents/pdf/reports`)
+- `reason` - Optional reason for the move (for audit logging)
+
+### Response
+
+```json
+{
+  "status": "success",
+  "old_path": "storage/images/jpg/ffab59709a62_photo.jpg",
+  "new_path": "storage/images/jpg/vacation/2025/ffab59709a62_photo.jpg",
+  "old_category": "images/jpg",
+  "new_category": "images/jpg/vacation/2025",
+  "renamed": false,
+  "metadata": {
+    "hash": "ffab59709a62da7db343c05c5e11ca7a3e9d250157da0955d45c83309550ab04",
+    "original_name": "photo.jpg",
+    "stored_path": "storage/images/jpg/vacation/2025/ffab59709a62_photo.jpg",
+    "category": "images/jpg/vacation/2025",
+    "mime_type": "image/jpeg",
+    "size": 2048,
+    "uploaded_at": "2025-11-15T10:00:00Z",
+    "metadata": {
+      "move_reason": "better organization",
+      "moved_at": "2025-11-15T12:30:00Z",
+      "moved_from": "storage/images/jpg/ffab59709a62_photo.jpg"
+    }
+  }
+}
+```
+
+### Behavior
+
+- **File Identification**: Accepts either file hash or file path as `file_id`
+- **Atomic Operation**: Move is transactional; rolls back on any error
+- **Conflict Resolution**: If target filename exists, file is renamed with timestamp suffix
+- **Metadata Preservation**: Hash, original name, upload date, and size remain unchanged
+- **Move Tracking**: Adds `move_reason`, `moved_at`, and `moved_from` to metadata
+- **Directory Creation**: Creates target directories if they don't exist
+- **Cleanup**: Removes empty source directories after successful move
+- **Logging**: Appends move operation to `media/move_log.ndjson`
+
+### Examples
+
+**Move by hash:**
+
+```bash
+curl -X PATCH http://localhost:8090/files/ffab59709a62/move \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_category": "images/jpg/archive/2024",
+    "reason": "yearly archival"
+  }'
+```
+
+**Move with deep nesting:**
+
+```bash
+curl -X PATCH http://localhost:8090/files/abc12345/move \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_category": "documents/pdf/clients/acme/2025/q4",
+    "reason": "client organization"
+  }'
+```
+
+### Error Responses
+
+**File not found:**
+
+```json
+{
+  "error": "move file: file not found"
+}
+```
+
+**Invalid category:**
+
+```json
+{
+  "error": "move file: new category is required"
+}
+```
+
+---
+
+## PATCH `/files/batch/move`
+
+Move multiple files in a single atomic transaction. All moves succeed or all fail (rollback).
+
+### Request Body
+
+```json
+{
+  "files": [
+    {
+      "hash": "abc123",
+      "new_category": "images/png/archive",
+      "reason": "cleanup"
+    },
+    {
+      "hash": "def456",
+      "new_category": "videos/mp4/processed",
+      "reason": "cleanup"
+    }
+  ]
+}
+```
+
+### Fields
+
+- `files` **(required)** - Array of move requests
+  - `hash` or `path` - File identifier (at least one required)
+  - `new_category` **(required)** - Target category
+  - `reason` - Optional move reason
+
+### Response
+
+```json
+{
+  "status": "success",
+  "success": 2,
+  "failed": 0,
+  "results": [
+    {
+      "old_path": "storage/images/jpg/abc_photo1.jpg",
+      "new_path": "storage/images/png/archive/abc_photo1.jpg",
+      "old_category": "images/jpg",
+      "new_category": "images/png/archive",
+      "renamed": false,
+      "metadata": { ... }
+    },
+    {
+      "old_path": "storage/videos/mp4/def_video.mp4",
+      "new_path": "storage/videos/mp4/processed/def_video.mp4",
+      "old_category": "videos/mp4",
+      "new_category": "videos/mp4/processed",
+      "renamed": false,
+      "metadata": { ... }
+    }
+  ]
+}
+```
+
+### Behavior
+
+- **Atomic Transaction**: All files move successfully or none do (automatic rollback)
+- **Order Preserved**: Results returned in same order as request
+- **Same Features**: All single-file move features apply to each file
+- **Batch Logging**: All moves logged together in `media/move_log.ndjson`
+
+### Examples
+
+**Batch reorganization:**
+
+```bash
+curl -X PATCH http://localhost:8090/files/batch/move \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {"hash": "file1hash", "new_category": "archive/2024/january", "reason": "monthly archive"},
+      {"hash": "file2hash", "new_category": "archive/2024/january", "reason": "monthly archive"},
+      {"hash": "file3hash", "new_category": "archive/2024/january", "reason": "monthly archive"}
+    ]
+  }'
+```
+
+**Mixed file types:**
+
+```bash
+curl -X PATCH http://localhost:8090/files/batch/move \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {"hash": "img1", "new_category": "project-x/images"},
+      {"hash": "doc1", "new_category": "project-x/documents"},
+      {"hash": "vid1", "new_category": "project-x/videos"}
+    ]
+  }'
+```
+
+### Error Responses
+
+**Partial failure (all rolled back):**
+
+```json
+{
+  "error": "batch move failed at file 1: file not found",
+  "failed": 3,
+  "errors": ["file 1: file not found"]
+}
+```
+
+**Empty request:**
+
+```json
+{
+  "error": "no files provided"
+}
+```
+
+### Use Cases
+
+1. **Yearly Archival**: Move all files from active categories to year-based archives
+2. **Project Organization**: Group related files into project-specific categories
+3. **Compliance**: Organize files by client, retention policy, or regulatory requirements
+4. **Workflow Stages**: Move files through processing stages (raw → processed → archived)
+5. **Correction**: Fix miscategorized files after automatic classification
+6. **Integration**: Works with user-suggested routing (#15) to recategorize unrecognized types
 
 ---
 
