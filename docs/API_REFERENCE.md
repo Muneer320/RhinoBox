@@ -10,24 +10,51 @@ http://localhost:8090
 
 Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
+## Documentation Sections
+
+- **[Async API Documentation](./ASYNC_API.md)** - Detailed guide for asynchronous job queue endpoints
+- **[Synchronous Endpoints](#synchronous-endpoints)** - Traditional request-response APIs (below)
+
 ---
 
 ## Endpoints Overview
 
-| Method | Endpoint                | Purpose                                        |
-| ------ | ----------------------- | ---------------------------------------------- |
-| GET    | `/healthz`              | Health check probe                             |
-| POST   | `/ingest`               | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media`         | Media-specific ingestion                       |
-| POST   | `/ingest/json`          | JSON-specific ingestion                        |
-| PATCH  | `/files/rename`         | Rename a file                                  |
-| DELETE | `/files/{file_id}`      | Delete a file                                  |
-| PATCH  | `/files/{file_id}/metadata` | Update file metadata                      |
-| POST   | `/files/metadata/batch`  | Batch update file metadata                    |
-| GET    | `/files/search`         | Search files by name                           |
-| GET    | `/files/download`       | Download file by hash or path                  |
-| GET    | `/files/metadata`       | Get file metadata without downloading         |
-| GET    | `/files/stream`         | Stream file with range request support        |
+| Method | Endpoint                    | Purpose                                           |
+| ------ | --------------------------- | ------------------------------------------------- |
+| GET    | `/healthz`                  | Health check probe                                |
+| POST   | `/ingest`                   | **Unified ingestion** - handles all data types    |
+| POST   | `/ingest/media`             | Media-specific ingestion                          |
+| POST   | `/ingest/json`              | JSON-specific ingestion                           |
+| POST   | `/ingest/async`             | **Async unified ingestion** - returns job ID      |
+| POST   | `/ingest/media/async`       | **Async media ingestion** - background processing |
+| POST   | `/ingest/json/async`        | **Async JSON ingestion** - queued processing      |
+| GET    | `/jobs`                     | List all active and recent jobs                   |
+| GET    | `/jobs/{job_id}`            | Get job status with progress                      |
+| GET    | `/jobs/{job_id}/result`     | Get detailed job results                          |
+| DELETE | `/jobs/{job_id}`            | Cancel a job                                      |
+| GET    | `/jobs/stats`               | Queue statistics                                  |
+| PATCH  | `/files/rename`             | Rename a file                                     |
+| DELETE | `/files/{file_id}`          | Delete a file                                     |
+| PATCH  | `/files/{file_id}/metadata` | Update file metadata                              |
+| POST   | `/files/metadata/batch`     | Batch update file metadata                        |
+| GET    | `/files/search`             | Search files with content search support          |
+| GET    | `/files`                    | List files with pagination and filtering          |
+| GET    | `/files/browse`             | Browse directory structure                        |
+| GET    | `/files/categories`         | Get all file categories                           |
+| GET    | `/files/stats`              | Get storage statistics                            |
+| GET    | `/files/download`           | Download file by hash or path                     |
+| GET    | `/files/metadata`           | Get file metadata without downloading             |
+| GET    | `/files/stream`             | Stream file with range request support            |
+| POST   | `/files/{file_id}/copy`     | Copy a file                                       |
+| POST   | `/files/copy/batch`         | Batch copy files                                  |
+| PATCH  | `/files/{file_id}/move`     | Move a file to different category                 |
+| PATCH  | `/files/batch/move`         | Batch move files                                  |
+
+---
+
+## Synchronous Endpoints
+
+All endpoints below return results immediately (blocking). For asynchronous processing of large batches, see [Async API Documentation](./ASYNC_API.md).
 
 ---
 
@@ -66,8 +93,8 @@ Automatically routes media files, JSON data, and generic files to appropriate pr
 
 | Field       | Type        | Required | Description                                    |
 | ----------- | ----------- | -------- | ---------------------------------------------- |
-| `files`     | File(s)     | No     | One or more files (media, documents, archives) |
-| `data`      | JSON string | No     | Inline JSON data (object or array)             |
+| `files`     | File(s)     | No       | One or more files (media, documents, archives) |
+| `data`      | JSON string | No       | Inline JSON data (object or array)             |
 | `namespace` | string      | No       | Organization/category namespace                |
 | `comment`   | string      | No       | Hints for categorization or decision engine    |
 | `metadata`  | JSON string | No       | Additional context (tags, source, description) |
@@ -468,8 +495,8 @@ All ingestions logged to: `data/json/ingest_log.ndjson`
 
 ### URL Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
+| Parameter | Type   | Required | Description                                  |
+| --------- | ------ | -------- | -------------------------------------------- |
 | `file_id` | string | Yes      | SHA-256 hash of the file (64 hex characters) |
 
 ### Response Schema
@@ -578,16 +605,145 @@ All deletions are logged to `data/metadata/delete_log.ndjson` in newline-delimit
 
 ---
 
+## GET `/files/search`
+
+**Advanced file search** - Search files by metadata and optionally by content inside text files.
+
+### Query Parameters
+
+| Parameter   | Type   | Required | Description                                                |
+| ----------- | ------ | -------- | ---------------------------------------------------------- |
+| `name`      | string | No\*     | Partial match on filename (case-insensitive)               |
+| `extension` | string | No\*     | Exact match on file extension (e.g., "jpg", ".jpg")        |
+| `type`      | string | No\*     | Match on MIME type or category (supports partial match)    |
+| `category`  | string | No\*     | Match on category path (case-insensitive partial match)    |
+| `mime_type` | string | No\*     | Exact match on MIME type (case-insensitive)                |
+| `content`   | string | No\*     | **Search inside text files** (case-insensitive, 10MB max)  |
+| `date_from` | string | No\*     | Files uploaded on/after this date (RFC3339 or YYYY-MM-DD)  |
+| `date_to`   | string | No\*     | Files uploaded on/before this date (RFC3339 or YYYY-MM-DD) |
+
+\* At least one filter parameter is required.
+
+### Content Search Support
+
+The `content` parameter searches inside text files with these MIME types:
+
+- `text/*` (text/plain, text/html, text/markdown, etc.)
+- `application/json`
+- `application/xml`
+- `application/javascript`
+- `application/typescript`
+- `application/x-sh`
+- `application/x-python`
+
+**Limitations:**
+
+- Maximum file size: 10 MB
+- Case-insensitive search
+- Line-by-line scanning (1MB max line size)
+
+### Response Schema
+
+```json
+{
+  "filters": {
+    "name": "config",
+    "content": "database"
+  },
+  "results": [
+    {
+      "hash": "abc123def456...",
+      "original_name": "config.json",
+      "stored_path": "storage/code/json/app/abc123_config.json",
+      "category": "code/json/app",
+      "mime_type": "application/json",
+      "size": 2048,
+      "uploaded_at": "2025-11-15T10:30:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+### Examples
+
+#### Search by Filename
+
+```bash
+curl "http://localhost:8090/files/search?name=vacation"
+```
+
+#### Search by Extension
+
+```bash
+curl "http://localhost:8090/files/search?extension=jpg"
+```
+
+#### Search by Type (MIME prefix)
+
+```bash
+curl "http://localhost:8090/files/search?type=image"
+```
+
+#### Content Search in Text Files
+
+```bash
+# Search for "TODO" in all text files
+curl "http://localhost:8090/files/search?content=TODO"
+
+# Search for "database" in JSON files
+curl "http://localhost:8090/files/search?extension=json&content=database"
+
+# Search in config files
+curl "http://localhost:8090/files/search?name=config&content=password"
+```
+
+#### Date Range Search
+
+```bash
+# Files from specific date
+curl "http://localhost:8090/files/search?date_from=2025-11-15&name=report"
+
+# Files in date range
+curl "http://localhost:8090/files/search?date_from=2025-11-01&date_to=2025-11-30&type=image"
+```
+
+#### Combined Filters
+
+```bash
+curl "http://localhost:8090/files/search?category=docs&extension=md&content=architecture"
+```
+
+### Error Responses
+
+**No Filters** (HTTP 400):
+
+```json
+{
+  "error": "at least one filter parameter is required (name, extension, type, category, mime_type, content, date_from, date_to)"
+}
+```
+
+**Invalid Date Format** (HTTP 400):
+
+```json
+{
+  "error": "invalid date_from format: ... (use RFC3339 or YYYY-MM-DD)"
+}
+```
+
+---
+
 ## GET `/files/download`
 
 Download a file by its hash or stored path.
 
 ### Query Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
-| `hash`    | string | No*      | SHA-256 hash of the file       |
-| `path`    | string | No*      | Stored path of the file        |
+| Parameter | Type   | Required | Description              |
+| --------- | ------ | -------- | ------------------------ |
+| `hash`    | string | No\*     | SHA-256 hash of the file |
+| `path`    | string | No\*     | Stored path of the file  |
 
 \* Either `hash` or `path` must be provided.
 
@@ -710,20 +866,20 @@ Stream a file with HTTP range request support. Ideal for video/audio streaming a
 
 ### Query Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
-| `hash`    | string | No*      | SHA-256 hash of the file       |
-| `path`    | string | No*      | Stored path of the file        |
+| Parameter | Type   | Required | Description              |
+| --------- | ------ | -------- | ------------------------ |
+| `hash`    | string | No\*     | SHA-256 hash of the file |
+| `path`    | string | No\*     | Stored path of the file  |
 
 \* Either `hash` or `path` must be provided.
 
 ### Request Headers
 
-| Header      | Description                                    |
-| ----------- | ---------------------------------------------- |
-| `Range`     | Byte range request (e.g., `bytes=0-1023`)     |
-| `If-Range`  | Conditional range request using ETag           |
-| `If-Modified-Since` | Conditional request using Last-Modified |
+| Header              | Description                               |
+| ------------------- | ----------------------------------------- |
+| `Range`             | Byte range request (e.g., `bytes=0-1023`) |
+| `If-Range`          | Conditional range request using ETag      |
+| `If-Modified-Since` | Conditional request using Last-Modified   |
 
 ### Range Request Formats
 

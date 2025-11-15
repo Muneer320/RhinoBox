@@ -68,6 +68,22 @@ func TestFileRetrievalEndToEnd(t *testing.T) {
 	if !bytes.Equal(partialContent, expectedPartial) {
 		t.Errorf("partial content mismatch: expected %d bytes, got %d bytes", len(expectedPartial), len(partialContent))
 	}
+
+	// Step 6: Get file by ID (new endpoint)
+	fileInfo := getFileByID(t, srv, uploadHash)
+	if fileInfo["hash"].(string) != uploadHash {
+		t.Errorf("expected hash %s, got %s", uploadHash, fileInfo["hash"].(string))
+	}
+	if fileInfo["original_name"].(string) != testFilename {
+		t.Errorf("expected filename %s, got %s", testFilename, fileInfo["original_name"].(string))
+	}
+	// Verify download_url and stream_url are present
+	if _, ok := fileInfo["download_url"]; !ok {
+		t.Error("missing download_url in response")
+	}
+	if _, ok := fileInfo["stream_url"]; !ok {
+		t.Error("missing stream_url in response")
+	}
 }
 
 // TestFileRetrievalWithRealWorldFiles tests with actual files from Downloads directory
@@ -173,6 +189,15 @@ func TestFileRetrievalNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", w.Code)
+	}
+
+	// Test get file by ID for non-existent file
+	req = httptest.NewRequest("GET", "/files/nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 for get file by ID, got %d", w.Code)
 	}
 }
 
@@ -448,6 +473,23 @@ func findTestFiles(t *testing.T, dir string, maxSize int64) []string {
 	}
 
 	return files
+}
+
+func getFileByID(t *testing.T, srv *api.Server, fileID string) map[string]interface{} {
+	req := httptest.NewRequest("GET", fmt.Sprintf("/files/%s", fileID), nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("get file by ID failed: status %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var fileInfo map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &fileInfo); err != nil {
+		t.Fatalf("Unmarshal file info: %v", err)
+	}
+
+	return fileInfo
 }
 
 func min(a, b int) int {

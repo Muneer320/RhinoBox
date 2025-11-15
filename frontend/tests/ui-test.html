@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RhinoBox - Files by Type UI Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .test-pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .file-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .file-item {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background: #f9f9f9;
+        }
+        .file-item h4 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+        .file-item p {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #666;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>RhinoBox - Files by Type UI Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: API Endpoint Connection</h2>
+        <button onclick="testAPIEndpoint()">Test API Connection</button>
+        <div id="api-test-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Load Images Collection</h2>
+        <button onclick="loadFilesByType('images')">Load Images</button>
+        <div id="images-result"></div>
+        <div id="images-list" class="file-list"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Load Videos Collection</h2>
+        <button onclick="loadFilesByType('videos')">Load Videos</button>
+        <div id="videos-result"></div>
+        <div id="videos-list" class="file-list"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Pagination Test</h2>
+        <button onclick="testPagination()">Test Pagination</button>
+        <div id="pagination-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Category Filter</h2>
+        <button onclick="testCategoryFilter()">Test Category Filter</button>
+        <div id="category-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 6: Response Format Validation</h2>
+        <button onclick="testResponseFormat()">Validate Response Format</button>
+        <div id="format-result"></div>
+    </div>
+
+    <script type="module">
+        const API_BASE = 'http://localhost:8090';
+
+        window.testAPIEndpoint = async function() {
+            const resultDiv = document.getElementById('api-test-result');
+            resultDiv.innerHTML = '<div class="test-info">Testing API connection...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/healthz`);
+                if (response.ok) {
+                    resultDiv.innerHTML = '<div class="test-pass">✓ API endpoint is accessible</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="test-fail">✗ API returned status ${response.status}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="test-fail">✗ Failed to connect to API: ${error.message}<br>Make sure the backend server is running on port 8090</div>`;
+            }
+        };
+
+        window.loadFilesByType = async function(type) {
+            const resultDiv = document.getElementById(`${type}-result`);
+            const listDiv = document.getElementById(`${type}-list`);
+            
+            resultDiv.innerHTML = '<div class="test-info">Loading files...</div>';
+            listDiv.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/files/type/${type}?page=1&limit=10`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.files && Array.isArray(data.files)) {
+                    resultDiv.innerHTML = `
+                        <div class="test-pass">
+                            ✓ Successfully loaded ${data.files.length} ${type} files<br>
+                            Total: ${data.total} | Page: ${data.page}/${data.total_pages}
+                        </div>
+                    `;
+
+                    if (data.files.length > 0) {
+                        listDiv.innerHTML = data.files.map(file => `
+                            <div class="file-item">
+                                <h4>${file.name || 'Unknown'}</h4>
+                                <p><strong>Type:</strong> ${file.type || 'N/A'}</p>
+                                <p><strong>Size:</strong> ${formatBytes(file.size || 0)}</p>
+                                <p><strong>Date:</strong> ${file.date ? new Date(file.date).toLocaleDateString() : 'N/A'}</p>
+                                ${file.dimensions ? `<p><strong>Dimensions:</strong> ${file.dimensions}</p>` : ''}
+                            </div>
+                        `).join('');
+                    } else {
+                        listDiv.innerHTML = '<div class="test-info">No files found</div>';
+                    }
+                } else {
+                    resultDiv.innerHTML = '<div class="test-fail">✗ Invalid response format: missing files array</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="test-fail">✗ Error loading files: ${error.message}</div>`;
+            }
+        };
+
+        window.testPagination = async function() {
+            const resultDiv = document.getElementById('pagination-result');
+            resultDiv.innerHTML = '<div class="test-info">Testing pagination...</div>';
+
+            try {
+                // Test page 1
+                const page1 = await fetch(`${API_BASE}/files/type/images?page=1&limit=2`);
+                const data1 = await page1.json();
+
+                // Test page 2
+                const page2 = await fetch(`${API_BASE}/files/type/images?page=2&limit=2`);
+                const data2 = await page2.json();
+
+                let results = [];
+                
+                // Validate pagination fields
+                const requiredFields = ['page', 'limit', 'total', 'total_pages'];
+                for (const field of requiredFields) {
+                    if (data1[field] !== undefined && data2[field] !== undefined) {
+                        results.push(`✓ ${field} present`);
+                    } else {
+                        results.push(`✗ ${field} missing`);
+                    }
+                }
+
+                // Validate page numbers
+                if (data1.page === 1 && data2.page === 2) {
+                    results.push('✓ Page numbers correct');
+                } else {
+                    results.push('✗ Page numbers incorrect');
+                }
+
+                // Validate different results
+                if (data1.files.length > 0 || data2.files.length > 0) {
+                    results.push('✓ Pagination returns data');
+                } else {
+                    results.push('✗ No data returned');
+                }
+
+                resultDiv.innerHTML = `
+                    <div class="test-pass">
+                        <strong>Pagination Test Results:</strong><br>
+                        ${results.join('<br>')}
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="test-fail">✗ Pagination test failed: ${error.message}</div>`;
+            }
+        };
+
+        window.testCategoryFilter = async function() {
+            const resultDiv = document.getElementById('category-result');
+            resultDiv.innerHTML = '<div class="test-info">Testing category filter...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/files/type/images?category=test`);
+                const data = await response.json();
+
+                if (data.files && Array.isArray(data.files)) {
+                    resultDiv.innerHTML = `
+                        <div class="test-pass">
+                            ✓ Category filter endpoint works<br>
+                            Found ${data.files.length} files with category filter
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="test-fail">✗ Invalid response format</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="test-fail">✗ Category filter test failed: ${error.message}</div>`;
+            }
+        };
+
+        window.testResponseFormat = async function() {
+            const resultDiv = document.getElementById('format-result');
+            resultDiv.innerHTML = '<div class="test-info">Validating response format...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/files/type/images?page=1&limit=1`);
+                const data = await response.json();
+
+                const requiredFields = ['files', 'total', 'page', 'limit', 'total_pages', 'type'];
+                const missingFields = requiredFields.filter(field => data[field] === undefined);
+
+                if (missingFields.length === 0) {
+                    // Validate files array structure
+                    if (Array.isArray(data.files)) {
+                        if (data.files.length > 0) {
+                            const file = data.files[0];
+                            const fileFields = ['id', 'name', 'path', 'size', 'type', 'date', 'hash', 'url'];
+                            const missingFileFields = fileFields.filter(field => file[field] === undefined);
+
+                            if (missingFileFields.length === 0) {
+                                resultDiv.innerHTML = `
+                                    <div class="test-pass">
+                                        ✓ Response format is valid<br>
+                                        All required fields present<br>
+                                        File objects contain all required fields
+                                    </div>
+                                `;
+                            } else {
+                                resultDiv.innerHTML = `
+                                    <div class="test-fail">
+                                        ✗ Missing file fields: ${missingFileFields.join(', ')}
+                                    </div>
+                                `;
+                            }
+                        } else {
+                            resultDiv.innerHTML = '<div class="test-info">Response format valid (no files to validate structure)</div>';
+                        }
+                    } else {
+                        resultDiv.innerHTML = '<div class="test-fail">✗ Files is not an array</div>';
+                    }
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="test-fail">
+                            ✗ Missing required fields: ${missingFields.join(', ')}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="test-fail">✗ Format validation failed: ${error.message}</div>`;
+            }
+        };
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
+

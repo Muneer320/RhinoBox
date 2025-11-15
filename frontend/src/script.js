@@ -10,7 +10,8 @@ import {
   getNotes,
   addNote,
   deleteNote,
-  getStatistics
+  getStatistics,
+  getCollectionStats
 } from './api.js'
 
 const root = document.documentElement
@@ -270,6 +271,45 @@ function initCollectionCards() {
       }
     })
   })
+  
+  // Load statistics for all collections
+  loadAllCollectionStats()
+}
+
+// Load statistics for all collection cards
+async function loadAllCollectionStats() {
+  const collectionTypes = ['images', 'videos', 'audio', 'documents', 'spreadsheets', 'presentations', 'archives', 'other']
+  
+  // Load stats for all collections in parallel
+  const statsPromises = collectionTypes.map(async (type) => {
+    try {
+      const stats = await getCollectionStats(type)
+      updateCollectionCardStats(type, stats)
+    } catch (error) {
+      console.error(`Error loading stats for ${type}:`, error)
+      // Set error state on the card
+      updateCollectionCardStats(type, { file_count: 0, storage_used: 'Error' })
+    }
+  })
+  
+  await Promise.allSettled(statsPromises)
+}
+
+// Update a collection card with statistics
+function updateCollectionCardStats(collectionType, stats) {
+  const statsContainer = document.querySelector(`[data-stats="${collectionType}"]`)
+  if (!statsContainer) return
+  
+  const fileCountEl = statsContainer.querySelector('[data-stat="file_count"]')
+  const storageUsedEl = statsContainer.querySelector('[data-stat="storage_used"]')
+  
+  if (fileCountEl) {
+    fileCountEl.textContent = stats.file_count !== undefined ? stats.file_count.toLocaleString() : '-'
+  }
+  
+  if (storageUsedEl) {
+    storageUsedEl.textContent = stats.storage_used || '-'
+  }
 }
 
 // Load files for a collection from API
