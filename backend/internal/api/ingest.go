@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
-	"github.com/Muneer320/RhinoBox/internal/storage"
+	"github.com/Muneer320/RhinoBox/internal/service"
 )
 
 // UnifiedIngestRequest represents the unified /ingest payload.
@@ -75,7 +75,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
 
@@ -87,7 +87,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	var metadata map[string]any
 	if metadataStr != "" {
 		if err := json.Unmarshal([]byte(metadataStr), &metadata); err != nil {
-			httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
 			return
 		}
 	}
@@ -142,11 +142,11 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	response.Timing["total_ms"] = time.Since(startTime).Milliseconds()
 
 	if len(response.Errors) > 0 && len(response.Results.Media) == 0 && len(response.Results.JSON) == 0 && len(response.Results.Files) == 0 {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // routeFile determines content type and routes to appropriate pipeline.
@@ -219,25 +219,27 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		metadata["comment"] = comment
 	}
 
-	result, err := s.storage.StoreFile(storage.StoreRequest{
+	req := service.FileStoreRequest{
 		Reader:       file,
 		Filename:     sanitizedFilename,
 		MimeType:     mimeType,
 		Size:         header.Size,
 		Metadata:     metadata,
 		CategoryHint: sanitizedComment,
-	})
+	}
+
+	result, err := s.fileService.StoreFile(req)
 	if err != nil {
 		return MediaResult{}, err
 	}
 
 	return MediaResult{
 		OriginalName: header.Filename,
-		StoredPath:   result.Metadata.StoredPath,
-		Category:     result.Metadata.Category,
-		MimeType:     result.Metadata.MimeType,
-		Size:         result.Metadata.Size,
-		Hash:         result.Metadata.Hash,
+		StoredPath:   result.StoredPath,
+		Category:     result.Category,
+		MimeType:     result.MimeType,
+		Size:         result.Size,
+		Hash:         result.Hash,
 		Duplicates:   result.Duplicate,
 	}, nil
 }
@@ -255,7 +257,7 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		category = namespace
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{"files", category}, header.Filename, file)
+	relPath, err := s.fileService.StoreMediaFile([]string{"files", category}, header.Filename, file)
 	if err != nil {
 		return GenericResult{}, err
 	}
@@ -318,8 +320,8 @@ func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata 
 	analysis = jsonschema.IncorporateCommentHints(analysis, comment)
 	decision := jsonschema.DecideStorage(namespace, docs, summary, analysis)
 
-	batchRel := s.storage.NextJSONBatchPath(decision.Engine, namespace)
-	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
+	batchRel := s.fileService.NextJSONBatchPath(decision.Engine, namespace)
+	if _, err := s.fileService.AppendNDJSON(batchRel, docs); err != nil {
 		return JSONResult{}, fmt.Errorf("store batch: %w", err)
 	}
 

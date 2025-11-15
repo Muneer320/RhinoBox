@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RhinoBox - Loading States & Error Handling UI Test</title>
+    <link rel="stylesheet" href="../src/styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--bg);
+        }
+        .test-section {
+            background: var(--surface);
+            padding: 24px;
+            margin: 20px 0;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: var(--text-primary);
+        }
+        .test-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+        }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s ease;
+        }
+        button:hover {
+            background: #3a52d7;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .test-container {
+            min-height: 200px;
+            padding: 20px;
+            background: var(--surface-muted);
+            border-radius: 12px;
+            margin-top: 16px;
+        }
+        .screenshot-info {
+            background: var(--surface-muted);
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <h1>RhinoBox - Loading States & Error Handling UI Test</h1>
+    <p>This page tests all loading states, error handling, and empty states. Use browser DevTools to take screenshots.</p>
+    
+    <div class="test-section">
+        <h2>Test 1: Loading States</h2>
+        <div class="test-controls">
+            <button onclick="testSmallLoading()">Small Loading</button>
+            <button onclick="testMediumLoading()">Medium Loading</button>
+            <button onclick="testLargeLoading()">Large Loading</button>
+        </div>
+        <div id="loading-test-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Loading states with different sizes</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Error States</h2>
+        <div class="test-controls">
+            <button onclick="testNetworkError()">Network Error</button>
+            <button onclick="testServerError()">Server Error</button>
+            <button onclick="testNotFoundError()">Not Found Error</button>
+            <button onclick="testGenericError()">Generic Error</button>
+            <button onclick="testErrorWithRetry()">Error with Retry</button>
+        </div>
+        <div id="error-test-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Different error types with appropriate icons</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Empty States</h2>
+        <div class="test-controls">
+            <button onclick="testFilesEmpty()">Files Empty</button>
+            <button onclick="testSearchEmpty()">Search Empty</button>
+            <button onclick="testCollectionEmpty()">Collection Empty</button>
+            <button onclick="testGenericEmpty()">Generic Empty</button>
+            <button onclick="testEmptyWithAction()">Empty with Action</button>
+        </div>
+        <div id="empty-test-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Empty states with different icons and actions</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Loading → Success Flow</h2>
+        <div class="test-controls">
+            <button onclick="testLoadingToSuccess()">Simulate Load → Success</button>
+        </div>
+        <div id="flow-test-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Loading state transitioning to content</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Loading → Error Flow</h2>
+        <div class="test-controls">
+            <button onclick="testLoadingToError()">Simulate Load → Error</button>
+        </div>
+        <div id="error-flow-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Loading state transitioning to error with retry</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 6: Loading → Empty Flow</h2>
+        <div class="test-controls">
+            <button onclick="testLoadingToEmpty()">Simulate Load → Empty</button>
+        </div>
+        <div id="empty-flow-container" class="test-container"></div>
+        <div class="screenshot-info">📸 Screenshot: Loading state transitioning to empty state</div>
+    </div>
+
+    <script type="module">
+        import { 
+            createLoadingState, 
+            createErrorState, 
+            createEmptyState 
+        } from '../src/ui-components.js'
+
+        window.testSmallLoading = function() {
+            const container = document.getElementById('loading-test-container')
+            container.innerHTML = ''
+            const loading = createLoadingState('Loading small items...', 'small')
+            container.appendChild(loading)
+        }
+
+        window.testMediumLoading = function() {
+            const container = document.getElementById('loading-test-container')
+            container.innerHTML = ''
+            const loading = createLoadingState('Loading medium items...', 'medium')
+            container.appendChild(loading)
+        }
+
+        window.testLargeLoading = function() {
+            const container = document.getElementById('loading-test-container')
+            container.innerHTML = ''
+            const loading = createLoadingState('Loading large items...', 'large')
+            container.appendChild(loading)
+        }
+
+        window.testNetworkError = function() {
+            const container = document.getElementById('error-test-container')
+            container.innerHTML = ''
+            const error = createErrorState('Unable to connect to the server. Please ensure the backend is running.', null, 'network')
+            container.appendChild(error)
+        }
+
+        window.testServerError = function() {
+            const container = document.getElementById('error-test-container')
+            container.innerHTML = ''
+            const error = createErrorState('The server encountered an error. Please try again later.', null, 'server')
+            container.appendChild(error)
+        }
+
+        window.testNotFoundError = function() {
+            const container = document.getElementById('error-test-container')
+            container.innerHTML = ''
+            const error = createErrorState('The requested resource was not found.', null, 'not-found')
+            container.appendChild(error)
+        }
+
+        window.testGenericError = function() {
+            const container = document.getElementById('error-test-container')
+            container.innerHTML = ''
+            const error = createErrorState('An error occurred while processing your request. Please try again.', null, 'generic')
+            container.appendChild(error)
+        }
+
+        window.testErrorWithRetry = function() {
+            const container = document.getElementById('error-test-container')
+            container.innerHTML = ''
+            const error = createErrorState('Operation failed. Please try again.', () => {
+                alert('Retry clicked!')
+            }, 'network')
+            container.appendChild(error)
+        }
+
+        window.testFilesEmpty = function() {
+            const container = document.getElementById('empty-test-container')
+            container.innerHTML = ''
+            const empty = createEmptyState('No files found', 'This collection doesn\'t have any files yet. Upload some files to get started!', 'files')
+            container.appendChild(empty)
+        }
+
+        window.testSearchEmpty = function() {
+            const container = document.getElementById('empty-test-container')
+            container.innerHTML = ''
+            const empty = createEmptyState('No results found', 'Try adjusting your search terms or filters.', 'search')
+            container.appendChild(empty)
+        }
+
+        window.testCollectionEmpty = function() {
+            const container = document.getElementById('empty-test-container')
+            container.innerHTML = ''
+            const empty = createEmptyState('Collection is empty', 'This collection doesn\'t have any items yet.', 'collection')
+            container.appendChild(empty)
+        }
+
+        window.testGenericEmpty = function() {
+            const container = document.getElementById('empty-test-container')
+            container.innerHTML = ''
+            const empty = createEmptyState('No data available', 'There is no data to display at this time.', 'generic')
+            container.appendChild(empty)
+        }
+
+        window.testEmptyWithAction = function() {
+            const container = document.getElementById('empty-test-container')
+            container.innerHTML = ''
+            const empty = createEmptyState(
+                'No files found',
+                'Upload some files to get started!',
+                'files',
+                {
+                    label: 'Upload Files',
+                    onClick: () => {
+                        alert('Upload action clicked!')
+                    }
+                }
+            )
+            container.appendChild(empty)
+        }
+
+        window.testLoadingToSuccess = async function() {
+            const container = document.getElementById('flow-test-container')
+            container.innerHTML = ''
+            
+            // Show loading
+            const loading = createLoadingState('Loading files...', 'medium')
+            container.appendChild(loading)
+            
+            // Simulate API call
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+            // Show success (content)
+            container.innerHTML = '<div style="padding: 20px; text-align: center;"><h3>✓ Files loaded successfully!</h3><p>3 files found</p></div>'
+        }
+
+        window.testLoadingToError = async function() {
+            const container = document.getElementById('error-flow-container')
+            container.innerHTML = ''
+            
+            // Show loading
+            const loading = createLoadingState('Loading files...', 'medium')
+            container.appendChild(loading)
+            
+            // Simulate API call
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+            // Show error
+            container.innerHTML = ''
+            const error = createErrorState(
+                'Failed to load files. Please check your connection and try again.',
+                () => {
+                    testLoadingToError()
+                },
+                'network'
+            )
+            container.appendChild(error)
+        }
+
+        window.testLoadingToEmpty = async function() {
+            const container = document.getElementById('empty-flow-container')
+            container.innerHTML = ''
+            
+            // Show loading
+            const loading = createLoadingState('Loading files...', 'medium')
+            container.appendChild(loading)
+            
+            // Simulate API call
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+            // Show empty
+            container.innerHTML = ''
+            const empty = createEmptyState(
+                'No files found',
+                'This collection doesn\'t have any files yet. Upload some files to get started!',
+                'files',
+                {
+                    label: 'Upload Files',
+                    onClick: () => {
+                        alert('Upload clicked!')
+                    }
+                }
+            )
+            container.appendChild(empty)
+        }
+    </script>
+</body>
+</html>
+

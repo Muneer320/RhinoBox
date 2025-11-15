@@ -87,10 +87,14 @@ func TestDuplicateScanE2E(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
+	relPath, err := filepath.Rel(root, duplicatePath)
+	if err != nil {
+		t.Fatalf("failed to get relative path: %v", err)
+	}
 	duplicateMeta := storage.FileMetadata{
 		Hash:         hash,
 		OriginalName: "duplicate.txt",
-		StoredPath:   filepath.ToSlash(filepath.Rel(root, duplicatePath)),
+		StoredPath:   filepath.ToSlash(relPath),
 		Category:     "documents/txt",
 		MimeType:     "text/plain",
 		Size:         int64(len(content1)),
@@ -264,10 +268,14 @@ func TestDuplicateMergeE2E(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
+	relPath, err := filepath.Rel(root, duplicatePath)
+	if err != nil {
+		t.Fatalf("failed to get relative path: %v", err)
+	}
 	duplicateMeta := storage.FileMetadata{
 		Hash:         hash,
 		OriginalName: "duplicate.txt",
-		StoredPath:   filepath.ToSlash(filepath.Rel(root, duplicatePath)),
+		StoredPath:   filepath.ToSlash(relPath),
 		Category:     "documents/txt",
 		MimeType:     "text/plain",
 		Size:         int64(len(content)),
