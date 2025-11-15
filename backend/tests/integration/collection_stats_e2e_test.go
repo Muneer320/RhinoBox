@@ -54,43 +54,53 @@ func TestCollectionStatsEndToEnd(t *testing.T) {
 	for collection, hashes := range uploadedFiles {
 		stats := getCollectionStats(t, srv, collection)
 
-		// Verify stats
-		if stats["collection_type"].(string) != collection {
-			t.Errorf("expected collection_type %s, got %s", collection, stats["collection_type"].(string))
+		// Verify stats - API returns: type, file_count, storage_used (bytes), storage_used_formatted
+		typeVal, ok := stats["type"].(string)
+		if !ok || typeVal != collection {
+			t.Errorf("expected type %s, got %v", collection, stats["type"])
 		}
 
-		fileCount := int(stats["file_count"].(float64))
+		fileCountVal, ok := stats["file_count"].(float64)
+		if !ok {
+			t.Errorf("file_count missing or wrong type for %s", collection)
+			continue
+		}
+		fileCount := int(fileCountVal)
 		expectedCount := len(hashes)
 		if fileCount != expectedCount {
 			t.Errorf("expected file_count %d for %s, got %d", expectedCount, collection, fileCount)
 		}
 
-		storageBytes := int64(stats["storage_bytes"].(float64))
+		storageBytesVal, ok := stats["storage_used"].(float64)
+		if !ok {
+			t.Errorf("storage_used missing or wrong type for %s", collection)
+			continue
+		}
+		storageBytes := int64(storageBytesVal)
 		if storageBytes <= 0 {
-			t.Errorf("expected storage_bytes > 0 for %s, got %d", collection, storageBytes)
+			t.Errorf("expected storage_used > 0 for %s, got %d", collection, storageBytes)
 		}
 
-		storageUsed := stats["storage_used"].(string)
-		if storageUsed == "" {
-			t.Errorf("expected storage_used to be formatted for %s, got empty", collection)
-		}
-
-		lastUpdated := stats["last_updated"]
-		if lastUpdated == nil {
-			t.Errorf("expected last_updated to be set for %s, got nil", collection)
+		storageUsedFormatted, ok := stats["storage_used_formatted"].(string)
+		if !ok || storageUsedFormatted == "" {
+			t.Errorf("expected storage_used_formatted to be set for %s, got %v", collection, stats["storage_used_formatted"])
 		}
 	}
 
 	// Step 3: Test empty collection
 	emptyStats := getCollectionStats(t, srv, "code")
-	if emptyStats["file_count"].(float64) != 0 {
+	fileCountVal, ok := emptyStats["file_count"].(float64)
+	if !ok || int(fileCountVal) != 0 {
 		t.Errorf("expected file_count 0 for empty collection, got %v", emptyStats["file_count"])
 	}
-	if emptyStats["storage_bytes"].(float64) != 0 {
-		t.Errorf("expected storage_bytes 0 for empty collection, got %v", emptyStats["storage_bytes"])
+	storageUsedVal, ok := emptyStats["storage_used"].(float64)
+	if !ok || int64(storageUsedVal) != 0 {
+		t.Errorf("expected storage_used 0 for empty collection, got %v", emptyStats["storage_used"])
 	}
-	if emptyStats["last_updated"] != nil {
-		t.Errorf("expected last_updated to be nil for empty collection, got %v", emptyStats["last_updated"])
+	// Verify formatted storage is still present (should be "0 B" or similar)
+	storageUsedFormatted, ok := emptyStats["storage_used_formatted"].(string)
+	if !ok || storageUsedFormatted == "" {
+		t.Errorf("expected storage_used_formatted to be set for empty collection, got %v", emptyStats["storage_used_formatted"])
 	}
 }
 
@@ -113,4 +123,3 @@ func getCollectionStats(t *testing.T, srv *api.Server, collectionType string) ma
 
 	return stats
 }
-
