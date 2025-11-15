@@ -106,6 +106,7 @@ cd backend/tests/e2e-results
 ```
 
 **Performance Highlights**:
+
 - 55 files (1.06 GB), 13 file types across 7 test phases
 - Upload: 228.35 MB/s avg, 341.59 MB/s peak (128% above target)
 - Search: 3.45ms avg latency (29x faster than 100ms target)
