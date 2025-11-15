@@ -180,7 +180,7 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 		}
 
 		var deleteResult map[string]any
-		if err := json.Unmarshal(deleteResp.Bytes(), &deleteResult); err != nil {
+		if err := json.Unmarshal(deleteResp.Body.Bytes(), &deleteResult); err != nil {
 			t.Fatalf("failed to parse delete response: %v", err)
 		}
 
@@ -231,7 +231,7 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 	}
 
 	var errorResp map[string]any
-	if err := json.Unmarshal(deleteResp.Bytes(), &errorResp); err != nil {
+	if err := json.Unmarshal(deleteResp.Body.Bytes(), &errorResp); err != nil {
 		t.Fatalf("failed to parse error response: %v", err)
 	}
 	if errorMsg, ok := errorResp["error"].(string); !ok || errorMsg == "" {
@@ -324,9 +324,19 @@ func TestFileDeletionBatchWithRealWorldData(t *testing.T) {
 
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		part, _ := writer.CreateFormFile("file", entry.Name())
-		part.Write(fileData)
-		writer.Close()
+		part, err := writer.CreateFormFile("file", entry.Name())
+		if err != nil {
+			t.Logf("Skipping %s: failed to create form file: %v", entry.Name(), err)
+			continue
+		}
+		if _, err := part.Write(fileData); err != nil {
+			t.Logf("Skipping %s: failed to write content: %v", entry.Name(), err)
+			continue
+		}
+		if err := writer.Close(); err != nil {
+			t.Logf("Skipping %s: failed to close writer: %v", entry.Name(), err)
+			continue
+		}
 
 		req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -335,7 +345,10 @@ func TestFileDeletionBatchWithRealWorldData(t *testing.T) {
 
 		if rec.Code == http.StatusOK {
 			var resp map[string]any
-			json.Unmarshal(rec.Bytes(), &resp)
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Logf("Skipping %s: failed to parse response: %v", entry.Name(), err)
+				continue
+			}
 			if stored, ok := resp["stored"].([]any); ok && len(stored) > 0 {
 				fileInfo := stored[0].(map[string]any)
 				if hash, ok := fileInfo["hash"].(string); ok && hash != "" {
