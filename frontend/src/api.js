@@ -64,6 +64,10 @@ async function apiRequest(endpoint, options = {}) {
       );
     }
 
+    // Handle endpoints that legitimately return no content (e.g. DELETE)
+    if (response.status === 204) {
+      return null;
+    }
     return await response.json();
   } catch (error) {
     clearTimeout(timeoutId);
