@@ -190,6 +190,11 @@ func (m *Manager) StoreMedia(subdirs []string, originalName string, reader io.Re
 	return rel, nil
 }
 
+// FindByHash returns file metadata by hash (exposed for testing).
+func (m *Manager) FindByHash(hash string) *FileMetadata {
+	return m.index.FindByHash(hash)
+}
+
 // WriteJSONFile writes the JSON payload with indentation for readability.
 func (m *Manager) WriteJSONFile(relPath string, payload any) (string, error) {
 	abs := filepath.Join(m.root, relPath)
@@ -243,6 +248,117 @@ func (m *Manager) NextJSONBatchPath(engine, namespace string) string {
 	}
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	return filepath.ToSlash(filepath.Join("json", engine, slug, fmt.Sprintf("batch_%s.ndjson", ts)))
+}
+
+// RenameFileRequest captures parameters for file renaming operation.
+type RenameFileRequest struct {
+	Hash              string // File hash identifier
+	StoredPath        string // Alternative: stored path identifier
+	NewName           string // New original filename
+	UpdateStoredFile  bool   // Whether to rename the actual file on disk
+}
+
+// RenameFileResult contains the outcome of a rename operation.
+type RenameFileResult struct {
+	Metadata FileMetadata
+	DiskRenamed bool
+}
+
+// RenameFile renames a file's metadata and optionally the stored file on disk.
+func (m *Manager) RenameFile(req RenameFileRequest) (*RenameFileResult, error) {
+	if req.Hash == "" && req.StoredPath == "" {
+		return nil, errors.New("either hash or stored_path must be provided")
+	}
+	if req.NewName == "" {
+		return nil, errors.New("new_name is required")
+	}
+	
+	// Validate new filename (no path traversal)
+	if strings.Contains(req.NewName, "..") || strings.Contains(req.NewName, "/") || strings.Contains(req.NewName, "\\") {
+		return nil, errors.New("invalid filename: path traversal not allowed")
+	}
+	
+	// Find the file metadata
+	var meta *FileMetadata
+	if req.Hash != "" {
+		meta = m.index.FindByHash(req.Hash)
+	} else {
+		meta = m.index.FindByPath(req.StoredPath)
+	}
+	
+	if meta == nil {
+		return nil, errors.New("file not found")
+	}
+	
+	diskRenamed := false
+	newStoredPath := meta.StoredPath
+	
+	// If updating stored file, rename it on disk
+	if req.UpdateStoredFile {
+		m.mu.Lock()
+		
+		oldAbsPath := filepath.Join(m.root, filepath.FromSlash(meta.StoredPath))
+		if _, err := os.Stat(oldAbsPath); err != nil {
+			m.mu.Unlock()
+			if os.IsNotExist(err) {
+				return nil, errors.New("stored file not found on disk")
+			}
+			return nil, fmt.Errorf("stat stored file: %w", err)
+		}
+		
+		// Build new filename preserving hash prefix
+		oldDir := filepath.Dir(oldAbsPath)
+		base := strings.TrimSuffix(req.NewName, filepath.Ext(req.NewName))
+		if base == "" {
+			base = "file"
+		}
+		base = sanitize(base)
+		ext := strings.ToLower(filepath.Ext(req.NewName))
+		newFilename := fmt.Sprintf("%s_%s%s", meta.Hash[:12], base, ext)
+		newAbsPath := filepath.Join(oldDir, newFilename)
+		
+		// Check if new path already exists
+		if _, err := os.Stat(newAbsPath); err == nil {
+			m.mu.Unlock()
+			return nil, errors.New("file with new name already exists")
+		}
+		
+		// Rename the file on disk
+		if err := os.Rename(oldAbsPath, newAbsPath); err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("rename file on disk: %w", err)
+		}
+		
+		// Update stored path
+		rel, err := filepath.Rel(m.root, newAbsPath)
+		if err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("calculate relative path: %w", err)
+		}
+		newStoredPath = filepath.ToSlash(rel)
+		diskRenamed = true
+		m.mu.Unlock()
+	}
+	
+	// Update metadata
+	updatedMeta := *meta
+	updatedMeta.OriginalName = req.NewName
+	updatedMeta.StoredPath = newStoredPath
+	
+	if err := m.index.UpdateMetadata(meta.Hash, updatedMeta); err != nil {
+		// If disk was renamed but metadata update failed, try to rollback
+		if diskRenamed {
+			oldAbsPath := filepath.Join(m.root, filepath.FromSlash(meta.StoredPath))
+			newAbsPath := filepath.Join(m.root, filepath.FromSlash(newStoredPath))
+			_ = os.Rename(newAbsPath, oldAbsPath) // best effort rollback
+		}
+		return nil, fmt.Errorf("update metadata: %w", err)
+	}
+	
+	return &RenameFileResult{
+		Metadata: updatedMeta,
+		DiskRenamed: diskRenamed,
+	}, nil
 }
 
 var invalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)

@@ -59,6 +59,7 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/rename", s.handleFileRename)
 }
 
 // Router exposes the HTTP router for testing.
@@ -363,6 +364,68 @@ type jsonIngestRequest struct {
 	Namespace string           `json:"namespace"`
 	Comment   string           `json:"comment"`
 	Metadata  map[string]any   `json:"metadata"`
+}
+
+type fileRenameRequest struct {
+	Hash             string `json:"hash"`
+	StoredPath       string `json:"stored_path"`
+	NewName          string `json:"new_name"`
+	UpdateStoredFile bool   `json:"update_stored_file"`
+}
+
+func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
+	var req fileRenameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if req.Hash == "" && req.StoredPath == "" {
+		httpError(w, http.StatusBadRequest, "either hash or stored_path must be provided")
+		return
+	}
+	if req.NewName == "" {
+		httpError(w, http.StatusBadRequest, "new_name is required")
+		return
+	}
+
+	result, err := s.storage.RenameFile(storage.RenameFileRequest{
+		Hash:             req.Hash,
+		StoredPath:       req.StoredPath,
+		NewName:          req.NewName,
+		UpdateStoredFile: req.UpdateStoredFile,
+	})
+	if err != nil {
+		if err.Error() == "file not found" || err.Error() == "stored file not found on disk" {
+			httpError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if err.Error() == "file with new name already exists" {
+			httpError(w, http.StatusConflict, err.Error())
+			return
+		}
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Log the rename operation
+	logRecord := map[string]any{
+		"hash":              result.Metadata.Hash,
+		"old_original_name": req.NewName, // Would need to track old name separately in production
+		"new_original_name": result.Metadata.OriginalName,
+		"stored_path":       result.Metadata.StoredPath,
+		"disk_renamed":      result.DiskRenamed,
+		"renamed_at":        time.Now().UTC().Format(time.RFC3339),
+	}
+	if _, err := s.storage.AppendNDJSON(filepath.Join("metadata", "rename_log.ndjson"), []map[string]any{logRecord}); err != nil {
+		s.logger.Warn("failed to append rename log", slog.Any("err", err))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":      true,
+		"metadata":     result.Metadata,
+		"disk_renamed": result.DiskRenamed,
+	})
 }
 
 func httpError(w http.ResponseWriter, code int, msg string) {
