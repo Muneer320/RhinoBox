@@ -52,6 +52,23 @@ type FieldSummary struct {
 	LikelyFK     bool     `json:"is_likely_fk"`
 }
 
+// SchemaAnalysis captures the richer set of heuristics used by the decision engine.
+type SchemaAnalysis struct {
+	HasForeignKeys      bool     `json:"has_foreign_keys"`
+	HasRelationships    bool     `json:"has_relationships"`
+	RequiresJoins       bool     `json:"requires_joins"`
+	HasConstraints      bool     `json:"has_constraints"`
+	SchemaConsistency   float64  `json:"schema_consistency"`
+	FieldCount          int      `json:"field_count"`
+	MaxNestingDepth     int      `json:"max_nesting_depth"`
+	ArrayFields         []string `json:"array_fields"`
+	RecordCount         int      `json:"record_count"`
+	UniqueFieldSets     int      `json:"unique_field_sets"`
+	ExpectedWriteLoad   string   `json:"expected_write_load"`
+	ExpectedReadPattern string   `json:"expected_read_pattern"`
+	Comment             string   `json:"comment"`
+}
+
 // Analyzer inspects JSON docs just like the original Python helper but keeps things snappy.
 type Analyzer struct {
 	maxDepth          int
@@ -142,6 +159,54 @@ func (a *Analyzer) BuildSummary() Summary {
 		StructureHash:     a.structureHash(),
 		Fields:            fields,
 	}
+}
+
+// AnalyzeStructure inspects the batch to produce SchemaAnalysis for downstream decisions.
+func (a *Analyzer) AnalyzeStructure(documents []map[string]any, summary Summary) SchemaAnalysis {
+	analysis := SchemaAnalysis{
+		SchemaConsistency:   summary.FieldStability,
+		FieldCount:          len(summary.Fields),
+		MaxNestingDepth:     summary.MaxDepth,
+		ArrayFields:         collectArrayFields(summary),
+		RecordCount:         len(documents),
+		UniqueFieldSets:     countUniqueFieldSets(documents),
+		ExpectedWriteLoad:   "medium",
+		ExpectedReadPattern: "mixed",
+	}
+
+	analysis.HasForeignKeys = detectForeignKeys(summary)
+	analysis.HasRelationships = detectRelationships(documents)
+	analysis.RequiresJoins = analysis.HasRelationships
+	analysis.HasConstraints = detectConstraints(summary, analysis.RecordCount)
+	return analysis
+}
+
+// IncorporateCommentHints adjusts the analysis based on free-form comment hints.
+func IncorporateCommentHints(analysis SchemaAnalysis, comment string) SchemaAnalysis {
+	if comment == "" {
+		return analysis
+	}
+	lower := strings.ToLower(comment)
+	if strings.Contains(lower, "sql") || strings.Contains(lower, "relational") {
+		analysis.SchemaConsistency = clamp01(analysis.SchemaConsistency + 0.3)
+	}
+	if strings.Contains(lower, "nosql") || strings.Contains(lower, "flexible") {
+		analysis.SchemaConsistency = clamp01(analysis.SchemaConsistency - 0.3)
+	}
+	if strings.Contains(lower, "high write") || strings.Contains(lower, "many writes") || strings.Contains(lower, "bulk ingest") {
+		analysis.ExpectedWriteLoad = "high"
+	}
+	if strings.Contains(lower, "read heavy") || strings.Contains(lower, "analytical") {
+		analysis.ExpectedReadPattern = "analytical"
+	}
+	if strings.Contains(lower, "transactional") || strings.Contains(lower, "oltp") {
+		analysis.ExpectedReadPattern = "transactional"
+	}
+	if strings.Contains(lower, "join") || strings.Contains(lower, "relationship") {
+		analysis.RequiresJoins = true
+	}
+	analysis.Comment = comment
+	return analysis
 }
 
 func (a *Analyzer) fieldStability() float64 {
@@ -287,6 +352,97 @@ func detectType(value any) JsonType {
 func looksLikeForeignKey(path string) bool {
 	lower := strings.ToLower(path)
 	return strings.HasSuffix(lower, "_id") || strings.HasSuffix(lower, "_key") || strings.Contains(lower, "id")
+}
+
+func collectArrayFields(summary Summary) []string {
+	arr := make([]string, 0)
+	seen := map[string]struct{}{}
+	for path, field := range summary.Fields {
+		if strings.Contains(path, "[]") || field.DominantType == Array {
+			name := strings.Split(strings.ReplaceAll(path, "[]", ""), ".")[0]
+			if name == "" {
+				name = path
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				arr = append(arr, name)
+			}
+		}
+	}
+	sort.Strings(arr)
+	return arr
+}
+
+func countUniqueFieldSets(docs []map[string]any) int {
+	if len(docs) == 0 {
+		return 0
+	}
+	sets := map[string]struct{}{}
+	for _, doc := range docs {
+		keys := make([]string, 0, len(doc))
+		for k := range doc {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		sets[strings.Join(keys, ",")] = struct{}{}
+	}
+	return len(sets)
+}
+
+func detectForeignKeys(summary Summary) bool {
+	for _, field := range summary.Fields {
+		if field.LikelyFK {
+			return true
+		}
+	}
+	return false
+}
+
+func detectRelationships(docs []map[string]any) bool {
+	if len(docs) == 0 {
+		return false
+	}
+	seen := map[string]map[any]int{}
+	for _, doc := range docs {
+		for field, value := range doc {
+			if strings.HasSuffix(field, "_id") || strings.HasSuffix(field, "Id") || field == "id" {
+				if seen[field] == nil {
+					seen[field] = map[any]int{}
+				}
+				seen[field][value]++
+			}
+		}
+	}
+	for _, counts := range seen {
+		for _, count := range counts {
+			if count > 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func detectConstraints(summary Summary, total int) bool {
+	if total == 0 {
+		return false
+	}
+	for _, field := range summary.Fields {
+		if field.Presence >= 0.95 && field.NullFraction <= 0.05 {
+			return true
+		}
+	}
+	return false
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
 
 func isObject(value any) bool {

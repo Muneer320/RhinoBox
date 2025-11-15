@@ -104,6 +104,14 @@ go run ./cmd/rhinobox
 go test ./...
 ```
 
+**Dockerized run** (more in `docs/DOCKER.md`):
+
+```pwsh
+Set-Location backend
+docker build -t rhinobox-backend .
+docker run --rm -it -p 8080:8090 -v ..\\rhino-data:/data rhinobox-backend
+```
+
 ### Operational Notes
 
 - Chi middleware provides structured logging and panic recovery out of the box.
@@ -116,6 +124,6 @@ go test ./...
 1. Back SQL decisions with a lightweight SQLite table writer and wire a document database (DuckDB/Badger) for NoSQL to satisfy end-to-end persistence.
 2. Enhance analyzer to infer relationships/foreign keys when multiple collections arrive together.
 3. Add automated integration tests (media + JSON fixtures) and a Postman/newman collection for hand-off validation.
-4. Optional container image or Taskfile to standardize local runs with pre-configured env vars.
+4. Harden container image (health checks, distroless base) or add a Taskfile for repeatable local workflows.
 
 Need another artifact (sample frontend hooks, deployment manifest, or load test script)? Open an issue, and RhinoBox will keep evolving.

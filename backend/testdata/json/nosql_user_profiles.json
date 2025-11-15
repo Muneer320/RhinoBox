@@ -1,0 +1,69 @@
+{
+    "namespace": "profiles_flexible",
+    "comment": "Highly personalized profile docs with optional and nested preference blobs",
+    "documents": [
+        {
+            "profile_id": "p-1",
+            "account": {
+                "id": "acct-33",
+                "tier": "enterprise"
+            },
+            "preferences": {
+                "notifications": {
+                    "email": true,
+                    "sms": false
+                },
+                "dashboards": [
+                    "sales",
+                    "adoption"
+                ],
+                "beta_flags": {
+                    "new_ui": true
+                }
+            },
+            "tags": [
+                "finance",
+                "priority"
+            ]
+        },
+        {
+            "profile_id": "p-2",
+            "account": {
+                "id": "acct-90",
+                "tier": "starter"
+            },
+            "preferences": {
+                "notifications": {
+                    "email": false
+                },
+                "widgets": [
+                    {
+                        "type": "map",
+                        "options": {
+                            "regions": [
+                                "emea",
+                                "apac"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "profile_id": "p-3",
+            "tags": [
+                "anonymous"
+            ],
+            "experiments": {
+                "exp_chatbot": {
+                    "variant": "b",
+                    "scores": [
+                        0.2,
+                        0.4,
+                        0.7
+                    ]
+                }
+            }
+        }
+    ]
+}

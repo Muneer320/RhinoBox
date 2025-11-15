@@ -1,0 +1,30 @@
+{
+    "namespace": "payroll_batches",
+    "comment": "Payroll exports with fixed numeric fields and ISO dates",
+    "documents": [
+        {
+            "pay_period": "2025-10",
+            "employee_id": 9001,
+            "gross_pay": 8200.75,
+            "net_pay": 6125.43,
+            "tax_withheld": 1800.21,
+            "is_contractor": false
+        },
+        {
+            "pay_period": "2025-10",
+            "employee_id": 9002,
+            "gross_pay": 6400.00,
+            "net_pay": 4875.00,
+            "tax_withheld": 1400.00,
+            "is_contractor": false
+        },
+        {
+            "pay_period": "2025-10",
+            "employee_id": 9020,
+            "gross_pay": 14250.00,
+            "net_pay": 14250.00,
+            "tax_withheld": 0,
+            "is_contractor": true
+        }
+    ]
+}

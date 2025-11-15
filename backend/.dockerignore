@@ -1,0 +1,20 @@
+# Ignore git metadata and editor clutter
+.git
+.gitignore
+.vscode
+.idea
+
+# Build artifacts
+bin
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local data/output folders
+data
+node_modules
+coverage
+
+# Tests and fixtures not needed in image
+/testdata

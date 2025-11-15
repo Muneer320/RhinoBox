@@ -24,6 +24,8 @@ func main() {
 		panic(err)
 	}
 
+	logger.Info("starting RhinoBox", slog.String("addr", cfg.Addr), slog.String("data_dir", cfg.DataDir))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
