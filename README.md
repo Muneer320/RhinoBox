@@ -51,12 +51,12 @@ docker run -p 8090:8090 -v ./data:/data rhinobox
 
 ## 📡 API Endpoints
 
-| Method | Endpoint         | Description                                    |
-|--------|------------------|------------------------------------------------|
-| GET    | `/healthz`       | Health check endpoint                          |
-| POST   | `/ingest`        | Unified endpoint for all file types            |
-| POST   | `/ingest/media`  | Media-specific upload (images, videos, audio)  |
-| POST   | `/ingest/json`   | JSON document ingestion with decision engine   |
+| Method | Endpoint        | Description                                   |
+| ------ | --------------- | --------------------------------------------- |
+| GET    | `/healthz`      | Health check endpoint                         |
+| POST   | `/ingest`       | Unified endpoint for all file types           |
+| POST   | `/ingest/media` | Media-specific upload (images, videos, audio) |
+| POST   | `/ingest/json`  | JSON document ingestion with decision engine  |
 
 **See `docs/API_REFERENCE.md` for detailed API documentation.**
 
@@ -97,11 +97,11 @@ curl -X POST http://localhost:8090/ingest/json \
 
 ## ⚙️ Configuration
 
-| Variable                | Default  | Description                    |
-|-------------------------|----------|--------------------------------|
-| `RHINOBOX_ADDR`         | `:8090`  | HTTP server bind address       |
-| `RHINOBOX_DATA_DIR`     | `./data` | Storage root directory         |
-| `RHINOBOX_MAX_UPLOAD_MB`| `512`    | Maximum upload size (MB)       |
+| Variable                 | Default  | Description              |
+| ------------------------ | -------- | ------------------------ |
+| `RHINOBOX_ADDR`          | `:8090`  | HTTP server bind address |
+| `RHINOBOX_DATA_DIR`      | `./data` | Storage root directory   |
+| `RHINOBOX_MAX_UPLOAD_MB` | `512`    | Maximum upload size (MB) |
 
 ## 📁 Storage Structure
 
@@ -138,18 +138,21 @@ go test -run Integration ./...   # Integration tests
 ## 🔑 Key Implementation Details
 
 ### Intelligent JSON Decision Engine
+
 - Analyzes schema structure (depth, field stability, relationships)
 - **SQL route**: Flat schemas with stable fields, generates PostgreSQL DDL
 - **NoSQL route**: Nested/dynamic schemas, optimized for document stores
 - Confidence scoring and detailed decision reasoning
 
 ### Smart Media Processing
+
 - MIME-based classification with fallback detection
 - Content-based deduplication using SHA-256 hashing
 - Parallel worker pools for concurrent uploads
 - Automatic directory organization by type and category
 
 ### Production Features
+
 - Structured logging with `slog`
 - Graceful shutdown handling
 - Request timeout and size limits
