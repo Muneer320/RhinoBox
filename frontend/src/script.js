@@ -164,41 +164,63 @@ function initHomePageFeatures() {
 
       try {
         let documents = [];
-        let categoryType = "others"; // Default category
+        const categoryType = "codefiles"; // All quick add content goes to codefiles folder
         
         // Handle different types
         if (selectedType === "url") {
           // Treat as URL
           documents = [{ content: value, type: "url", url: value }];
-          categoryType = "others";
         } else if (selectedType === "json") {
           // Try to parse as JSON
           try {
             const parsed = JSON.parse(value);
-            documents = Array.isArray(parsed) ? parsed : [parsed];
-            categoryType = "json";
-          } catch {
-            showToast("Invalid JSON format");
+            // Backend expects array of objects (documents)
+            if (Array.isArray(parsed)) {
+              // Filter to only include plain objects (not arrays, not null)
+              documents = parsed.filter(doc => 
+                doc !== null && 
+                typeof doc === 'object' && 
+                !Array.isArray(doc) &&
+                Object.prototype.toString.call(doc) === '[object Object]'
+              );
+              if (documents.length === 0) {
+                showToast("JSON array must contain objects. Each array item should be an object like {\"key\": \"value\"}");
+                return;
+              }
+            } else if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              // Single object
+              documents = [parsed];
+            } else {
+              // Primitive values or other types - wrap in object
+              documents = [{ value: parsed, type: typeof parsed }];
+            }
+            console.log("Prepared documents for ingestion:", documents);
+          } catch (parseError) {
+            console.error("JSON parse error:", parseError);
+            showToast(`Invalid JSON format: ${parseError.message}`);
             return;
           }
         } else {
           // Other types (text, python, javascript, etc.)
           documents = [{ content: value, type: selectedType }];
-          // Map selected type to category
-          if (["python", "javascript", "typescript", "html", "css", "sql", "yaml", "xml"].includes(selectedType)) {
-            categoryType = "code";
-          } else if (selectedType === "json") {
-            categoryType = "json";
-          } else {
-            categoryType = "others";
-          }
         }
 
         showToast("Processing...");
-        await ingestJSON(documents, categoryType, `Quick add: ${selectedType}`);
         
-        const typeName = getFileTypeName(categoryType);
-        showToast(`Successfully added ${typeName} item`);
+        try {
+          const response = await ingestJSON(documents, categoryType, `Quick add: ${selectedType}`);
+          console.log("Ingest response:", response);
+          
+          showToast(`Successfully added to codefiles folder`);
+        } catch (ingestError) {
+          console.error("Ingest error details:", {
+            error: ingestError,
+            message: ingestError.message,
+            status: ingestError.status,
+            data: ingestError.data
+          });
+          throw ingestError; // Re-throw to be caught by outer catch
+        }
         
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -446,7 +468,7 @@ function updateNosqlDiagramColors() {
   });
 
   // Update collection box text - first text in each box is the title (white), rest are fields
-  nosqlSvg.querySelectorAll(".collection-box").forEach((box) => {
+  nosqlSvg.querySelectorAll(".collection-box, .nosql-collection-tile").forEach((box) => {
     const texts = box.querySelectorAll("text");
     texts.forEach((text, index) => {
       if (index === 0) {
@@ -598,6 +620,9 @@ function initSidebarNavigation() {
       } else if (target === "data") {
         // Initialize data tabs when switching to data page
         initDataTabs();
+        // Load SQL and NoSQL data
+        loadSQLTables();
+        loadNoSQLCollections();
         // Update diagram colors
         setTimeout(updateNosqlDiagramColors, 100);
       }
@@ -926,13 +951,29 @@ function getFileIcon(fileName) {
   }
 }
 
-// Format file size
+// Format file size (always show in MB, GB, or TB - never KB)
 function formatFileSize(bytes) {
-  if (bytes === 0) return "0 B";
+  if (bytes === 0) return "0 MB";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  const mb = bytes / (k * k);
+  
+  // Always show in MB, even for small files (convert KB to MB)
+  const sizes = ["MB", "GB", "TB"];
+  let i = 0;
+  let size = mb;
+  
+  // If less than 1MB, still show in MB with decimal places
+  if (size < 1) {
+    return parseFloat(size.toFixed(3)) + " MB"; // Show 3 decimal places for small files
+  }
+  
+  // For MB and above, show in MB, GB, or TB
+  while (size >= 1024 && i < sizes.length - 1) {
+    size = size / 1024;
+    i++;
+  }
+  
+  return parseFloat(size.toFixed(2)) + " " + sizes[i];
 }
 
 // Escape HTML to prevent XSS
@@ -1035,7 +1076,10 @@ function createFileElement(file, collectionType) {
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || "";
   div.dataset.fileDate =
     file.date || file.uploadedAt || new Date().toISOString();
-  div.dataset.fileSize = file.size || file.fileSize || "Unknown";
+  // Format file size to MB
+  const fileSizeBytes = file.size || file.fileSize || 0;
+  const formattedSize = typeof fileSizeBytes === 'number' ? formatFileSize(fileSizeBytes) : (fileSizeBytes || "Unknown");
+  div.dataset.fileSize = formattedSize;
   div.dataset.fileType = file.type || file.fileType || "Unknown";
   div.dataset.fileDimensions = file.dimensions || file.fileDimensions || "";
 
@@ -1140,7 +1184,10 @@ function createFileElement(file, collectionType) {
       )}</h3>
       <p>${escapeHtml(file.description || file.comment || "")}</p>
       <span class="gallery-item-meta">${
-        file.size || file.fileSize || "Unknown"
+        (() => {
+          const sizeBytes = file.size || file.fileSize || 0;
+          return typeof sizeBytes === 'number' ? formatFileSize(sizeBytes) : (sizeBytes || "Unknown");
+        })()
       } • ${file.type || file.fileType || "Unknown"}</span>
     </div>
   `;
@@ -1215,12 +1262,43 @@ async function loadCollections() {
     }
 
     // Render collection cards for non-empty collections only
-    nonEmptyCollections.forEach((collection) => {
+    // Fetch thumbnails for media collections
+    const cardPromises = nonEmptyCollections.map(async (collection) => {
       const stats = statsMap.get(collection.type) || {
         file_count: 0,
         storage_used_formatted: "0 B",
       };
-      const card = createCollectionCard(collection, stats);
+      
+      // Try to get a thumbnail for media collections (images, videos)
+      let thumbnailUrl = null;
+      const mediaTypes = ["images", "videos", "audio"];
+      if (mediaTypes.includes(collection.type) && stats.file_count > 0) {
+        try {
+          const filesResponse = await getFiles(collection.type, "", { limit: 1 });
+          const files = filesResponse.files || filesResponse || [];
+          if (files.length > 0 && files[0]) {
+            const firstFile = files[0];
+            // Use thumbnail, url, or path for images/videos
+            thumbnailUrl = firstFile.thumbnail || firstFile.url || firstFile.path || firstFile.downloadUrl || null;
+            // For videos, we might want a poster/thumbnail, for images use the file itself
+            if (collection.type === "images" && thumbnailUrl) {
+              // Ensure it's a full URL if it's a relative path
+              if (thumbnailUrl.startsWith("/") || !thumbnailUrl.startsWith("http")) {
+                thumbnailUrl = `${API_CONFIG.baseURL}${thumbnailUrl.startsWith("/") ? "" : "/"}${thumbnailUrl}`;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch thumbnail for ${collection.type}:`, err);
+        }
+      }
+      
+      const card = await createCollectionCard(collection, stats, thumbnailUrl);
+      return card;
+    });
+
+    const cards = await Promise.all(cardPromises);
+    cards.forEach((card) => {
       collectionCards.appendChild(card);
     });
 
@@ -1240,42 +1318,55 @@ async function loadCollections() {
 }
 
 // Create a collection card element
-function createCollectionCard(collection, stats) {
+async function createCollectionCard(collection, stats, thumbnailUrl = null) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "collection-card";
   button.dataset.collection = collection.type;
 
-  // Map collection types to image URLs
-  const imageMap = {
-    images:
-      "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80",
-    videos:
-      "https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80",
-    audio:
-      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80",
-    documents:
-      "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
-    spreadsheets:
-      "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
-    presentations:
-      "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
-    archives:
-      "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
-    json:
-      "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
-    code:
-      "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=600&q=80",
-    others:
-      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-    other:
-      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-  };
+  // Use actual thumbnail if provided, otherwise use placeholder
+  let imageUrl = thumbnailUrl;
+  
+  if (!imageUrl) {
+    // Fallback to placeholder images for non-media types
+    const imageMap = {
+      documents:
+        "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
+      spreadsheets:
+        "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
+      presentations:
+        "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
+      archives:
+        "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
+      json:
+        "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
+      code:
+        "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=600&q=80",
+      others:
+        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
+      other:
+        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
+    };
+    imageUrl = imageMap[collection.type] || imageMap["others"] || imageMap["other"];
+  }
 
-  const imageUrl = imageMap[collection.type] || imageMap["others"] || imageMap["other"];
   const fileCount = stats.file_count || 0;
-  const storageUsed =
-    stats.storage_used_formatted || stats.storage_used || "0 B";
+  // Format storage used - always convert to MB
+  let storageUsed = stats.storage_used_formatted || stats.storage_used || "0 MB";
+  // If storage is in bytes, convert to MB
+  if (stats.storage_used && typeof stats.storage_used === 'number') {
+    storageUsed = formatFileSize(stats.storage_used);
+  } else if (storageUsed.includes("KB")) {
+    // Convert KB to MB (always convert, even if less than 1024 KB)
+    const kbValue = parseFloat(storageUsed.replace(" KB", ""));
+    storageUsed = formatFileSize(kbValue * 1024);
+  } else if (storageUsed.includes("B") && !storageUsed.includes("MB") && !storageUsed.includes("GB") && !storageUsed.includes("TB")) {
+    // If it's in bytes, convert to MB
+    const byteValue = parseFloat(storageUsed.replace(" B", "").replace(/[^0-9.]/g, ""));
+    if (!isNaN(byteValue)) {
+      storageUsed = formatFileSize(byteValue);
+    }
+  }
 
   button.innerHTML = `
     <img
@@ -1848,6 +1939,227 @@ function initLayoutToggle() {
   });
 }
 
+// Load SQL tables from backend
+async function loadSQLTables() {
+  const tbody = document.getElementById("sql-tables-body");
+  const emptyRow = document.getElementById("sql-empty");
+  
+  if (!tbody) return;
+
+  try {
+    // For now, we'll get SQL data from JSON collections that were stored as SQL
+    // This would need a proper SQL tables endpoint in the backend
+    // For now, show empty state
+    tbody.innerHTML = "";
+    if (emptyRow) {
+      emptyRow.style.display = "table-row";
+    } else {
+      const emptyTr = document.createElement("tr");
+      emptyTr.id = "sql-empty";
+      emptyTr.innerHTML = `
+        <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+          No SQL tables available. Upload JSON data to create SQL tables.
+        </td>
+      `;
+      tbody.appendChild(emptyTr);
+    }
+  } catch (error) {
+    console.error("Error loading SQL tables:", error);
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+            Error loading SQL tables
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+// Load NoSQL collections and create tiles
+async function loadNoSQLCollections() {
+  const nosqlDiagram = document.getElementById("nosql-diagram");
+  if (!nosqlDiagram) return;
+
+  try {
+    const svg = nosqlDiagram.querySelector(".nosql-svg");
+    if (!svg) return;
+
+    // Get or create transform group
+    let transformGroup = svg.querySelector("g.nosql-transform-group");
+    if (!transformGroup) {
+      transformGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      transformGroup.classList.add("nosql-transform-group");
+      svg.appendChild(transformGroup);
+    }
+
+    // Clear existing collection tiles
+    const existingTiles = transformGroup.querySelectorAll(".nosql-collection-tile");
+    existingTiles.forEach(tile => tile.remove());
+    
+    const emptyMessage = document.getElementById("nosql-empty-message");
+    
+    // Try to get JSON collections (NoSQL data)
+    // For now, we'll check if there's a json collection type
+    try {
+      const jsonFiles = await getFiles("json", "", { limit: 100 });
+      const files = jsonFiles.files || jsonFiles || [];
+      
+      if (files.length === 0) {
+        if (emptyMessage) emptyMessage.style.display = "block";
+        return;
+      }
+      
+      if (emptyMessage) emptyMessage.style.display = "none";
+      
+      // Group files by namespace/collection name to create different tiles
+      const collectionsMap = new Map();
+      files.forEach(file => {
+        const namespace = file.namespace || file.collection || "default";
+        if (!collectionsMap.has(namespace)) {
+          collectionsMap.set(namespace, []);
+        }
+        collectionsMap.get(namespace).push(file);
+      });
+      
+      // Create a tile for each collection/namespace
+      let xPos = 50;
+      let yPos = 50;
+      const tileWidth = 200;
+      const tileSpacing = 250;
+      const maxPerRow = 4;
+      let row = 0;
+      let col = 0;
+      
+      collectionsMap.forEach((files, collectionName) => {
+        // Analyze the first file to get schema
+        const firstFile = files[0];
+        let schema = {};
+        
+        try {
+          if (firstFile.content) {
+            const content = typeof firstFile.content === 'string' 
+              ? JSON.parse(firstFile.content) 
+              : firstFile.content;
+            schema = content;
+          } else if (firstFile.data) {
+            schema = typeof firstFile.data === 'string' 
+              ? JSON.parse(firstFile.data) 
+              : firstFile.data;
+          }
+        } catch (e) {
+          console.warn("Could not parse schema for", collectionName, e);
+        }
+        
+        // Calculate position
+        xPos = 50 + (col % maxPerRow) * tileSpacing;
+        yPos = 50 + Math.floor(col / maxPerRow) * tileSpacing;
+        col++;
+        
+        // Create collection tile
+        const tile = createNoSQLCollectionTile(collectionName, schema, xPos, yPos, tileWidth);
+        transformGroup.appendChild(tile);
+      });
+      
+      // Update transform if zoom/pan is initialized
+      if (typeof updateNosqlTransform === 'function') {
+        updateNosqlTransform();
+      }
+      
+    } catch (error) {
+      console.warn("Could not load NoSQL collections:", error);
+      if (emptyMessage) emptyMessage.style.display = "block";
+    }
+    
+  } catch (error) {
+    console.error("Error loading NoSQL collections:", error);
+    const emptyMessage = document.getElementById("nosql-empty-message");
+    if (emptyMessage) emptyMessage.style.display = "block";
+  }
+}
+
+// Create a NoSQL collection tile
+function createNoSQLCollectionTile(collectionName, schema, x, y, width) {
+  const ns = "http://www.w3.org/2000/svg";
+  const g = document.createElementNS(ns, "g");
+  g.classList.add("nosql-collection-tile");
+  g.setAttribute("transform", `translate(${x}, ${y})`);
+  
+  // Get schema fields
+  const fields = [];
+  if (schema && typeof schema === 'object') {
+    Object.keys(schema).forEach(key => {
+      const value = schema[key];
+      let type = typeof value;
+      if (Array.isArray(value)) type = "array";
+      else if (value === null) type = "null";
+      else if (typeof value === 'object') type = "object";
+      fields.push({ name: key, type });
+    });
+  }
+  
+  const height = 40 + (fields.length * 20) + 20;
+  const headerHeight = 32;
+  
+  // Create box
+  const box = document.createElementNS(ns, "rect");
+  box.setAttribute("x", "0");
+  box.setAttribute("y", "0");
+  box.setAttribute("width", width);
+  box.setAttribute("height", height);
+  box.setAttribute("rx", "8");
+  box.setAttribute("fill", "var(--surface)");
+  box.setAttribute("stroke", "var(--border)");
+  box.setAttribute("stroke-width", "2");
+  box.setAttribute("class", "collection-box");
+  g.appendChild(box);
+  
+  // Create header
+  const header = document.createElementNS(ns, "rect");
+  header.setAttribute("x", "0");
+  header.setAttribute("y", "0");
+  header.setAttribute("width", width);
+  header.setAttribute("height", headerHeight);
+  header.setAttribute("rx", "8");
+  header.setAttribute("fill", "var(--accent)");
+  header.setAttribute("class", "collection-box");
+  g.appendChild(header);
+  
+  // Collection name
+  const nameText = document.createElementNS(ns, "text");
+  nameText.setAttribute("x", "10");
+  nameText.setAttribute("y", "20");
+  nameText.setAttribute("fill", "white");
+  nameText.setAttribute("font-size", "14");
+  nameText.setAttribute("font-weight", "600");
+  nameText.textContent = collectionName || "collection";
+  g.appendChild(nameText);
+  
+  // Fields
+  fields.slice(0, 10).forEach((field, index) => {
+    const fieldText = document.createElementNS(ns, "text");
+    fieldText.setAttribute("x", "10");
+    fieldText.setAttribute("y", String(headerHeight + 20 + (index * 20)));
+    fieldText.setAttribute("fill", "var(--text-primary)");
+    fieldText.setAttribute("font-size", "12");
+    fieldText.textContent = `${field.name} (${field.type})`;
+    g.appendChild(fieldText);
+  });
+  
+  if (fields.length > 10) {
+    const moreText = document.createElementNS(ns, "text");
+    moreText.setAttribute("x", "10");
+    moreText.setAttribute("y", String(headerHeight + 20 + (10 * 20)));
+    moreText.setAttribute("fill", "var(--text-secondary)");
+    moreText.setAttribute("font-size", "11");
+    moreText.textContent = `... and ${fields.length - 10} more`;
+    g.appendChild(moreText);
+  }
+  
+  return g;
+}
+
 // Initialize data tabs (SQL/NoSQL)
 let dataTabsInitialized = false;
 function initDataTabs() {
@@ -1896,9 +2208,12 @@ function initDataTabs() {
       if (tabType === "sql") {
         sqlSection.style.display = "flex";
         nosqlSection.style.display = "none";
+        loadSQLTables();
       } else if (tabType === "nosql") {
         sqlSection.style.display = "none";
         nosqlSection.style.display = "flex";
+        // Load NoSQL collections when switching to NoSQL tab
+        loadNoSQLCollections();
         // Update diagram colors when switching to NoSQL tab
         setTimeout(updateNosqlDiagramColors, 100);
         // Initialize zoom and pan when switching to NoSQL tab
@@ -2210,8 +2525,32 @@ async function loadStatistics() {
 
     // Render statistics cards
     const totalFiles = stats.totalFiles || stats.files || 0;
-    const storageUsed = stats.storageUsed || stats.storage || "0 B";
     const collections = stats.collections || stats.collectionCount || 0;
+    
+    // Format storage used - always convert to MB
+    let storageUsed = "0 MB";
+    if (stats.storageUsedBytes && typeof stats.storageUsedBytes === 'number') {
+      // Use bytes if available and convert to MB
+      storageUsed = formatFileSize(stats.storageUsedBytes);
+    } else {
+      // Parse the formatted string and convert to MB
+      const storageStr = stats.storageUsed || stats.storage || "0 B";
+      if (storageStr.includes("KB")) {
+        const kbValue = parseFloat(storageStr.replace(" KB", "").replace(/[^0-9.]/g, ""));
+        if (!isNaN(kbValue)) {
+          storageUsed = formatFileSize(kbValue * 1024);
+        }
+      } else if (storageStr.includes("MB") || storageStr.includes("GB") || storageStr.includes("TB")) {
+        // Already in MB/GB/TB, use as is
+        storageUsed = storageStr;
+      } else if (storageStr.includes("B") && !storageStr.includes("KB") && !storageStr.includes("MB")) {
+        // In bytes, convert to MB
+        const byteValue = parseFloat(storageStr.replace(" B", "").replace(/[^0-9.]/g, ""));
+        if (!isNaN(byteValue)) {
+          storageUsed = formatFileSize(byteValue);
+        }
+      }
+    }
 
     statsGrid.innerHTML = `
       <div class="stat-card">
