@@ -75,7 +75,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
 
@@ -87,7 +87,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	var metadata map[string]any
 	if metadataStr != "" {
 		if err := json.Unmarshal([]byte(metadataStr), &metadata); err != nil {
-			httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
 			return
 		}
 	}
@@ -142,11 +142,11 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	response.Timing["total_ms"] = time.Since(startTime).Milliseconds()
 
 	if len(response.Errors) > 0 && len(response.Results.Media) == 0 && len(response.Results.JSON) == 0 && len(response.Results.Files) == 0 {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // routeFile determines content type and routes to appropriate pipeline.

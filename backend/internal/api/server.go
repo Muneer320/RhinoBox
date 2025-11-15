@@ -17,8 +17,6 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
-	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
-	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
@@ -107,6 +105,14 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// Stop stops the server and cleans up resources.
+func (s *Server) Stop() {
+	// Job queue shutdown will be implemented when async endpoints are added
+	if s.jobQueue != nil {
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
