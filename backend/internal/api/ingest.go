@@ -39,14 +39,17 @@ type UnifiedIngestResults struct {
 }
 
 type MediaResult struct {
-	OriginalName string         `json:"original_name"`
-	StoredPath   string         `json:"stored_path"`
-	Category     string         `json:"category"`
-	MimeType     string         `json:"mime_type"`
-	Size         int64          `json:"size"`
-	Hash         string         `json:"hash,omitempty"`
-	Duplicates   bool           `json:"duplicates"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
+	OriginalName      string         `json:"original_name"`
+	StoredPath        string         `json:"stored_path"`
+	Category          string         `json:"category"`
+	MimeType          string         `json:"mime_type"`
+	DetectedMimeType  string         `json:"detected_mime_type,omitempty"`
+	UserOverrideType  string         `json:"user_override_type,omitempty"`
+	ActualCategory    string         `json:"actual_category,omitempty"`
+	Size              int64          `json:"size"`
+	Hash              string         `json:"hash,omitempty"`
+	Duplicates        bool           `json:"duplicates"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
 }
 
 type JSONResult struct {
@@ -61,13 +64,16 @@ type JSONResult struct {
 }
 
 type GenericResult struct {
-	OriginalName    string `json:"original_name"`
-	StoredPath      string `json:"stored_path"`
-	FileType        string `json:"file_type"`
-	Size            int64  `json:"size"`
-	Hash            string `json:"hash,omitempty"`
-	Unrecognized    bool   `json:"unrecognized,omitempty"`    // true if format not recognized
-	RequiresRouting bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
+	OriginalName     string `json:"original_name"`
+	StoredPath       string `json:"stored_path"`
+	FileType         string `json:"file_type"`
+	DetectedMimeType string `json:"detected_mime_type,omitempty"`
+	UserOverrideType string `json:"user_override_type,omitempty"`
+	ActualCategory   string `json:"actual_category,omitempty"`
+	Size             int64  `json:"size"`
+	Hash             string `json:"hash,omitempty"`
+	Unrecognized     bool   `json:"unrecognized,omitempty"`    // true if format not recognized
+	RequiresRouting  bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
@@ -103,12 +109,24 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	// Get file type override from form
+	overrideType := r.FormValue("file_type_override")
+	if overrideType == "" {
+		overrideType = "auto"
+	}
+
+	// Validate override
+	if !isValidOverride(overrideType) {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid file_type_override value: %s (must be one of: auto, image, video, audio, document, code)", overrideType))
+		return
+	}
+
 	// Process files (media, JSON, or generic)
 	if r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
 		processingStart := time.Now()
 		for fieldName, headers := range r.MultipartForm.File {
 			for _, header := range headers {
-				result, err := s.routeFile(header, fieldName, comment, namespace)
+				result, err := s.routeFile(header, fieldName, comment, namespace, overrideType)
 				if err != nil {
 					response.Errors = append(response.Errors, fmt.Sprintf("%s: %v", header.Filename, err))
 					continue
@@ -150,40 +168,41 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 }
 
 // routeFile determines content type and routes to appropriate pipeline.
-func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, namespace string) (any, error) {
+func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, namespace, overrideType string) (any, error) {
 	file, err := header.Open()
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
 
-	mimeType := detectMIMEType(header)
+	detectedMimeType := detectMIMEType(header)
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 
 	s.logger.Debug("routing file",
 		slog.String("name", header.Filename),
-		slog.String("mime", mimeType),
-		slog.String("field", fieldName))
+		slog.String("mime", detectedMimeType),
+		slog.String("field", fieldName),
+		slog.String("override", overrideType))
 
 	// Check if format is recognized
 	classifier := s.storage.Classifier()
 	rulesMgr := s.storage.RoutingRules()
 	
-	isRecognized := classifier.IsRecognized(mimeType, header.Filename)
-	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(mimeType, ext) != nil
+	isRecognized := classifier.IsRecognized(detectedMimeType, header.Filename)
+	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(detectedMimeType, ext) != nil
 	isUnrecognized := !isRecognized && !hasCustomRule
 
-	// Route based on MIME type
-	if isMediaType(mimeType) {
-		return s.processMediaFile(header, comment)
+	// Route based on MIME type or override
+	if isMediaType(detectedMimeType) || (overrideType != "auto" && overrideType != "" && (overrideType == "image" || overrideType == "video" || overrideType == "audio")) {
+		return s.processMediaFile(header, comment, detectedMimeType, overrideType)
 	}
 
-	if isJSONType(mimeType) {
+	if isJSONType(detectedMimeType) {
 		return s.processJSONFile(header, namespace, comment)
 	}
 
 	// For generic files, check if unrecognized
-	result, err := s.processGenericFile(header, namespace)
+	result, err := s.processGenericFile(header, namespace, detectedMimeType, overrideType)
 	if err != nil {
 		return result, err
 	}
@@ -198,14 +217,15 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 }
 
 // processMediaFile handles images, videos, audio.
-func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) (MediaResult, error) {
+func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detectedMimeType, overrideType string) (MediaResult, error) {
 	file, err := header.Open()
 	if err != nil {
 		return MediaResult{}, fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
 
-	mimeType := detectMIMEType(header)
+	// Determine actual category based on override
+	actualCategory := determineStorageCategory(detectedMimeType, overrideType)
 	
 	// Sanitize user-controlled inputs to prevent path traversal
 	sanitizedComment := sanitizePathSegment(comment)
@@ -218,14 +238,29 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 	if comment != "" {
 		metadata["comment"] = comment
 	}
+	if overrideType != "" && overrideType != "auto" {
+		metadata["user_override_type"] = overrideType
+		metadata["detected_mime_type"] = detectedMimeType
+	}
+
+	// Use override category hint if override is specified
+	categoryHint := sanitizedComment
+	if overrideType != "" && overrideType != "auto" {
+		categoryHint = overrideType
+	}
 
 	req := service.FileStoreRequest{
 		Reader:       file,
 		Filename:     sanitizedFilename,
-		MimeType:     mimeType,
+		MimeType:     detectedMimeType,
 		Size:         header.Size,
 		Metadata:     metadata,
-		CategoryHint: sanitizedComment,
+		CategoryHint: categoryHint,
+	}
+
+	// If override is specified, use it as category hint to force storage path
+	if overrideType != "" && overrideType != "auto" {
+		req.CategoryHint = overrideType
 	}
 
 	result, err := s.fileService.StoreFile(req)
@@ -233,28 +268,50 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		return MediaResult{}, err
 	}
 
+	// Log if override differs from detection
+	if overrideType != "" && overrideType != "auto" {
+		detectedCategory := categoryFromMime(detectedMimeType)
+		if detectedCategory != actualCategory {
+			s.logger.Warn("File type override",
+				slog.String("detected", detectedMimeType),
+				slog.String("override", overrideType),
+				slog.String("category", actualCategory))
+		}
+	}
+
 	return MediaResult{
-		OriginalName: header.Filename,
-		StoredPath:   result.StoredPath,
-		Category:     result.Category,
-		MimeType:     result.MimeType,
-		Size:         result.Size,
-		Hash:         result.Hash,
-		Duplicates:   result.Duplicate,
+		OriginalName:     header.Filename,
+		StoredPath:       result.StoredPath,
+		Category:         result.Category,
+		MimeType:         result.MimeType,
+		DetectedMimeType: detectedMimeType,
+		UserOverrideType: overrideType,
+		ActualCategory:   actualCategory,
+		Size:             result.Size,
+		Hash:             result.Hash,
+		Duplicates:       result.Duplicate,
 	}, nil
 }
 
 // processGenericFile handles PDFs, documents, archives, etc.
-func (s *Server) processGenericFile(header *multipart.FileHeader, namespace string) (GenericResult, error) {
+func (s *Server) processGenericFile(header *multipart.FileHeader, namespace, detectedMimeType, overrideType string) (GenericResult, error) {
 	file, err := header.Open()
 	if err != nil {
 		return GenericResult{}, fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
 
-	category := "generic"
+	// Determine actual category based on override
+	actualCategory := determineStorageCategory(detectedMimeType, overrideType)
+	
+	category := actualCategory
 	if namespace != "" {
 		category = namespace
+	}
+
+	// If override is specified, use it for storage path
+	if overrideType != "" && overrideType != "auto" {
+		category = overrideType
 	}
 
 	relPath, err := s.fileService.StoreMediaFile([]string{"files", category}, header.Filename, file)
@@ -263,10 +320,13 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 	}
 
 	return GenericResult{
-		OriginalName: header.Filename,
-		StoredPath:   relPath,
-		FileType:     detectMIMEType(header),
-		Size:         header.Size,
+		OriginalName:     header.Filename,
+		StoredPath:       relPath,
+		FileType:         detectedMimeType,
+		DetectedMimeType: detectedMimeType,
+		UserOverrideType: overrideType,
+		ActualCategory:   actualCategory,
+		Size:             header.Size,
 	}, nil
 }
 
@@ -426,4 +486,61 @@ func sanitizePathSegment(input string) string {
 	}
 	
 	return s
+}
+
+// isValidOverride validates that the override type is one of the allowed values.
+func isValidOverride(override string) bool {
+	validTypes := []string{"auto", "image", "video", "audio", "document", "code"}
+	for _, t := range validTypes {
+		if override == t {
+			return true
+		}
+	}
+	return false
+}
+
+// determineStorageCategory determines the storage category based on MIME type and override.
+func determineStorageCategory(mimeType, override string) string {
+	if override != "" && override != "auto" {
+		// Use override
+		switch override {
+		case "image":
+			return "images"
+		case "video":
+			return "videos"
+		case "audio":
+			return "audio"
+		case "document":
+			return "documents"
+		case "code":
+			return "code"
+		default:
+			return categoryFromMime(mimeType)
+		}
+	}
+	return categoryFromMime(mimeType)
+}
+
+// categoryFromMime determines category from MIME type.
+func categoryFromMime(mimeType string) string {
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "images"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "videos"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case mimeType == "application/pdf",
+		strings.Contains(mimeType, "document"),
+		strings.Contains(mimeType, "text/"):
+		return "documents"
+	case strings.Contains(mimeType, "javascript"),
+		strings.Contains(mimeType, "python"),
+		strings.Contains(mimeType, "java"),
+		strings.Contains(mimeType, "go"),
+		strings.Contains(mimeType, "c++"):
+		return "code"
+	default:
+		return "other"
+	}
 }

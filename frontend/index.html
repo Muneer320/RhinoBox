@@ -205,6 +205,79 @@
                 </div>
               </div>
 
+              <div class="file-type-selector">
+                <p class="selector-label">File Type:</p>
+                <div class="type-buttons" role="radiogroup" aria-label="File type selection">
+                  <button
+                    type="button"
+                    class="type-btn active"
+                    data-type="auto"
+                    role="radio"
+                    aria-checked="true"
+                    title="Auto-detect file type (default)"
+                  >
+                    <span class="type-icon">🔄</span>
+                    <span class="type-label">Auto</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="type-btn"
+                    data-type="image"
+                    role="radio"
+                    aria-checked="false"
+                    title="Treat as Image"
+                  >
+                    <span class="type-icon">🖼️</span>
+                    <span class="type-label">Image</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="type-btn"
+                    data-type="video"
+                    role="radio"
+                    aria-checked="false"
+                    title="Treat as Video"
+                  >
+                    <span class="type-icon">🎬</span>
+                    <span class="type-label">Video</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="type-btn"
+                    data-type="audio"
+                    role="radio"
+                    aria-checked="false"
+                    title="Treat as Audio"
+                  >
+                    <span class="type-icon">🎵</span>
+                    <span class="type-label">Audio</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="type-btn"
+                    data-type="document"
+                    role="radio"
+                    aria-checked="false"
+                    title="Treat as Document"
+                  >
+                    <span class="type-icon">📄</span>
+                    <span class="type-label">Document</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="type-btn"
+                    data-type="code"
+                    role="radio"
+                    aria-checked="false"
+                    title="Treat as Code"
+                  >
+                    <span class="type-icon">💻</span>
+                    <span class="type-label">Code</span>
+                  </button>
+                </div>
+                <p class="selector-help">Select a type to override automatic detection</p>
+              </div>
+
               <div class="dropzone" id="dropzone" role="button" tabindex="0">
                 <span class="dropzone-icon" aria-hidden="true">
                   <svg

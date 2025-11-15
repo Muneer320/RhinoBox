@@ -133,8 +133,9 @@ export async function healthcheck() {
  * @param {File[]} files - Array of File objects to upload
  * @param {string} namespace - Optional namespace for organization
  * @param {string} comment - Optional comment/description
+ * @param {string} fileTypeOverride - Optional file type override (auto, image, video, audio, document, code)
  */
-export async function ingestFiles(files, namespace = '', comment = '') {
+export async function ingestFiles(files, namespace = '', comment = '', fileTypeOverride = '') {
   const formData = new FormData()
   
   // Append all files
@@ -152,6 +153,11 @@ export async function ingestFiles(files, namespace = '', comment = '') {
   }
   if (comment) {
     formData.append('comment', comment)
+  }
+  
+  // Append file type override if specified and not "auto"
+  if (fileTypeOverride && fileTypeOverride !== 'auto') {
+    formData.append('file_type_override', fileTypeOverride)
   }
 
   return apiRequest('/ingest', {

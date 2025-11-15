@@ -149,6 +149,18 @@ func (c *Classifier) Classify(mimeType, filename, hint string) []string {
 
 // ClassifyWithRules classifies a file using both built-in rules and custom routing rules.
 func (c *Classifier) ClassifyWithRules(mimeType, filename, hint string, rulesMgr *RoutingRulesManager) []string {
+    // If hint is a valid override type (image, video, audio, document, code), use it directly
+    validOverrides := map[string]string{
+        "image":    "images",
+        "video":    "videos",
+        "audio":    "audio",
+        "document": "documents",
+        "code":     "code",
+    }
+    if category, ok := validOverrides[hint]; ok {
+        return []string{category}
+    }
+    
     // First check custom routing rules
     if rulesMgr != nil {
         ext := strings.ToLower(filepath.Ext(filename))

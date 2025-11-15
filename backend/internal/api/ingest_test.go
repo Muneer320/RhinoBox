@@ -231,3 +231,191 @@ func TestUnifiedIngestGenericFile(t *testing.T) {
 		t.Errorf("expected document.pdf, got %s", result.Results.Files[0].OriginalName)
 	}
 }
+
+// Test file type override functionality
+func TestFileTypeOverrideValidation(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	fileWriter, _ := writer.CreateFormFile("files", "test.mp4")
+	fileWriter.Write([]byte("fake video data"))
+	
+	writer.WriteField("file_type_override", "invalid_type")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid override, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestFileTypeOverrideImage(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	// Upload a video file but override as image
+	fileWriter, _ := writer.CreateFormFile("files", "video.mp4")
+	fileWriter.Write([]byte("fake video data"))
+	
+	writer.WriteField("file_type_override", "image")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var response UnifiedIngestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(response.Results.Media) != 1 {
+		t.Fatalf("expected 1 media result, got %d", len(response.Results.Media))
+	}
+
+	media := response.Results.Media[0]
+	if media.UserOverrideType != "image" {
+		t.Errorf("expected user_override_type=image, got %s", media.UserOverrideType)
+	}
+	if !strings.Contains(media.Category, "images") {
+		t.Errorf("expected category to contain 'images', got %s", media.Category)
+	}
+	if media.DetectedMimeType == "" {
+		t.Error("expected detected_mime_type to be set")
+	}
+}
+
+func TestFileTypeOverrideDocument(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	// Upload a generic file but override as document
+	fileWriter, _ := writer.CreateFormFile("files", "data.bin")
+	fileWriter.Write([]byte("binary data"))
+	
+	writer.WriteField("file_type_override", "document")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var response UnifiedIngestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(response.Results.Files) != 1 {
+		t.Fatalf("expected 1 file result, got %d", len(response.Results.Files))
+	}
+
+	file := response.Results.Files[0]
+	if file.UserOverrideType != "document" {
+		t.Errorf("expected user_override_type=document, got %s", file.UserOverrideType)
+	}
+	if !strings.Contains(file.StoredPath, "documents") {
+		t.Errorf("expected stored_path to contain 'documents', got %s", file.StoredPath)
+	}
+}
+
+func TestFileTypeOverrideAuto(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	fileWriter, _ := writer.CreateFormFile("files", "photo.jpg")
+	fileWriter.Write([]byte("fake image data"))
+	
+	writer.WriteField("file_type_override", "auto")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var response UnifiedIngestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(response.Results.Media) != 1 {
+		t.Fatalf("expected 1 media result, got %d", len(response.Results.Media))
+	}
+
+	media := response.Results.Media[0]
+	// With auto, override should be empty or "auto"
+	if media.UserOverrideType != "" && media.UserOverrideType != "auto" {
+		t.Errorf("expected user_override_type to be empty or 'auto', got %s", media.UserOverrideType)
+	}
+}
+
+func TestFileTypeOverrideCode(t *testing.T) {
+	srv := newTestServer(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	// Upload a text file but override as code
+	fileWriter, _ := writer.CreateFormFile("files", "script.txt")
+	fileWriter.Write([]byte("print('hello')"))
+	
+	writer.WriteField("file_type_override", "code")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var response UnifiedIngestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(response.Results.Files) != 1 {
+		t.Fatalf("expected 1 file result, got %d", len(response.Results.Files))
+	}
+
+	file := response.Results.Files[0]
+	if file.UserOverrideType != "code" {
+		t.Errorf("expected user_override_type=code, got %s", file.UserOverrideType)
+	}
+	if !strings.Contains(file.StoredPath, "code") {
+		t.Errorf("expected stored_path to contain 'code', got %s", file.StoredPath)
+	}
+}
