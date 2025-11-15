@@ -67,6 +67,9 @@ func (s *Server) routes() {
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
 	r.Get("/files/search", s.handleFileSearch)
+	r.Get("/files/download", s.handleFileDownload)
+	r.Get("/files/metadata", s.handleFileMetadata)
+	r.Get("/files/stream", s.handleFileStream)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -403,20 +406,215 @@ writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
-// Get search query from URL parameter
-query := r.URL.Query().Get("name")
-if query == "" {
-httpError(w, http.StatusBadRequest, "name query parameter is required")
-return
+	// Get search query from URL parameter
+	query := r.URL.Query().Get("name")
+	if query == "" {
+		httpError(w, http.StatusBadRequest, "name query parameter is required")
+		return
+	}
+
+	results := s.storage.FindByOriginalName(query)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"query":   query,
+		"results": results,
+		"count":   len(results),
+	})
 }
 
-results := s.storage.FindByOriginalName(query)
+// handleFileDownload downloads a file by hash or path.
+func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
+	hash := r.URL.Query().Get("hash")
+	path := r.URL.Query().Get("path")
 
-writeJSON(w, http.StatusOK, map[string]any{
-"query":   query,
-"results": results,
-"count":   len(results),
-})
+	var result *storage.FileRetrievalResult
+	var err error
+
+	if hash != "" {
+		result, err = s.storage.GetFileByHash(hash)
+	} else if path != "" {
+		result, err = s.storage.GetFileByPath(path)
+	} else {
+		httpError(w, http.StatusBadRequest, "hash or path query parameter is required")
+		return
+	}
+
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, err.Error())
+		} else if errors.Is(err, storage.ErrInvalidPath) {
+			httpError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
+		}
+		return
+	}
+	defer result.Reader.Close()
+
+	// Log download
+	_ = s.logDownload(r, result, nil, nil)
+
+	// Set headers
+	s.setFileHeaders(w, r, result, "attachment")
+
+	// Copy file to response
+	if _, err := io.Copy(w, result.Reader); err != nil {
+		s.logger.Warn("failed to copy file to response", slog.Any("err", err))
+	}
+}
+
+// handleFileMetadata returns file metadata without downloading the file.
+func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
+	hash := r.URL.Query().Get("hash")
+	if hash == "" {
+		httpError(w, http.StatusBadRequest, "hash query parameter is required")
+		return
+	}
+
+	metadata, err := s.storage.GetFileMetadata(hash)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve metadata: %v", err))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, metadata)
+}
+
+// handleFileStream streams a file with range request support for video/audio streaming.
+func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
+	hash := r.URL.Query().Get("hash")
+	path := r.URL.Query().Get("path")
+
+	var result *storage.FileRetrievalResult
+	var err error
+
+	if hash != "" {
+		result, err = s.storage.GetFileByHash(hash)
+	} else if path != "" {
+		result, err = s.storage.GetFileByPath(path)
+	} else {
+		httpError(w, http.StatusBadRequest, "hash or path query parameter is required")
+		return
+	}
+
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, err.Error())
+		} else if errors.Is(err, storage.ErrInvalidPath) {
+			httpError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
+		}
+		return
+	}
+	defer result.Reader.Close()
+
+	// Parse range header
+	rangeHeader := r.Header.Get("Range")
+	var rangeStart, rangeEnd *int64
+
+	if rangeHeader != "" {
+		var start, end int64
+		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end); err == nil {
+			if start < 0 || start >= result.Size {
+				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
+				return
+			}
+			if end == 0 || end >= result.Size {
+				end = result.Size - 1
+			}
+			if start > end {
+				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
+				return
+			}
+			rangeStart = &start
+			rangeEnd = &end
+		} else if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-", &start); err == nil {
+			if start < 0 || start >= result.Size {
+				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
+				return
+			}
+			end := result.Size - 1
+			rangeStart = &start
+			rangeEnd = &end
+		}
+	}
+
+	// Log download with range info
+	_ = s.logDownload(r, result, rangeStart, rangeEnd)
+
+	// Set headers for streaming
+	if rangeStart != nil && rangeEnd != nil {
+		// Partial content response
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", *rangeStart, *rangeEnd, result.Size))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", *rangeEnd-*rangeStart+1))
+		w.WriteHeader(http.StatusPartialContent)
+	} else {
+		// Full content response
+		s.setFileHeaders(w, r, result, "inline")
+	}
+
+	// Seek to start position if range request
+	if rangeStart != nil {
+		if _, err := result.Reader.Seek(*rangeStart, io.SeekStart); err != nil {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to seek file: %v", err))
+			return
+		}
+	}
+
+	// Copy file to response
+	if rangeStart != nil && rangeEnd != nil {
+		// Copy only the requested range
+		limitedReader := io.LimitReader(result.Reader, *rangeEnd-*rangeStart+1)
+		if _, err := io.Copy(w, limitedReader); err != nil {
+			s.logger.Warn("failed to copy file range to response", slog.Any("err", err))
+		}
+	} else {
+		// Copy entire file
+		if _, err := io.Copy(w, result.Reader); err != nil {
+			s.logger.Warn("failed to copy file to response", slog.Any("err", err))
+		}
+	}
+}
+
+// setFileHeaders sets appropriate HTTP headers for file download/streaming.
+func (s *Server) setFileHeaders(w http.ResponseWriter, r *http.Request, result *storage.FileRetrievalResult, disposition string) {
+	w.Header().Set("Content-Type", result.Metadata.MimeType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", result.Size))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, result.Metadata.OriginalName))
+	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, result.Metadata.Hash))
+	w.Header().Set("Last-Modified", result.Metadata.UploadedAt.Format(http.TimeFormat))
+	w.Header().Set("X-File-Category", result.Metadata.Category)
+	w.Header().Set("X-File-Hash", result.Metadata.Hash)
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+}
+
+// logDownload logs a download event for analytics.
+func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResult, rangeStart, rangeEnd *int64) error {
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = forwarded
+	}
+
+	log := storage.DownloadLog{
+		Hash:         result.Metadata.Hash,
+		StoredPath:   result.Metadata.StoredPath,
+		OriginalName: result.Metadata.OriginalName,
+		MimeType:     result.Metadata.MimeType,
+		Size:         result.Size,
+		DownloadedAt: time.Now().UTC(),
+		RangeStart:   rangeStart,
+		RangeEnd:     rangeEnd,
+		UserAgent:    r.UserAgent(),
+		IPAddress:    ip,
+	}
+
+	return s.storage.LogDownload(log)
 }
 
 // Helper structs

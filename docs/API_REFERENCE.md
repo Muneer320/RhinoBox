@@ -20,6 +20,9 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 | POST   | `/ingest`       | **Unified ingestion** - handles all data types |
 | POST   | `/ingest/media` | Media-specific ingestion                       |
 | POST   | `/ingest/json`  | JSON-specific ingestion                        |
+| GET    | `/files/download` | Download file by hash or path                |
+| GET    | `/files/metadata` | Get file metadata without downloading         |
+| GET    | `/files/stream`   | Stream file with range request support        |
 
 ---
 
@@ -451,6 +454,248 @@ All ingestions logged to: `data/json/ingest_log.ndjson`
   "error": "invalid JSON: ..."
 }
 ```
+
+---
+
+## GET `/files/download`
+
+Download a file by its hash or stored path.
+
+### Query Parameters
+
+| Parameter | Type   | Required | Description                    |
+| --------- | ------ | -------- | ------------------------------ |
+| `hash`    | string | No*      | SHA-256 hash of the file       |
+| `path`    | string | No*      | Stored path of the file        |
+
+\* Either `hash` or `path` must be provided.
+
+### Response Headers
+
+```
+Content-Type: <mime-type>
+Content-Length: <file-size>
+Content-Disposition: attachment; filename="<original-name>"
+ETag: "<file-hash>"
+Last-Modified: <upload-date>
+X-File-Category: <category>
+X-File-Hash: <sha256>
+Accept-Ranges: bytes
+Cache-Control: private, max-age=3600
+```
+
+### Response
+
+Returns the file content as binary data with appropriate MIME type.
+
+### Examples
+
+#### Download by Hash
+
+```bash
+curl -O -J "http://localhost:8090/files/download?hash=abc123def456..."
+```
+
+#### Download by Path
+
+```bash
+curl -O -J "http://localhost:8090/files/download?path=storage/images/jpg/vacation/abc123_photo.jpg"
+```
+
+### Error Responses
+
+**File Not Found** (HTTP 404):
+
+```json
+{
+  "error": "file not found: hash abc123..."
+}
+```
+
+**Invalid Path** (HTTP 400):
+
+```json
+{
+  "error": "invalid path: path traversal detected"
+}
+```
+
+**Missing Parameter** (HTTP 400):
+
+```json
+{
+  "error": "hash or path query parameter is required"
+}
+```
+
+---
+
+## GET `/files/metadata`
+
+Get file metadata without downloading the file content.
+
+### Query Parameters
+
+| Parameter | Type   | Required | Description              |
+| --------- | ------ | -------- | ------------------------ |
+| `hash`    | string | Yes      | SHA-256 hash of the file |
+
+### Response Schema
+
+```json
+{
+  "hash": "abc123def456...",
+  "original_name": "photo.jpg",
+  "stored_path": "storage/images/jpg/vacation/abc123_photo.jpg",
+  "category": "images/jpg/vacation",
+  "mime_type": "image/jpeg",
+  "size": 2048576,
+  "uploaded_at": "2025-11-15T10:30:00Z",
+  "metadata": {
+    "comment": "vacation photo"
+  }
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/files/metadata?hash=abc123def456..."
+```
+
+### Error Responses
+
+**File Not Found** (HTTP 404):
+
+```json
+{
+  "error": "file not found: hash abc123..."
+}
+```
+
+**Missing Parameter** (HTTP 400):
+
+```json
+{
+  "error": "hash query parameter is required"
+}
+```
+
+---
+
+## GET `/files/stream`
+
+Stream a file with HTTP range request support. Ideal for video/audio streaming and partial downloads.
+
+### Query Parameters
+
+| Parameter | Type   | Required | Description                    |
+| --------- | ------ | -------- | ------------------------------ |
+| `hash`    | string | No*      | SHA-256 hash of the file       |
+| `path`    | string | No*      | Stored path of the file        |
+
+\* Either `hash` or `path` must be provided.
+
+### Request Headers
+
+| Header      | Description                                    |
+| ----------- | ---------------------------------------------- |
+| `Range`     | Byte range request (e.g., `bytes=0-1023`)     |
+| `If-Range`  | Conditional range request using ETag           |
+| `If-Modified-Since` | Conditional request using Last-Modified |
+
+### Range Request Formats
+
+- `bytes=0-1023` - First 1024 bytes
+- `bytes=2048-4095` - Bytes 2048 to 4095
+- `bytes=2048-` - From byte 2048 to end of file
+- `bytes=-1024` - Last 1024 bytes (not yet supported)
+
+### Response Headers
+
+**Full Content (200 OK):**
+
+```
+Content-Type: <mime-type>
+Content-Length: <file-size>
+Content-Disposition: inline; filename="<original-name>"
+ETag: "<file-hash>"
+Last-Modified: <upload-date>
+X-File-Category: <category>
+X-File-Hash: <sha256>
+Accept-Ranges: bytes
+Cache-Control: private, max-age=3600
+```
+
+**Partial Content (206 Partial Content):**
+
+```
+Content-Type: <mime-type>
+Content-Range: bytes <start>-<end>/<total>
+Content-Length: <range-size>
+ETag: "<file-hash>"
+Last-Modified: <upload-date>
+Accept-Ranges: bytes
+```
+
+### Examples
+
+#### Stream Full File
+
+```bash
+curl "http://localhost:8090/files/stream?hash=abc123def456..."
+```
+
+#### Stream First 1MB
+
+```bash
+curl -H "Range: bytes=0-1048575" "http://localhost:8090/files/stream?hash=abc123def456..."
+```
+
+#### Stream Middle Range
+
+```bash
+curl -H "Range: bytes=1048576-2097151" "http://localhost:8090/files/stream?hash=abc123def456..."
+```
+
+#### Stream from Position to End
+
+```bash
+curl -H "Range: bytes=1048576-" "http://localhost:8090/files/stream?hash=abc123def456..."
+```
+
+### Error Responses
+
+**File Not Found** (HTTP 404):
+
+```json
+{
+  "error": "file not found: hash abc123..."
+}
+```
+
+**Invalid Range** (HTTP 416):
+
+```json
+{
+  "error": "invalid range"
+}
+```
+
+**Missing Parameter** (HTTP 400):
+
+```json
+{
+  "error": "hash or path query parameter is required"
+}
+```
+
+### Use Cases
+
+- **Video Streaming**: Use range requests to enable seeking in video players
+- **Large File Downloads**: Resume interrupted downloads
+- **Progressive Loading**: Load file chunks on demand
+- **Bandwidth Optimization**: Download only needed portions
 
 ---
 
