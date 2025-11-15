@@ -513,32 +513,27 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer result.Reader.Close()
 
-	// Parse range header
+	// Check If-Modified-Since for 304 response
+	if s.shouldReturn304(w, r, result) {
+		return
+	}
+
+	// Parse range header (check If-Range condition first)
 	rangeHeader := r.Header.Get("Range")
 	var rangeStart, rangeEnd *int64
 
 	if rangeHeader != "" {
-		var start, end int64
-		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end); err == nil {
-			if start < 0 || start >= result.Size {
-				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
+		// Check If-Range: if condition fails, ignore Range header
+		if !s.checkIfRange(r, result) {
+			// If-Range condition failed, treat as no Range header
+			rangeHeader = ""
+		} else {
+			// If-Range condition passed, parse the range
+			start, end, parseErr := s.parseRangeHeader(rangeHeader, result.Size)
+			if parseErr != nil {
+				httpError(w, http.StatusRequestedRangeNotSatisfiable, parseErr.Error())
 				return
 			}
-			if end == 0 || end >= result.Size {
-				end = result.Size - 1
-			}
-			if start > end {
-				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
-				return
-			}
-			rangeStart = &start
-			rangeEnd = &end
-		} else if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-", &start); err == nil {
-			if start < 0 || start >= result.Size {
-				httpError(w, http.StatusRequestedRangeNotSatisfiable, "invalid range")
-				return
-			}
-			end := result.Size - 1
 			rangeStart = &start
 			rangeEnd = &end
 		}
@@ -549,7 +544,9 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 
 	// Set headers for streaming
 	if rangeStart != nil && rangeEnd != nil {
-		// Partial content response
+		// Partial content response - set all file headers first
+		s.setFileHeaders(w, r, result, "inline")
+		// Then override with range-specific headers
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", *rangeStart, *rangeEnd, result.Size))
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", *rangeEnd-*rangeStart+1))
 		w.WriteHeader(http.StatusPartialContent)
@@ -579,6 +576,131 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("failed to copy file to response", slog.Any("err", err))
 		}
 	}
+}
+
+// parseRangeHeader parses the Range header and returns start and end positions.
+// Supports three forms: "bytes=start-end", "bytes=start-", and "bytes=-suffix".
+// Returns an error if the range is invalid or malformed, which should result in 416.
+func (s *Server) parseRangeHeader(rangeHeader string, fileSize int64) (start, end int64, err error) {
+	if fileSize == 0 {
+		return 0, 0, fmt.Errorf("file is empty")
+	}
+
+	// Must start with "bytes="
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, 0, fmt.Errorf("invalid range unit")
+	}
+
+	rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
+	if rangeSpec == "" {
+		return 0, 0, fmt.Errorf("empty range spec")
+	}
+
+	// Handle "start-end" form (e.g., "bytes=0-499")
+	if strings.Contains(rangeSpec, "-") && !strings.HasPrefix(rangeSpec, "-") {
+		parts := strings.SplitN(rangeSpec, "-", 2)
+		if len(parts) != 2 {
+			return 0, 0, fmt.Errorf("malformed range")
+		}
+
+		var startVal, endVal int64
+		if _, parseErr := fmt.Sscanf(parts[0], "%d", &startVal); parseErr != nil {
+			return 0, 0, fmt.Errorf("invalid start position")
+		}
+
+		// Handle end position - can be empty (open-ended) or a number
+		if parts[1] == "" {
+			// Open-ended: "bytes=start-"
+			if startVal < 0 || startVal >= fileSize {
+				return 0, 0, fmt.Errorf("start position out of range")
+			}
+			endVal = fileSize - 1
+		} else {
+			// Both start and end specified: "bytes=start-end"
+			if _, parseErr := fmt.Sscanf(parts[1], "%d", &endVal); parseErr != nil {
+				return 0, 0, fmt.Errorf("invalid end position")
+			}
+			// Treat "bytes=0-0" as valid (requesting first byte)
+			if startVal < 0 || startVal >= fileSize {
+				return 0, 0, fmt.Errorf("start position out of range")
+			}
+			if endVal < startVal || endVal >= fileSize {
+				// If end is out of range, clamp to file size
+				if endVal >= fileSize {
+					endVal = fileSize - 1
+				} else {
+					return 0, 0, fmt.Errorf("end position out of range")
+				}
+			}
+		}
+
+		return startVal, endVal, nil
+	}
+
+	// Handle "-suffix" form (e.g., "bytes=-500" for last 500 bytes)
+	if strings.HasPrefix(rangeSpec, "-") {
+		var suffix int64
+		if _, parseErr := fmt.Sscanf(rangeSpec, "-%d", &suffix); parseErr != nil {
+			return 0, 0, fmt.Errorf("invalid suffix length")
+		}
+		if suffix <= 0 {
+			return 0, 0, fmt.Errorf("suffix must be positive")
+		}
+		if suffix > fileSize {
+			// Request more bytes than available, return entire file
+			return 0, fileSize - 1, nil
+		}
+		startVal := fileSize - suffix
+		return startVal, fileSize - 1, nil
+	}
+
+	return 0, 0, fmt.Errorf("malformed range header")
+}
+
+// shouldReturn304 checks If-Modified-Since header and returns true if a 304 Not Modified response should be sent.
+func (s *Server) shouldReturn304(w http.ResponseWriter, r *http.Request, result *storage.FileRetrievalResult) bool {
+	// Check If-Modified-Since
+	if ifModifiedSince := r.Header.Get("If-Modified-Since"); ifModifiedSince != "" {
+		if t, err := http.ParseTime(ifModifiedSince); err == nil {
+			if !result.Metadata.UploadedAt.After(t) {
+				w.WriteHeader(http.StatusNotModified)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkIfRange validates the If-Range header condition.
+// Returns true if Range header should be honored, false if it should be ignored.
+func (s *Server) checkIfRange(r *http.Request, result *storage.FileRetrievalResult) bool {
+	ifRange := r.Header.Get("If-Range")
+	if ifRange == "" {
+		// No If-Range header, Range should be honored
+		return true
+	}
+
+	// If-Range can be either an ETag or a Last-Modified date
+	expectedETag := fmt.Sprintf(`"%s"`, result.Metadata.Hash)
+	if ifRange == expectedETag {
+		// ETag matches, Range should be honored
+		return true
+	}
+
+	// Try parsing as date
+	if t, err := http.ParseTime(ifRange); err == nil {
+		// Compare with 1 second tolerance for clock skew
+		modTime := result.Metadata.UploadedAt
+		if modTime.Before(t.Add(-time.Second)) || modTime.After(t.Add(time.Second)) {
+			// Resource has been modified, ignore Range header
+			return false
+		}
+		// Date matches (within tolerance), Range should be honored
+		return true
+	}
+
+	// If-Range value doesn't match ETag and isn't a valid date, ignore Range header
+	return false
 }
 
 // setFileHeaders sets appropriate HTTP headers for file download/streaming.
