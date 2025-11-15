@@ -1848,3 +1848,258 @@ body {
   font-size: 14px;
 }
 
+/* Data Page Styles */
+.data-panel {
+  background: var(--surface);
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: clamp(24px, 3vw, 36px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(24px, 3vw, 32px);
+}
+
+.data-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.data-title {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 700;
+}
+
+.data-tabs {
+  display: flex;
+  gap: 8px;
+  background: var(--surface-muted);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.data-tab {
+  all: unset;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.data-tab:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.data-tab.is-active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.data-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-section-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.data-section-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* SQL Table Styles */
+.sql-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.sql-table-wrapper {
+  background: var(--surface-muted);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.sql-table thead {
+  background: var(--surface-muted);
+}
+
+.sql-table th {
+  padding: 16px 20px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border);
+}
+
+.sql-table td {
+  padding: 16px 20px;
+  font-size: 14px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.sql-table tbody tr {
+  transition: background 0.2s ease;
+}
+
+.sql-table tbody tr:hover {
+  background: var(--surface-muted);
+}
+
+.sql-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ghost-button.small {
+  padding: 6px 14px;
+  font-size: 13px;
+  height: auto;
+}
+
+/* NoSQL Diagram Styles */
+.nosql-container {
+  width: 100%;
+  overflow: auto;
+  background: var(--surface-muted);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  padding: 24px;
+  min-height: 600px;
+}
+
+.nosql-diagram {
+  width: 100%;
+  height: 100%;
+  min-height: 600px;
+  position: relative;
+}
+
+.nosql-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 600px;
+}
+
+.nosql-svg .collection-box rect:first-of-type {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.nosql-svg .collection-box rect:last-of-type {
+  fill: var(--accent);
+}
+
+.nosql-svg .embedded-box rect {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
+  fill: var(--surface-muted);
+  stroke: var(--border);
+}
+
+.nosql-svg .collection-box text:first-of-type {
+  fill: white;
+}
+
+.nosql-svg .collection-box text:not(:first-of-type) {
+  fill: var(--text-primary);
+}
+
+.nosql-svg .embedded-box text:first-of-type {
+  fill: var(--text-secondary);
+}
+
+.nosql-svg .embedded-box text:not(:first-of-type) {
+  fill: var(--text-primary);
+}
+
+.nosql-svg line[stroke="var(--border-strong)"],
+.nosql-svg line[stroke*="border-strong"] {
+  stroke: var(--border-strong);
+}
+
+.nosql-svg line[stroke="var(--accent)"],
+.nosql-svg line[stroke*="accent"] {
+  stroke: var(--accent);
+}
+
+.nosql-svg line {
+  marker-end: url(#arrowhead);
+}
+
+.nosql-svg defs marker#arrowhead {
+  fill: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .data-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .data-tabs {
+    width: 100%;
+  }
+
+  .data-tab {
+    flex: 1;
+    text-align: center;
+  }
+
+  .sql-table {
+    font-size: 12px;
+  }
+
+  .sql-table th,
+  .sql-table td {
+    padding: 12px 14px;
+  }
+
+  .nosql-container {
+    padding: 16px;
+    min-height: 400px;
+  }
+
+  .nosql-diagram {
+    min-height: 400px;
+  }
+
+  .nosql-svg {
+    min-height: 400px;
+  }
+}
