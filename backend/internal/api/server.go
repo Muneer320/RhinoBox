@@ -909,6 +909,183 @@ func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "collection type is required")
+		return
+	}
+
+	stats, err := s.storage.GetCollectionStats(collectionType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleSuggestRoutingRule allows users to suggest routing for unrecognized file formats.
+func (s *Server) handleSuggestRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType    string   `json:"mime_type"`
+		Extension   string   `json:"extension"`
+		Destination []string `json:"destination"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Destination) == 0 {
+		httpError(w, http.StatusBadRequest, "destination is required")
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	// Sanitize destination paths
+	sanitizedDest := make([]string, 0, len(req.Destination))
+	for _, part := range req.Destination {
+		sanitized := sanitizePathSegment(part)
+		if sanitized != "" {
+			sanitizedDest = append(sanitizedDest, sanitized)
+		}
+	}
+
+	if len(sanitizedDest) == 0 {
+		httpError(w, http.StatusBadRequest, "destination must contain at least one valid path segment")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.AddRule(req.MimeType, req.Extension, sanitizedDest); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add routing rule: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule added",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+		slog.Any("destination", sanitizedDest),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":     "routing rule added successfully",
+		"mime_type":   req.MimeType,
+		"extension":   req.Extension,
+		"destination": sanitizedDest,
+	})
+}
+
+// handleGetRoutingRules returns all custom routing rules.
+func (s *Server) handleGetRoutingRules(w http.ResponseWriter, r *http.Request) {
+	rulesMgr := s.storage.RoutingRules()
+	rules := rulesMgr.GetAllRules()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules": rules,
+		"count": len(rules),
+	})
+}
+
+// handleUpdateRoutingRule updates an existing routing rule.
+func (s *Server) handleUpdateRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType    string   `json:"mime_type"`
+		Extension   string   `json:"extension"`
+		Destination []string `json:"destination"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Destination) == 0 {
+		httpError(w, http.StatusBadRequest, "destination is required")
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	// Sanitize destination paths
+	sanitizedDest := make([]string, 0, len(req.Destination))
+	for _, part := range req.Destination {
+		sanitized := sanitizePathSegment(part)
+		if sanitized != "" {
+			sanitizedDest = append(sanitizedDest, sanitized)
+		}
+	}
+
+	if len(sanitizedDest) == 0 {
+		httpError(w, http.StatusBadRequest, "destination must contain at least one valid path segment")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.AddRule(req.MimeType, req.Extension, sanitizedDest); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update routing rule: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule updated",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+		slog.Any("destination", sanitizedDest),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":     "routing rule updated successfully",
+		"mime_type":   req.MimeType,
+		"extension":   req.Extension,
+		"destination": sanitizedDest,
+	})
+}
+
+// handleDeleteRoutingRule deletes a routing rule.
+func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType  string `json:"mime_type"`
+		Extension string `json:"extension"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.DeleteRule(req.MimeType, req.Extension); err != nil {
+		httpError(w, http.StatusNotFound, fmt.Sprintf("routing rule not found: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule deleted",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":   "routing rule deleted successfully",
+		"mime_type": req.MimeType,
+		"extension": req.Extension,
+	})
+}
+
 // Helper structs
 
 type jsonIngestRequest struct {
