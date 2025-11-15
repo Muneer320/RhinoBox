@@ -157,3 +157,8 @@ func (idx *MetadataIndex) GetAllMetadata() []FileMetadata {
     }
     return result
 }
+
+// GetAll returns all file metadata entries (alias for GetAllMetadata for compatibility).
+func (idx *MetadataIndex) GetAll() []FileMetadata {
+    return idx.GetAllMetadata()
+}

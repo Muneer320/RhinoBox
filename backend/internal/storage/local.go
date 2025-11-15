@@ -307,6 +307,13 @@ type StatisticsResult struct {
 	Collections map[string]int64 `json:"collections"`
 }
 
+// GetAllMetadata returns all file metadata entries.
+func (m *Manager) GetAllMetadata() []FileMetadata {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.index.GetAll()
+}
+
 // GetStatistics calculates and returns dashboard statistics.
 func (m *Manager) GetStatistics() (*StatisticsResult, error) {
 	m.mu.Lock()
