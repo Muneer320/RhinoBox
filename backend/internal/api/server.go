@@ -107,6 +107,13 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+
+	// Version endpoints
+	r.Post("/files/{file_id}/versions", s.handleCreateVersion)
+	r.Get("/files/{file_id}/versions", s.handleListVersions)
+	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
+	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
+	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
