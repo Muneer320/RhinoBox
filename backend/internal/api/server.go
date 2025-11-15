@@ -131,7 +131,6 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
->>>>>>> origin/main
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -1275,30 +1274,6 @@ func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request)
 		"mime_type": req.MimeType,
 		"extension": req.Extension,
 	})
-}
-
-// sanitizePathSegment removes dangerous characters from path segments.
-func sanitizePathSegment(segment string) string {
-	// Remove leading/trailing whitespace
-	segment = strings.TrimSpace(segment)
-	if segment == "" {
-		return ""
-	}
-
-	// Remove path traversal attempts
-	segment = strings.ReplaceAll(segment, "..", "")
-	segment = strings.ReplaceAll(segment, "/", "")
-	segment = strings.ReplaceAll(segment, "\\", "")
-
-	// Remove control characters and other dangerous chars
-	var result strings.Builder
-	for _, r := range segment {
-		if r > 31 && r != 127 && r != '<' && r != '>' && r != '|' && r != ':' && r != '"' && r != '?' && r != '*' {
-			result.WriteRune(r)
-		}
-	}
-
-	return result.String()
 }
 
 // Helper structs
