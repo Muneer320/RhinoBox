@@ -92,12 +92,15 @@ func (s *Server) routes() {
 	r.Post("/files/duplicates/merge", s.handleMergeDuplicates)
 	r.Get("/files/duplicates/statistics", s.handleDuplicateStatistics)
 
-	// Version endpoints
+	// Version endpoints (must come before /files/{file_id} to avoid route conflicts)
 	r.Post("/files/{file_id}/versions", s.handleCreateVersion)
 	r.Get("/files/{file_id}/versions", s.handleListVersions)
 	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
 	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
 	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
+
+	// Get single file by ID (must come after more specific routes)
+	r.Get("/files/{file_id}", s.handleGetFileByID)
 
 	// Collections endpoints
 	r.Get("/collections", s.handleGetCollections)
@@ -696,6 +699,59 @@ func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, metadata)
 }
 
+// handleGetFileByID retrieves a single file by ID and returns complete file information.
+func (s *Server) handleGetFileByID(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	// Get file metadata
+	metadata, err := s.storage.GetFileMetadata(fileID)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
+		}
+		return
+	}
+
+	// Construct response with complete file information
+	response := map[string]any{
+		"hash":          metadata.Hash,
+		"original_name": metadata.OriginalName,
+		"stored_path":   metadata.StoredPath,
+		"category":      metadata.Category,
+		"mime_type":     metadata.MimeType,
+		"size":          metadata.Size,
+		"uploaded_at":   metadata.UploadedAt.Format(time.RFC3339),
+		"metadata":      metadata.Metadata,
+		// Construct download and stream URLs
+		"download_url": fmt.Sprintf("/files/download?hash=%s", metadata.Hash),
+		"stream_url":   fmt.Sprintf("/files/stream?hash=%s", metadata.Hash),
+		"url":          fmt.Sprintf("/files/download?hash=%s", metadata.Hash), // For backward compatibility
+	}
+
+	// Extract media type from category if available
+	if idx := strings.Index(metadata.Category, "/"); idx > 0 {
+		response["media_type"] = metadata.Category[:idx]
+	} else {
+		response["media_type"] = metadata.Category
+	}
+
+	// Check if dimensions are stored in metadata
+	if width, ok := metadata.Metadata["width"]; ok {
+		response["width"] = width
+	}
+	if height, ok := metadata.Metadata["height"]; ok {
+		response["height"] = height
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
 // handleFileStream streams a file with range request support for video/audio streaming.
 func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
@@ -1218,30 +1274,6 @@ func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request)
 		"mime_type": req.MimeType,
 		"extension": req.Extension,
 	})
-}
-
-// sanitizePathSegment removes dangerous characters from path segments.
-func sanitizePathSegment(segment string) string {
-	// Remove leading/trailing whitespace
-	segment = strings.TrimSpace(segment)
-	if segment == "" {
-		return ""
-	}
-
-	// Remove path traversal attempts
-	segment = strings.ReplaceAll(segment, "..", "")
-	segment = strings.ReplaceAll(segment, "/", "")
-	segment = strings.ReplaceAll(segment, "\\", "")
-
-	// Remove control characters and other dangerous chars
-	var result strings.Builder
-	for _, r := range segment {
-		if r > 31 && r != 127 && r != '<' && r != '>' && r != '|' && r != ':' && r != '"' && r != '?' && r != '*' {
-			result.WriteRune(r)
-		}
-	}
-
-	return result.String()
 }
 
 // Helper structs
