@@ -1,141 +1,156 @@
-## RhinoBox
+# RhinoBox
 
-RhinoBox solves **Problem Statement 2: Intelligent Multi-Modal Storage** by exposing a single Go 1.21 service that ingests both media files and JSON documents, categorizes them automatically, and writes everything to a hackathon-friendly filesystem layout.
+**Intelligent Multi-Modal Storage System** - A Go-based service that automatically categorizes and stores media files and JSON documents with intelligent routing.
 
----
+## 🎯 Key Features
 
-### Architecture At A Glance
+- **Unified Ingest Endpoint**: Single `/ingest` endpoint handles images, videos, audio, JSON, and generic files
+- **Intelligent JSON Routing**: Automatically decides between SQL (relational) vs NoSQL (document) storage based on schema analysis
+- **Smart Media Classification**: MIME-based categorization with content-based deduplication
+- **Parallel Processing**: Optimized concurrent file handling with worker pools
+- **Production Ready**: Graceful shutdown, structured logging, health checks
 
-- `cmd/rhinobox/main.go` loads config, wires dependencies, and runs an HTTP server with signal-aware shutdown.
-- `internal/api/server.go` hosts the Chi router plus the `/healthz`, `/ingest/media`, and `/ingest/json` handlers.
-- `internal/media` sniffs MIME types + filenames to classify uploads and organize directories.
-- `internal/jsonschema` reuses MammothBox heuristics to summarize document batches and pick SQL vs NoSQL.
-- `internal/storage` bootstraps the directory tree, writes media streams, and appends NDJSON logs under `RHINOBOX_DATA_DIR` (default `./data`).
+## 🏗️ Architecture
 
 ```
 backend/
-	cmd/rhinobox/main.go        # entrypoint
-	internal/api/server.go      # HTTP routes + handlers
-	internal/media/...          # MIME classification
-	internal/jsonschema/...     # analyzer + storage decision
-	internal/storage/local.go   # filesystem persistence
+  cmd/rhinobox/main.go          # Application entrypoint
+  internal/
+    api/                         # HTTP handlers and routing
+      server.go                  # Chi router, middleware
+      ingest.go                  # Unified ingest endpoint
+    media/                       # Media classification and processing
+      categorizer.go             # MIME type detection
+      processor.go               # Parallel upload handling
+    jsonschema/                  # JSON analysis and decision engine
+      analyzer.go                # Schema structure analysis
+      decision.go                # SQL vs NoSQL decision logic
+    storage/                     # File persistence layer
+      local.go                   # Filesystem operations
+    config/                      # Configuration management
 ```
 
-### End-to-End Flows
+## 🚀 Quick Start
 
-**Media uploads**
+### Running Locally
 
-1. `/ingest/media` receives a multipart request with any number of `file` parts plus optional `category` and `comment` fields.
-2. `Categorizer.Classify` derives a coarse media type (image/video/audio/other) and infers a category slug (or uses the hint).
-3. `storage.StoreMedia` sanitizes names, applies a UUID suffix, creates directories under `data/media/<media_type>/<category>/`, streams file contents, and returns the relative path.
-4. Every stored asset is appended as NDJSON to `data/media/ingest_log.ndjson` for traceability.
-
-**JSON ingestion**
-
-1. `/ingest/json` accepts either a single `document` or a `documents` array plus `namespace`, optional `comment`, and `metadata`.
-2. `jsonschema.Analyzer` flattens fields (depth 4), tracks type stability, and builds a summary.
-3. `jsonschema.DecideStorage` emits `Decision{Engine: "sql"|"nosql", Reason, Table, Schema}`.
-4. `storage.AppendNDJSON` stores the batch under `data/json/<engine>/<namespace>/batch_*.ndjson` and for SQL decisions writes `schema.json` alongside the inferred DDL.
-5. A log entry is appended to `data/json/ingest_log.ndjson` capturing the decision, namespace, and optional metadata.
-
-### HTTP Surface
-
-| Method | Path            | Description                                                                                                            |
-| ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/healthz`      | Returns `{status:"ok", time:...}` for probes                                                                           |
-| POST   | `/ingest`       | **Unified endpoint**: handles media, JSON, and generic files in single or mixed batches (see `docs/UNIFIED_INGEST.md`) |
-| POST   | `/ingest/media` | Multipart upload with one or more `file` parts, optional `category` + `comment`                                        |
-| POST   | `/ingest/json`  | JSON body containing `document` or `documents`, `namespace`, optional `comment`, `metadata`                            |
-
-### Sample Requests
-
-**Unified Ingestion (Media + JSON)**
-
-```pwsh
-curl -X POST http://localhost:8090/ingest `
-	-F "files=@photo.jpg" `
-	-F "files=@document.pdf" `
-	-F 'data=[{"order_id":101,"total":42.50}]' `
-	-F "namespace=orders" `
-	-F "comment=mixed batch"
+```bash
+cd backend
+go run ./cmd/rhinobox
 ```
 
-**Media Only**
+Server starts on `http://localhost:8090`
 
-```pwsh
-curl -X POST http://localhost:8090/ingest/media `
-	-F "file=@samples/cat.png" `
-	-F "file=@samples/demo.mp4" `
-	-F "category=wildlife" `
-	-F "comment=demo run"
+### Docker
+
+```bash
+cd backend
+docker build -t rhinobox .
+docker run -p 8090:8090 -v ./data:/data rhinobox
 ```
 
-**JSON Only**
+## 📡 API Endpoints
 
-```pwsh
-curl -X POST http://localhost:8090/ingest/json `
-	-H "Content-Type: application/json" `
-	-d '{
-		"namespace": "inventory",
-		"comment": "evening batch",
-		"documents": [
-			{"sku": "A-100", "qty": 42, "price": 19.99},
-			{"sku": "B-200", "qty": 10, "price": 4.25}
-		]
-	}'
+| Method | Endpoint         | Description                                    |
+|--------|------------------|------------------------------------------------|
+| GET    | `/healthz`       | Health check endpoint                          |
+| POST   | `/ingest`        | Unified endpoint for all file types            |
+| POST   | `/ingest/media`  | Media-specific upload (images, videos, audio)  |
+| POST   | `/ingest/json`   | JSON document ingestion with decision engine   |
+
+**See `docs/API_REFERENCE.md` for detailed API documentation.**
+
+## 💡 Example Usage
+
+### Unified Endpoint (Mixed Batch)
+
+```bash
+curl -X POST http://localhost:8090/ingest \
+  -F "files=@photo.jpg" \
+  -F "files=@data.json" \
+  -F "namespace=demo" \
+  -F "comment=mixed upload test"
 ```
 
-### Configuration
+### Media Upload
 
-- `RHINOBOX_ADDR` (default `:8090`) — HTTP bind address
-- `RHINOBOX_DATA_DIR` (default `./data`) — root directory for media + JSON outputs
-- `RHINOBOX_MAX_UPLOAD_MB` (default `512`) — multipart size cap; server converts to bytes internally
+```bash
+curl -X POST http://localhost:8090/ingest/media \
+  -F "file=@image.png" \
+  -F "file=@video.mp4" \
+  -F "category=demo"
+```
 
-### Storage & Logs
+### JSON with Decision Engine
+
+```bash
+curl -X POST http://localhost:8090/ingest/json \
+  -H "Content-Type: application/json" \
+  -d '{
+    "namespace": "products",
+    "comment": "product catalog",
+    "documents": [
+      {"id": 1, "name": "Laptop", "price": 999.99}
+    ]
+  }'
+```
+
+## ⚙️ Configuration
+
+| Variable                | Default  | Description                    |
+|-------------------------|----------|--------------------------------|
+| `RHINOBOX_ADDR`         | `:8090`  | HTTP server bind address       |
+| `RHINOBOX_DATA_DIR`     | `./data` | Storage root directory         |
+| `RHINOBOX_MAX_UPLOAD_MB`| `512`    | Maximum upload size (MB)       |
+
+## 📁 Storage Structure
 
 ```
 data/
-	media/
-		<media_type>/<category>/<uuid>_<original>
-		ingest_log.ndjson
-	json/
-		sql|nosql/<namespace>/batch_*.ndjson
-		sql/<table>/schema.json
-		ingest_log.ndjson
+  storage/
+    images/png/<category>/<hash>_<filename>
+    videos/mp4/<category>/<hash>_<filename>
+    audio/mp3/<category>/<hash>_<filename>
+  json/
+    sql/<namespace>/
+      batch_YYYYMMDDTHHMMSSZ.ndjson
+      schema.json
+    nosql/<namespace>/
+      batch_YYYYMMDDTHHMMSSZ.ndjson
+  metadata/
+    files.ndjson          # Ingestion logs
 ```
 
-Every ingestion is captured as newline-delimited JSON for easy replay and analytics.
+## 🧪 Testing
 
-### Running & Testing
-
-```pwsh
-Set-Location backend
-go run ./cmd/rhinobox
-
-# optional compilation check
-go test ./...
+```bash
+cd backend
+go test ./...                    # Unit tests
+go test -run Integration ./...   # Integration tests
 ```
 
-**Dockerized run** (more in `docs/DOCKER.md`):
+## 📚 Documentation
 
-```pwsh
-Set-Location backend
-docker build -t rhinobox-backend .
-docker run --rm -it -p 8080:8090 -v ..\\rhino-data:/data rhinobox-backend
-```
+- **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation with request/response schemas
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and component overview
+- **[Docker Guide](docs/DOCKER.md)** - Container deployment instructions
 
-### Operational Notes
+## 🔑 Key Implementation Details
 
-- Chi middleware provides structured logging and panic recovery out of the box.
-- `http.Transport` is tuned with `MaxIdleConnsPerHost = 32` for smoother concurrent uploads.
-- Graceful shutdown is handled via `context.WithCancel` around SIGINT/SIGTERM.
-- All writes stay inside `RHINOBOX_DATA_DIR`, making it easy to mount/ship during demos.
+### Intelligent JSON Decision Engine
+- Analyzes schema structure (depth, field stability, relationships)
+- **SQL route**: Flat schemas with stable fields, generates PostgreSQL DDL
+- **NoSQL route**: Nested/dynamic schemas, optimized for document stores
+- Confidence scoring and detailed decision reasoning
 
-### Roadmap / Next Steps
+### Smart Media Processing
+- MIME-based classification with fallback detection
+- Content-based deduplication using SHA-256 hashing
+- Parallel worker pools for concurrent uploads
+- Automatic directory organization by type and category
 
-1. Back SQL decisions with a lightweight SQLite table writer and wire a document database (DuckDB/Badger) for NoSQL to satisfy end-to-end persistence.
-2. Enhance analyzer to infer relationships/foreign keys when multiple collections arrive together.
-3. Add automated integration tests (media + JSON fixtures) and a Postman/newman collection for hand-off validation.
-4. Harden container image (health checks, distroless base) or add a Taskfile for repeatable local workflows.
-
-Need another artifact (sample frontend hooks, deployment manifest, or load test script)? Open an issue, and RhinoBox will keep evolving.
+### Production Features
+- Structured logging with `slog`
+- Graceful shutdown handling
+- Request timeout and size limits
+- Health check endpoint for monitoring
