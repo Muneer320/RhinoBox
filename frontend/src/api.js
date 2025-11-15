@@ -190,8 +190,7 @@ export async function ingestJSON(documents, namespace, comment = '') {
 
 /**
  * Get files by category/type
- * Note: This endpoint may not exist in the backend yet, but included for frontend needs
- * @param {string} type - File type (images, videos, audio, json)
+ * @param {string} type - File type (images, videos, audio, documents, etc.)
  * @param {string} category - Optional category filter
  * @param {object} params - Query parameters (page, limit, etc.)
  */
@@ -202,12 +201,15 @@ export async function getFiles(type, category = '', params = {}) {
     queryParams.append('category', category)
   }
   
+  // Add pagination and other params
   Object.keys(params).forEach(key => {
-    queryParams.append(key, params[key])
+    if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+      queryParams.append(key, params[key])
+    }
   })
   
   const queryString = queryParams.toString()
-  const endpoint = `/files/${type}${queryString ? `?${queryString}` : ''}`
+  const endpoint = `/files/type/${type}${queryString ? `?${queryString}` : ''}`
   
   return apiRequest(endpoint, {
     method: 'GET',

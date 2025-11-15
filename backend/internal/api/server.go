@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,6 +74,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/files/type/{type}", s.handleGetFilesByType)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -894,6 +896,89 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetFilesByType retrieves files filtered by collection type with pagination.
+func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "type parameter is required")
+		return
+	}
+
+	// Parse pagination parameters
+	page := 1
+	limit := 50
+	category := ""
+
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	if cat := r.URL.Query().Get("category"); cat != "" {
+		category = cat
+	}
+
+	// Call storage layer
+	req := storage.GetFilesByTypeRequest{
+		Type:     collectionType,
+		Page:     page,
+		Limit:    limit,
+		Category: category,
+	}
+
+	result, err := s.storage.GetFilesByType(req)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve files: %v", err))
+		return
+	}
+
+	// Transform FileMetadata to API response format
+	files := make([]map[string]any, 0, len(result.Files))
+	for _, file := range result.Files {
+		// Extract dimensions from metadata if available
+		dimensions := ""
+		if dims, ok := file.Metadata["dimensions"]; ok {
+			dimensions = dims
+		}
+
+		fileResponse := map[string]any{
+			"id":         file.Hash,
+			"name":       file.OriginalName,
+			"path":       file.StoredPath,
+			"size":       file.Size,
+			"type":       file.MimeType,
+			"date":       file.UploadedAt.Format(time.RFC3339),
+			"dimensions": dimensions,
+			"category":   file.Category,
+			"hash":       file.Hash,
+		}
+
+		// Add download URL
+		fileResponse["url"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
+		fileResponse["downloadUrl"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
+
+		files = append(files, fileResponse)
+	}
+
+	response := map[string]any{
+		"files":       files,
+		"total":       result.Total,
+		"page":        result.Page,
+		"limit":       result.Limit,
+		"total_pages": result.TotalPages,
+		"type":        collectionType,
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Helper structs
