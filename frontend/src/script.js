@@ -24,6 +24,9 @@ import {
   getUserFriendlyErrorMessage
 } from './ui-components.js'
 
+// Import error boundary
+import { withErrorHandling, createSafeAsyncFunction, ErrorBoundary } from './errorBoundary.js'
+
 const root = document.documentElement
 const THEME_KEY = 'rhinobox-theme'
 let currentCollectionType = null
@@ -290,6 +293,17 @@ function initCollectionCards() {
 // Load statistics for all collection cards
 async function loadAllCollectionStats() {
   const collectionTypes = ['images', 'videos', 'audio', 'documents', 'spreadsheets', 'presentations', 'archives', 'other']
+  
+  // Show loading state on all collection cards
+  collectionTypes.forEach(type => {
+    const statsContainer = document.querySelector(`[data-stats="${type}"]`)
+    if (statsContainer) {
+      const fileCountEl = statsContainer.querySelector('[data-stat="file_count"]')
+      const storageUsedEl = statsContainer.querySelector('[data-stat="storage_used"]')
+      if (fileCountEl) fileCountEl.textContent = '...'
+      if (storageUsedEl) storageUsedEl.textContent = '...'
+    }
+  })
   
   // Load stats for all collections in parallel
   const statsPromises = collectionTypes.map(async (type) => {
@@ -587,13 +601,21 @@ function initGalleryMenus() {
         e.preventDefault()
         const newName = prompt('Enter new name:', fileName)
         if (newName && newName.trim() && newName !== fileName) {
+          // Show loading state
+          const originalText = titleElement.textContent
+          titleElement.textContent = 'Renaming...'
+          titleElement.style.opacity = '0.6'
+          
           try {
             await renameFile(fileId, newName.trim())
             titleElement.textContent = newName.trim()
+            titleElement.style.opacity = '1'
             galleryItem.dataset.fileName = newName.trim()
             showToast(`Renamed to "${newName.trim()}"`)
           } catch (error) {
             console.error('Rename error:', error)
+            titleElement.textContent = originalText
+            titleElement.style.opacity = '1'
             const errorMessage = getUserFriendlyErrorMessage(error)
             showToast(`Failed to rename: ${errorMessage}`)
           }
@@ -601,6 +623,17 @@ function initGalleryMenus() {
       } else if (action === 'delete') {
         e.preventDefault()
         if (confirm(`Are you sure you want to delete "${fileName}"?`)) {
+          // Show loading state
+          galleryItem.style.opacity = '0.5'
+          galleryItem.style.pointerEvents = 'none'
+          const loadingIndicator = createLoadingState('Deleting...', 'small')
+          loadingIndicator.style.position = 'absolute'
+          loadingIndicator.style.top = '50%'
+          loadingIndicator.style.left = '50%'
+          loadingIndicator.style.transform = 'translate(-50%, -50%)'
+          loadingIndicator.style.zIndex = '20'
+          galleryItem.appendChild(loadingIndicator)
+          
           try {
             await deleteFile(fileId)
             galleryItem.style.opacity = '0'
@@ -611,6 +644,11 @@ function initGalleryMenus() {
             }, 200)
           } catch (error) {
             console.error('Delete error:', error)
+            galleryItem.style.opacity = '1'
+            galleryItem.style.pointerEvents = 'auto'
+            if (loadingIndicator && loadingIndicator.parentNode) {
+              loadingIndicator.remove()
+            }
             const errorMessage = getUserFriendlyErrorMessage(error)
             showToast(`Failed to delete: ${errorMessage}`)
           }
@@ -708,47 +746,32 @@ function initGhostButton() {
   }
 }
 
-// Download file function with progress tracking
-async function downloadFile(fileId, fileName, fileHash, filePath) {
-  let progressToast = null
-  let progressInterval = null
+// Download file function with loading state and progress tracking
+async function downloadFile(fileId, fileName, fileHash, filePath, retryCount = 0) {
+  const galleryItem = document.querySelector(`[data-file-id="${fileId}"]`)
+  let loadingIndicator = null
   
   try {
-    // Show initial download message
-    showToast(`Starting download: "${fileName}"...`)
+    // Show download progress
+    showToast(`Downloading "${fileName}"...`)
     
-    // Format file size helper
-    const formatBytes = (bytes) => {
-      if (!bytes || bytes === 0) return '0 B'
-      const k = 1024
-      const sizes = ['B', 'KB', 'MB', 'GB']
-      const i = Math.floor(Math.log(bytes) / Math.log(k))
-      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
-    }
-    
-    // Progress callback
-    const onProgress = (loaded, total) => {
-      if (total) {
-        const percent = Math.round((loaded / total) * 100)
-        const loadedStr = formatBytes(loaded)
-        const totalStr = formatBytes(total)
-        showToast(`Downloading "${fileName}": ${percent}% (${loadedStr} / ${totalStr})`, 0)
-      } else {
-        const loadedStr = formatBytes(loaded)
-        showToast(`Downloading "${fileName}": ${loadedStr}...`, 0)
+    // Show loading indicator on gallery item if available
+    if (galleryItem) {
+      const menuButton = galleryItem.querySelector('.gallery-menu-button')
+      if (menuButton) {
+        menuButton.disabled = true
+        menuButton.style.opacity = '0.5'
+        loadingIndicator = createLoadingState('', 'small')
+        loadingIndicator.style.position = 'absolute'
+        loadingIndicator.style.top = '12px'
+        loadingIndicator.style.right = '12px'
+        loadingIndicator.style.zIndex = '15'
+        galleryItem.appendChild(loadingIndicator)
       }
     }
     
     // Fetch file blob from backend using proper download endpoint
-    // Use fileId if hash is not available
-    const blob = await apiDownloadFile(
-      fileHash || null,
-      filePath || null,
-      fileId || null,
-      fileName,
-      onProgress,
-      'blob'
-    )
+    const blob = await apiDownloadFile(fileHash, filePath, fileName)
     
     // Create blob URL and trigger download
     const blobUrl = window.URL.createObjectURL(blob)
@@ -765,28 +788,32 @@ async function downloadFile(fileId, fileName, fileHash, filePath) {
       window.URL.revokeObjectURL(blobUrl)
     }, 100)
     
-    showToast(`Successfully downloaded "${fileName}"`)
+    showToast(`Downloaded "${fileName}"`)
   } catch (error) {
     console.error('Download error:', error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
     
-    // Provide user-friendly error messages
-    let errorMessage = 'Download failed'
-    if (error.status === 404) {
-      errorMessage = 'File not found'
-    } else if (error.status === 403) {
-      errorMessage = 'Access denied'
-    } else if (error.status === 401) {
-      errorMessage = 'Authentication required'
-    } else if (error.message) {
-      errorMessage = error.message
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to download "${fileName}": ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return downloadFile(fileId, fileName, fileHash, filePath, retryCount + 1)
+      }
     }
     
     showToast(`Download failed: ${errorMessage}`)
     throw error
   } finally {
-    // Clear any progress intervals
-    if (progressInterval) {
-      clearInterval(progressInterval)
+    // Clean up loading indicator
+    if (loadingIndicator && loadingIndicator.parentNode) {
+      loadingIndicator.remove()
+    }
+    if (galleryItem) {
+      const menuButton = galleryItem.querySelector('.gallery-menu-button')
+      if (menuButton) {
+        menuButton.disabled = false
+        menuButton.style.opacity = '1'
+      }
     }
   }
 }
@@ -812,11 +839,24 @@ function ensureButtonsClickable() {
   })
 }
 
-// Upload files to backend
+// Upload files to backend with loading state
 async function uploadFiles(files, retryCount = 0) {
   if (!files || files.length === 0) {
     showToast('No files selected')
     return
+  }
+  
+  // Show loading state in dropzone
+  const dropzone = document.getElementById('dropzone')
+  const originalDropzoneContent = dropzone ? dropzone.innerHTML : null
+  let loadingComponent = null
+  
+  if (dropzone) {
+    dropzone.style.pointerEvents = 'none'
+    dropzone.style.opacity = '0.6'
+    loadingComponent = createLoadingState(`Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`, 'medium')
+    dropzone.innerHTML = ''
+    dropzone.appendChild(loadingComponent)
   }
   
   try {
@@ -844,6 +884,27 @@ async function uploadFiles(files, retryCount = 0) {
     console.error('Upload error:', error)
     const errorMessage = getUserFriendlyErrorMessage(error)
     
+    // Show error state in dropzone
+    if (dropzone) {
+      dropzone.innerHTML = ''
+      const errorType = getErrorType(error)
+      const errorComponent = createErrorState(
+        errorMessage,
+        retryCount < 3 ? () => uploadFiles(files, retryCount + 1) : null,
+        errorType
+      )
+      dropzone.appendChild(errorComponent)
+      
+      // Restore dropzone after 5 seconds
+      setTimeout(() => {
+        if (dropzone && originalDropzoneContent) {
+          dropzone.innerHTML = originalDropzoneContent
+          dropzone.style.pointerEvents = 'auto'
+          dropzone.style.opacity = '1'
+        }
+      }, 5000)
+    }
+    
     // Show error with retry option if retry count is less than 3
     if (retryCount < 3) {
       const shouldRetry = confirm(`${errorMessage}\n\nWould you like to retry?`)
@@ -853,6 +914,14 @@ async function uploadFiles(files, retryCount = 0) {
     }
     
     showToast(`Upload failed: ${errorMessage}`)
+    return
+  }
+  
+  // Restore dropzone after successful upload
+  if (dropzone && originalDropzoneContent) {
+    dropzone.innerHTML = originalDropzoneContent
+    dropzone.style.pointerEvents = 'auto'
+    dropzone.style.opacity = '1'
   }
 }
 
@@ -1126,11 +1195,14 @@ async function renderComments(fileId, retryCount = 0) {
       
       // Attach delete handlers
       commentsList.querySelectorAll('.comment-delete-button').forEach(button => {
-        button.addEventListener('click', (e) => {
-          e.stopPropagation()
-          const commentId = button.dataset.commentId
-          deleteComment(fileId, commentId)
-        })
+        if (!button.hasAttribute('data-handler-attached')) {
+          button.setAttribute('data-handler-attached', 'true')
+          button.addEventListener('click', (e) => {
+            e.stopPropagation()
+            const commentId = button.dataset.commentId
+            deleteComment(fileId, commentId)
+          })
+        }
       })
     }
   } catch (error) {
@@ -1157,38 +1229,104 @@ function escapeHtml(text) {
   return div.innerHTML
 }
 
-// Add a new comment
-async function addComment(fileId, text) {
+// Add a new comment with loading state
+async function addComment(fileId, text, retryCount = 0) {
   if (!text.trim()) {
     showToast('Note cannot be empty')
     return
   }
   
+  // Show loading state
+  const commentSubmit = document.getElementById('comment-submit')
+  const originalSubmitText = commentSubmit ? commentSubmit.textContent : null
+  if (commentSubmit) {
+    commentSubmit.disabled = true
+    commentSubmit.textContent = 'Adding...'
+  }
+  
   try {
     await addNote(fileId, text.trim())
-    commentInput.value = ''
+    if (commentInput) commentInput.value = ''
     await renderComments(fileId)
     showToast('Note added')
   } catch (error) {
     console.error('Error adding note:', error)
     const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to add note: ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return addComment(fileId, text, retryCount + 1)
+      }
+    }
+    
     showToast(`Failed to add note: ${errorMessage}`)
+  } finally {
+    if (commentSubmit && originalSubmitText) {
+      commentSubmit.disabled = false
+      commentSubmit.textContent = originalSubmitText
+    }
   }
 }
 
-// Delete a comment
-async function deleteComment(fileId, commentId) {
+// Delete a comment with loading state
+async function deleteComment(fileId, commentId, retryCount = 0) {
   if (!confirm('Are you sure you want to delete this note?')) {
     return
   }
   
+  // Find and show loading state on comment item
+  const commentItem = document.querySelector(`[data-comment-id="${commentId}"]`)
+  let loadingIndicator = null
+  
+  if (commentItem) {
+    commentItem.style.opacity = '0.5'
+    commentItem.style.pointerEvents = 'none'
+    loadingIndicator = createLoadingState('Deleting...', 'small')
+    loadingIndicator.style.position = 'absolute'
+    loadingIndicator.style.top = '50%'
+    loadingIndicator.style.left = '50%'
+    loadingIndicator.style.transform = 'translate(-50%, -50%)'
+    loadingIndicator.style.zIndex = '10'
+    commentItem.style.position = 'relative'
+    commentItem.appendChild(loadingIndicator)
+  }
+  
   try {
     await deleteNote(fileId, commentId)
+    if (commentItem) {
+      commentItem.style.opacity = '0'
+      setTimeout(() => {
+        if (commentItem.parentNode) {
+          commentItem.remove()
+        }
+      }, 200)
+    }
     await renderComments(fileId)
     showToast('Note deleted')
   } catch (error) {
     console.error('Error deleting note:', error)
+    
+    // Restore comment item
+    if (commentItem) {
+      commentItem.style.opacity = '1'
+      commentItem.style.pointerEvents = 'auto'
+      if (loadingIndicator && loadingIndicator.parentNode) {
+        loadingIndicator.remove()
+      }
+    }
+    
     const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to delete note: ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return deleteComment(fileId, commentId, retryCount + 1)
+      }
+    }
+    
     showToast(`Failed to delete note: ${errorMessage}`)
   }
 }
@@ -1279,7 +1417,7 @@ async function loadStatistics(retryCount = 0) {
     
     // Render charts if data available
     if (chartsContainer) {
-      if (stats.charts) {
+      if (stats.charts && Array.isArray(stats.charts) && stats.charts.length > 0) {
         // Charts rendering can be added here based on backend response
         chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
       } else {
@@ -1291,6 +1429,25 @@ async function loadStatistics(retryCount = 0) {
         chartsContainer.innerHTML = ''
         chartsContainer.appendChild(emptyCharts)
       }
+    }
+    
+    // Show empty state if no statistics available
+    if (totalFiles === 0 && storageUsed === '0 B' && collections === 0) {
+      const emptyStats = createEmptyState(
+        'No statistics available',
+        'Statistics will appear here once you start uploading files.',
+        'generic',
+        {
+          label: 'Upload Files',
+          onClick: () => {
+            showPage('home')
+            const fileInput = document.getElementById('fileInput')
+            if (fileInput) fileInput.click()
+          }
+        }
+      )
+      statsGrid.innerHTML = ''
+      statsGrid.appendChild(emptyStats)
     }
     
   } catch (error) {
