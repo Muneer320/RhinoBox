@@ -759,6 +759,9 @@ function initSidebarNavigation() {
       } else if (target === "data") {
         // Initialize data tabs when switching to data page
         initDataTabs();
+        // Load SQL and NoSQL data
+        loadSQLTables();
+        loadNoSQLCollections();
         // Update diagram colors
         setTimeout(updateNosqlDiagramColors, 100);
       }
@@ -1359,8 +1362,21 @@ async function loadCollections() {
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    // Render collection cards
-    collections.forEach((collection) => {
+    // Filter out empty collections (collections with 0 files)
+    const nonEmptyCollections = collections.filter((collection) => {
+      const stats = statsMap.get(collection.type);
+      const fileCount = stats?.file_count || 0;
+      return fileCount > 0;
+    });
+
+    if (nonEmptyCollections.length === 0) {
+      collectionCards.innerHTML =
+        '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">No collections with files available</p>';
+      return;
+    }
+
+    // Render collection cards for non-empty collections only
+    nonEmptyCollections.forEach((collection) => {
       const stats = statsMap.get(collection.type) || {
         file_count: 0,
         storage_used_formatted: "0 B",
@@ -1973,9 +1989,13 @@ function initDataTabs() {
       if (tabType === "sql") {
         sqlSection.style.display = "flex";
         nosqlSection.style.display = "none";
+        // Load SQL tables when switching to SQL tab
+        loadSQLTables();
       } else if (tabType === "nosql") {
         sqlSection.style.display = "none";
         nosqlSection.style.display = "flex";
+        // Load NoSQL collections when switching to NoSQL tab
+        loadNoSQLCollections();
         // Update diagram colors when switching to NoSQL tab
         setTimeout(updateNosqlDiagramColors, 100);
         // Initialize zoom and pan when switching to NoSQL tab
@@ -1983,6 +2003,279 @@ function initDataTabs() {
       }
     });
   });
+}
+
+// Load SQL tables from backend
+async function loadSQLTables() {
+  const tbody = document.getElementById("sql-tables-body");
+  if (!tbody) return;
+
+  try {
+    // For now, we'll get SQL data from JSON collections that were stored as SQL
+    // This would need a proper SQL tables endpoint in the backend
+    // For now, show empty state
+    tbody.innerHTML = "";
+    const emptyTr = document.createElement("tr");
+    emptyTr.id = "sql-empty";
+    emptyTr.innerHTML = `
+      <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+        No SQL tables available. Upload JSON data to create SQL tables.
+      </td>
+    `;
+    tbody.appendChild(emptyTr);
+  } catch (error) {
+    console.error("Error loading SQL tables:", error);
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+            Error loading SQL tables
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+// Load NoSQL collections and create tiles
+async function loadNoSQLCollections() {
+  const nosqlDiagram = document.getElementById("nosql-diagram");
+  if (!nosqlDiagram) return;
+
+  try {
+    const svg = nosqlDiagram.querySelector(".nosql-svg");
+    if (!svg) return;
+
+    // Get or create transform group
+    let transformGroup = svg.querySelector("g.nosql-transform-group");
+    if (!transformGroup) {
+      transformGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      transformGroup.classList.add("nosql-transform-group");
+      svg.appendChild(transformGroup);
+    }
+
+    // Clear existing collection tiles
+    const existingTiles = transformGroup.querySelectorAll(".nosql-collection-tile");
+    existingTiles.forEach(tile => tile.remove());
+    
+    const emptyMessage = document.getElementById("nosql-empty-message");
+    
+    // Try to get JSON collections (NoSQL data)
+    // For now, we'll check if there's a json collection type
+    try {
+      const jsonFiles = await getFiles("json", "", { limit: 100 });
+      const files = jsonFiles.files || jsonFiles || [];
+      
+      if (files.length === 0) {
+        if (emptyMessage) emptyMessage.style.display = "block";
+        return;
+      }
+      
+      if (emptyMessage) emptyMessage.style.display = "none";
+      
+      // Group files by namespace/collection name to create different tiles
+      const collectionsMap = new Map();
+      files.forEach(file => {
+        const namespace = file.namespace || file.collection || "default";
+        if (!collectionsMap.has(namespace)) {
+          collectionsMap.set(namespace, []);
+        }
+        collectionsMap.get(namespace).push(file);
+      });
+      
+      // Create a tile for each collection/namespace
+      let xPos = 50;
+      let yPos = 50;
+      const tileWidth = 200;
+      const tileSpacing = 250;
+      const maxPerRow = 4;
+      
+      collectionsMap.forEach((files, namespace) => {
+        // Create collection tile
+        const tile = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        tile.classList.add("nosql-collection-tile");
+        tile.setAttribute("transform", `translate(${xPos}, ${yPos})`);
+        tile.style.cursor = "pointer";
+        tile.dataset.namespace = namespace;
+        tile.dataset.files = JSON.stringify(files);
+        
+        // Create rectangle for collection
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("width", tileWidth);
+        rect.setAttribute("height", 120);
+        rect.setAttribute("rx", 8);
+        rect.setAttribute("fill", "var(--surface)");
+        rect.setAttribute("stroke", "var(--border)");
+        rect.setAttribute("stroke-width", "2");
+        tile.appendChild(rect);
+        
+        // Create text for collection name
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", tileWidth / 2);
+        text.setAttribute("y", 40);
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("font-size", "14");
+        text.setAttribute("font-weight", "600");
+        text.setAttribute("fill", "var(--text-primary)");
+        text.textContent = namespace;
+        tile.appendChild(text);
+        
+        // Create text for document count
+        const countText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        countText.setAttribute("x", tileWidth / 2);
+        countText.setAttribute("y", 70);
+        countText.setAttribute("text-anchor", "middle");
+        countText.setAttribute("font-size", "12");
+        countText.setAttribute("fill", "var(--text-secondary)");
+        countText.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
+        tile.appendChild(countText);
+        
+        // Add click handler to show modal
+        tile.addEventListener("click", () => {
+          showNoSQLCollectionModal(namespace, files);
+        });
+        
+        // Add hover effect
+        tile.addEventListener("mouseenter", () => {
+          rect.setAttribute("fill", "var(--surface-muted)");
+          rect.setAttribute("stroke", "var(--accent)");
+        });
+        tile.addEventListener("mouseleave", () => {
+          rect.setAttribute("fill", "var(--surface)");
+          rect.setAttribute("stroke", "var(--border)");
+        });
+        
+        transformGroup.appendChild(tile);
+        
+        // Update position for next tile
+        xPos += tileSpacing;
+        if (xPos > (maxPerRow - 1) * tileSpacing) {
+          xPos = 50;
+          yPos += tileSpacing;
+        }
+      });
+    } catch (error) {
+      console.error("Error loading NoSQL collections:", error);
+      if (emptyMessage) emptyMessage.style.display = "block";
+    }
+  } catch (error) {
+    console.error("Error initializing NoSQL diagram:", error);
+  }
+}
+
+// Show NoSQL collection modal with details
+function showNoSQLCollectionModal(namespace, files) {
+  const modal = document.getElementById("nosql-collection-modal");
+  const modalTitle = document.getElementById("nosql-modal-title");
+  const modalSubtitle = document.getElementById("nosql-modal-subtitle");
+  const collectionInfo = document.getElementById("nosql-collection-info");
+  const collectionDocuments = document.getElementById("nosql-collection-documents");
+  const closeButton = document.getElementById("nosql-modal-close");
+  
+  if (!modal) return;
+  
+  // Set modal title
+  modalTitle.textContent = `Collection: ${namespace}`;
+  modalSubtitle.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
+  
+  // Calculate total size
+  const totalSize = files.reduce((sum, file) => sum + (file.size || file.fileSize || 0), 0);
+  const formattedSize = formatFileSize(totalSize);
+  
+  // Populate collection info
+  collectionInfo.innerHTML = `
+    <div style="background: var(--surface-muted); padding: 20px; border-radius: 12px; border: 1px solid var(--border);">
+      <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">Collection Statistics</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+        <div>
+          <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Namespace</p>
+          <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">${escapeHtml(namespace)}</p>
+        </div>
+        <div>
+          <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Documents</p>
+          <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">${files.length}</p>
+        </div>
+        <div>
+          <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Total Size</p>
+          <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">${formattedSize}</p>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Populate documents list
+  if (files.length === 0) {
+    collectionDocuments.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+        <p>No documents in this collection.</p>
+      </div>
+    `;
+  } else {
+    collectionDocuments.innerHTML = `
+      <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">Documents</h3>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        ${files.map((file, index) => {
+          const fileSize = formatFileSize(file.size || file.fileSize || 0);
+          const fileDate = file.date || file.uploadedAt || new Date().toISOString();
+          const formattedDate = new Date(fileDate).toLocaleDateString();
+          
+          return `
+            <div style="background: var(--surface); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                <div>
+                  <p style="margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary);">
+                    ${escapeHtml(file.name || file.fileName || `Document ${index + 1}`)}
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-secondary);">
+                    ${fileSize} • ${formattedDate}
+                  </p>
+                </div>
+                ${file.url || file.downloadUrl ? `
+                  <a href="${API_CONFIG.baseURL}${file.url || file.downloadUrl}" target="_blank" 
+                     style="padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; 
+                            text-decoration: none; font-size: 12px; font-weight: 600;">
+                    View
+                  </a>
+                ` : ''}
+              </div>
+              ${file.description || file.comment ? `
+                <p style="margin: 8px 0 0 0; font-size: 13px; color: var(--text-secondary);">
+                  ${escapeHtml(file.description || file.comment)}
+                </p>
+              ` : ''}
+              ${file.hash ? `
+                <p style="margin: 8px 0 0 0; font-size: 11px; color: var(--text-secondary); font-family: monospace;">
+                  Hash: ${escapeHtml(file.hash.substring(0, 16))}...
+                </p>
+              ` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+  
+  // Show modal
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  
+  // Close button handler
+  const closeModal = () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  };
+  
+  closeButton.onclick = closeModal;
+  modal.querySelector(".comments-modal-overlay").onclick = closeModal;
+  
+  // Close on Escape key
+  const handleEscape = (e) => {
+    if (e.key === "Escape" && modal.style.display === "flex") {
+      closeModal();
+      document.removeEventListener("keydown", handleEscape);
+    }
+  };
+  document.addEventListener("keydown", handleEscape);
 }
 
 // Comments functionality - variables declared before use

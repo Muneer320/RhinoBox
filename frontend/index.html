@@ -466,33 +466,7 @@
                         </tr>
                       </thead>
                       <tbody id="sql-tables-body">
-                        <tr>
-                          <td>users</td>
-                          <td>1,234</td>
-                          <td>2.5 MB</td>
-                          <td>2024-01-15</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>orders</td>
-                          <td>5,678</td>
-                          <td>8.2 MB</td>
-                          <td>2024-01-15</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>products</td>
-                          <td>890</td>
-                          <td>1.1 MB</td>
-                          <td>2024-01-14</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
+                        <!-- SQL tables will be dynamically loaded here -->
                       </tbody>
                     </table>
                   </div>
@@ -532,77 +506,12 @@
                       </defs>
                       <!-- Background -->
                       <rect width="1200" height="800" fill="transparent" />
-                      
-                      <!-- Collection: cart -->
-                      <g class="collection-box" transform="translate(50, 50)">
-                        <rect x="0" y="0" width="200" height="180" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">cart</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">date (date NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">total_value (double)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">item {} (object NN)</text>
-                        <text x="10" y="135" fill="var(--text-primary)" font-size="12">customer (objectId NN)</text>
-                        <text x="10" y="155" fill="var(--text-primary)" font-size="12">coupon_code (string)</text>
-                      </g>
-
-                      <!-- Collection: product -->
-                      <g class="collection-box" transform="translate(700, 50)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">product</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">sku (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">price {} (object)</text>
-                      </g>
-
-                      <!-- Collection: customer -->
-                      <g class="collection-box" transform="translate(50, 400)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">customer</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">surname (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">contact {} (object)</text>
-                      </g>
-
-                      <!-- Embedded: item {} -->
-                      <g class="embedded-box" transform="translate(350, 150)">
-                        <rect x="0" y="0" width="180" height="120" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">item {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">product_id (objectId)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">name (string)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">qty (int)</text>
-                        <text x="10" y="105" fill="var(--text-primary)" font-size="11">price (double)</text>
-                      </g>
-
-                      <!-- Embedded: price {} -->
-                      <g class="embedded-box" transform="translate(950, 150)">
-                        <rect x="0" y="0" width="180" height="100" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">price {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">list_price (double)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">valid_from (date)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">valid_to (date)</text>
-                      </g>
-
-                      <!-- Embedded: contact {} -->
-                      <g class="embedded-box" transform="translate(350, 500)">
-                        <rect x="0" y="0" width="180" height="80" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">contact {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">address {} (object)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">phones {} (object)</text>
-                      </g>
-
-                      <!-- Relationship lines -->
-                      <line x1="250" y1="140" x2="350" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="230" x2="350" y2="210" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="900" y1="140" x2="950" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="540" x2="350" y2="500" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="530" y1="200" x2="700" y2="120" stroke="var(--accent)" stroke-width="2" />
-                      <line x1="250" y1="400" x2="250" y2="400" stroke="var(--accent)" stroke-width="2" />
+                      <!-- NoSQL collections will be dynamically loaded here -->
                     </svg>
+                    <!-- Empty state message -->
+                    <div id="nosql-empty-message" style="display: none; text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+                      <p style="font-size: 16px; margin: 0;">No NoSQL collections available. Upload JSON data to create collections.</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -690,6 +599,60 @@
     </div>
 
     <div id="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- NoSQL Collection Details Modal -->
+    <div
+      id="nosql-collection-modal"
+      class="comments-modal"
+      style="display: none"
+      role="dialog"
+      aria-labelledby="nosql-modal-title"
+      aria-modal="true"
+    >
+      <div class="comments-modal-overlay"></div>
+      <div class="comments-modal-content" style="max-width: 800px;">
+        <div class="comments-modal-header">
+          <div>
+            <h2 id="nosql-modal-title" class="comments-modal-title">
+              NoSQL Collection Details
+            </h2>
+            <p class="comments-modal-subtitle" id="nosql-modal-subtitle">
+              Collection information and documents
+            </p>
+          </div>
+          <button
+            type="button"
+            class="comments-close-button"
+            id="nosql-modal-close"
+            aria-label="Close modal"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              width="20"
+              height="20"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="comments-modal-body" style="max-height: 70vh; overflow-y: auto;">
+          <div id="nosql-collection-info" style="margin-bottom: 24px;">
+            <!-- Collection info will be populated here -->
+          </div>
+          <div id="nosql-collection-documents">
+            <!-- Documents will be populated here -->
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Search Results Modal -->
     <div
