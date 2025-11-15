@@ -4,7 +4,7 @@
  */
 
 // API Configuration
-const API_CONFIG = {
+export const API_CONFIG = {
   baseURL: "http://localhost:8090", // RhinoBox backend URL - change this to your backend URL
   timeout: 30000,
   headers: {
