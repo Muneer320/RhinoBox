@@ -70,6 +70,10 @@ func (s *Server) routes() {
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
 	r.Get("/files/search", s.handleFileSearch)
+	r.Get("/files", s.handleFileList)
+	r.Get("/files/browse", s.handleBrowseDirectory)
+	r.Get("/files/categories", s.handleGetCategories)
+	r.Get("/files/stats", s.handleGetStorageStats)
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
@@ -951,6 +955,130 @@ func (s *Server) setFileHeaders(w http.ResponseWriter, r *http.Request, result *
 	w.Header().Set("X-File-Hash", result.Metadata.Hash)
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+}
+
+// handleFileList handles GET /files - list files with pagination, filtering, and sorting.
+func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
+	options := storage.ListOptions{}
+
+	// Parse pagination
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if page, err := parseInt(pageStr, 1); err == nil {
+			options.Page = page
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := parseInt(limitStr, 50); err == nil {
+			options.Limit = limit
+		}
+	}
+
+	// Parse sorting
+	if sortBy := r.URL.Query().Get("sort"); sortBy != "" {
+		options.SortBy = sortBy
+	}
+	if order := r.URL.Query().Get("order"); order != "" {
+		options.Order = order
+	}
+
+	// Parse filters
+	if category := r.URL.Query().Get("category"); category != "" {
+		options.Category = category
+	}
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		options.Type = typ
+	}
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		options.MimeType = mimeType
+	}
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		options.Extension = ext
+	}
+	if name := r.URL.Query().Get("name"); name != "" {
+		options.Name = name
+	}
+
+	// Parse date filters
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		}
+	}
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			options.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			options.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		}
+	}
+
+	result, err := s.storage.ListFiles(options)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list files: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBrowseDirectory handles GET /files/browse - browse directory structure.
+func (s *Server) handleBrowseDirectory(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "storage"
+	}
+
+	result, err := s.storage.BrowseDirectory(path)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, "directory not found")
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("failed to browse directory: %v", err))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleGetCategories handles GET /files/categories - list all categories with counts.
+func (s *Server) handleGetCategories(w http.ResponseWriter, r *http.Request) {
+	categories, err := s.storage.GetCategories()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get categories: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"categories": categories,
+		"count":      len(categories),
+	})
+}
+
+// handleGetStorageStats handles GET /files/stats - get storage statistics.
+func (s *Server) handleGetStorageStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.storage.GetStorageStats()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get storage stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// parseInt parses an integer string with a default value.
+func parseInt(s string, defaultValue int) (int, error) {
+	if s == "" {
+		return defaultValue, nil
+	}
+	var val int
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		return defaultValue, err
+	}
+	return val, nil
 }
 
 // logDownload logs a download event for analytics.
