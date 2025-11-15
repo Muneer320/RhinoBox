@@ -614,11 +614,8 @@ function initGalleryMenus() {
             showToast(`Renamed to "${newName.trim()}"`)
           } catch (error) {
             console.error('Rename error:', error)
-<<<<<<< HEAD
             titleElement.textContent = originalText
             titleElement.style.opacity = '1'
-=======
->>>>>>> origin/main
             const errorMessage = getUserFriendlyErrorMessage(error)
             showToast(`Failed to rename: ${errorMessage}`)
           }
@@ -647,14 +644,11 @@ function initGalleryMenus() {
             }, 200)
           } catch (error) {
             console.error('Delete error:', error)
-<<<<<<< HEAD
             galleryItem.style.opacity = '1'
             galleryItem.style.pointerEvents = 'auto'
-            if (loadingIndicator.parentNode) {
+            if (loadingIndicator && loadingIndicator.parentNode) {
               loadingIndicator.remove()
             }
-=======
->>>>>>> origin/main
             const errorMessage = getUserFriendlyErrorMessage(error)
             showToast(`Failed to delete: ${errorMessage}`)
           }
@@ -752,8 +746,7 @@ function initGhostButton() {
   }
 }
 
-<<<<<<< HEAD
-// Download file function with loading state
+// Download file function with loading state and progress tracking
 async function downloadFile(fileId, fileName, fileHash, filePath, retryCount = 0) {
   const galleryItem = document.querySelector(`[data-file-id="${fileId}"]`)
   let loadingIndicator = null
@@ -774,53 +767,11 @@ async function downloadFile(fileId, fileName, fileHash, filePath, retryCount = 0
         loadingIndicator.style.right = '12px'
         loadingIndicator.style.zIndex = '15'
         galleryItem.appendChild(loadingIndicator)
-=======
-// Download file function with progress tracking
-async function downloadFile(fileId, fileName, fileHash, filePath) {
-  let progressToast = null
-  let progressInterval = null
-  
-  try {
-    // Show initial download message
-    showToast(`Starting download: "${fileName}"...`)
-    
-    // Format file size helper
-    const formatBytes = (bytes) => {
-      if (!bytes || bytes === 0) return '0 B'
-      const k = 1024
-      const sizes = ['B', 'KB', 'MB', 'GB']
-      const i = Math.floor(Math.log(bytes) / Math.log(k))
-      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
-    }
-    
-    // Progress callback
-    const onProgress = (loaded, total) => {
-      if (total) {
-        const percent = Math.round((loaded / total) * 100)
-        const loadedStr = formatBytes(loaded)
-        const totalStr = formatBytes(total)
-        showToast(`Downloading "${fileName}": ${percent}% (${loadedStr} / ${totalStr})`, 0)
-      } else {
-        const loadedStr = formatBytes(loaded)
-        showToast(`Downloading "${fileName}": ${loadedStr}...`, 0)
->>>>>>> origin/main
       }
     }
     
     // Fetch file blob from backend using proper download endpoint
-<<<<<<< HEAD
     const blob = await apiDownloadFile(fileHash, filePath, fileName)
-=======
-    // Use fileId if hash is not available
-    const blob = await apiDownloadFile(
-      fileHash || null,
-      filePath || null,
-      fileId || null,
-      fileName,
-      onProgress,
-      'blob'
-    )
->>>>>>> origin/main
     
     // Create blob URL and trigger download
     const blobUrl = window.URL.createObjectURL(blob)
@@ -837,7 +788,6 @@ async function downloadFile(fileId, fileName, fileHash, filePath) {
       window.URL.revokeObjectURL(blobUrl)
     }, 100)
     
-<<<<<<< HEAD
     showToast(`Downloaded "${fileName}"`)
   } catch (error) {
     console.error('Download error:', error)
@@ -849,28 +799,11 @@ async function downloadFile(fileId, fileName, fileHash, filePath) {
       if (shouldRetry) {
         return downloadFile(fileId, fileName, fileHash, filePath, retryCount + 1)
       }
-=======
-    showToast(`Successfully downloaded "${fileName}"`)
-  } catch (error) {
-    console.error('Download error:', error)
-    
-    // Provide user-friendly error messages
-    let errorMessage = 'Download failed'
-    if (error.status === 404) {
-      errorMessage = 'File not found'
-    } else if (error.status === 403) {
-      errorMessage = 'Access denied'
-    } else if (error.status === 401) {
-      errorMessage = 'Authentication required'
-    } else if (error.message) {
-      errorMessage = error.message
->>>>>>> origin/main
     }
     
     showToast(`Download failed: ${errorMessage}`)
     throw error
   } finally {
-<<<<<<< HEAD
     // Clean up loading indicator
     if (loadingIndicator && loadingIndicator.parentNode) {
       loadingIndicator.remove()
@@ -881,11 +814,6 @@ async function downloadFile(fileId, fileName, fileHash, filePath) {
         menuButton.disabled = false
         menuButton.style.opacity = '1'
       }
-=======
-    // Clear any progress intervals
-    if (progressInterval) {
-      clearInterval(progressInterval)
->>>>>>> origin/main
     }
   }
 }
@@ -911,11 +839,7 @@ function ensureButtonsClickable() {
   })
 }
 
-<<<<<<< HEAD
 // Upload files to backend with loading state
-=======
-// Upload files to backend
->>>>>>> origin/main
 async function uploadFiles(files, retryCount = 0) {
   if (!files || files.length === 0) {
     showToast('No files selected')
@@ -960,7 +884,6 @@ async function uploadFiles(files, retryCount = 0) {
     console.error('Upload error:', error)
     const errorMessage = getUserFriendlyErrorMessage(error)
     
-<<<<<<< HEAD
     // Show error state in dropzone
     if (dropzone) {
       dropzone.innerHTML = ''
@@ -999,17 +922,6 @@ async function uploadFiles(files, retryCount = 0) {
     dropzone.innerHTML = originalDropzoneContent
     dropzone.style.pointerEvents = 'auto'
     dropzone.style.opacity = '1'
-=======
-    // Show error with retry option if retry count is less than 3
-    if (retryCount < 3) {
-      const shouldRetry = confirm(`${errorMessage}\n\nWould you like to retry?`)
-      if (shouldRetry) {
-        return uploadFiles(files, retryCount + 1)
-      }
-    }
-    
-    showToast(`Upload failed: ${errorMessage}`)
->>>>>>> origin/main
   }
 }
 
@@ -1340,7 +1252,6 @@ async function addComment(fileId, text, retryCount = 0) {
   } catch (error) {
     console.error('Error adding note:', error)
     const errorMessage = getUserFriendlyErrorMessage(error)
-<<<<<<< HEAD
     
     // Show error with retry option
     if (retryCount < 3) {
@@ -1356,9 +1267,6 @@ async function addComment(fileId, text, retryCount = 0) {
       commentSubmit.disabled = false
       commentSubmit.textContent = originalSubmitText
     }
-=======
-    showToast(`Failed to add note: ${errorMessage}`)
->>>>>>> origin/main
   }
 }
 
@@ -1399,7 +1307,6 @@ async function deleteComment(fileId, commentId, retryCount = 0) {
     showToast('Note deleted')
   } catch (error) {
     console.error('Error deleting note:', error)
-<<<<<<< HEAD
     
     // Restore comment item
     if (commentItem) {
@@ -1420,9 +1327,6 @@ async function deleteComment(fileId, commentId, retryCount = 0) {
       }
     }
     
-=======
-    const errorMessage = getUserFriendlyErrorMessage(error)
->>>>>>> origin/main
     showToast(`Failed to delete note: ${errorMessage}`)
   }
 }
@@ -1513,11 +1417,7 @@ async function loadStatistics(retryCount = 0) {
     
     // Render charts if data available
     if (chartsContainer) {
-<<<<<<< HEAD
       if (stats.charts && Array.isArray(stats.charts) && stats.charts.length > 0) {
-=======
-      if (stats.charts) {
->>>>>>> origin/main
         // Charts rendering can be added here based on backend response
         chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
       } else {
@@ -1529,7 +1429,6 @@ async function loadStatistics(retryCount = 0) {
         chartsContainer.innerHTML = ''
         chartsContainer.appendChild(emptyCharts)
       }
-<<<<<<< HEAD
     }
     
     // Show empty state if no statistics available
@@ -1549,8 +1448,6 @@ async function loadStatistics(retryCount = 0) {
       )
       statsGrid.innerHTML = ''
       statsGrid.appendChild(emptyStats)
-=======
->>>>>>> origin/main
     }
     
   } catch (error) {
