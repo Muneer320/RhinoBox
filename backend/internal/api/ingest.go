@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
-	"github.com/Muneer320/RhinoBox/internal/storage"
+	"github.com/Muneer320/RhinoBox/internal/service"
 )
 
 // UnifiedIngestRequest represents the unified /ingest payload.
@@ -61,11 +61,13 @@ type JSONResult struct {
 }
 
 type GenericResult struct {
-	OriginalName string `json:"original_name"`
-	StoredPath   string `json:"stored_path"`
-	FileType     string `json:"file_type"`
-	Size         int64  `json:"size"`
-	Hash         string `json:"hash,omitempty"`
+	OriginalName    string `json:"original_name"`
+	StoredPath      string `json:"stored_path"`
+	FileType        string `json:"file_type"`
+	Size            int64  `json:"size"`
+	Hash            string `json:"hash,omitempty"`
+	Unrecognized    bool   `json:"unrecognized,omitempty"`    // true if format not recognized
+	RequiresRouting bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
@@ -156,11 +158,20 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 	defer file.Close()
 
 	mimeType := detectMIMEType(header)
+	ext := strings.ToLower(filepath.Ext(header.Filename))
 
 	s.logger.Debug("routing file",
 		slog.String("name", header.Filename),
 		slog.String("mime", mimeType),
 		slog.String("field", fieldName))
+
+	// Check if format is recognized
+	classifier := s.storage.Classifier()
+	rulesMgr := s.storage.RoutingRules()
+	
+	isRecognized := classifier.IsRecognized(mimeType, header.Filename)
+	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(mimeType, ext) != nil
+	isUnrecognized := !isRecognized && !hasCustomRule
 
 	// Route based on MIME type
 	if isMediaType(mimeType) {
@@ -171,7 +182,19 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 		return s.processJSONFile(header, namespace, comment)
 	}
 
-	return s.processGenericFile(header, namespace)
+	// For generic files, check if unrecognized
+	result, err := s.processGenericFile(header, namespace)
+	if err != nil {
+		return result, err
+	}
+
+	// Mark as unrecognized if needed
+	if isUnrecognized {
+		result.Unrecognized = true
+		result.RequiresRouting = true
+	}
+
+	return result, nil
 }
 
 // processMediaFile handles images, videos, audio.
@@ -196,25 +219,27 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		metadata["comment"] = comment
 	}
 
-	result, err := s.storage.StoreFile(storage.StoreRequest{
+	req := service.FileStoreRequest{
 		Reader:       file,
 		Filename:     sanitizedFilename,
 		MimeType:     mimeType,
 		Size:         header.Size,
 		Metadata:     metadata,
 		CategoryHint: sanitizedComment,
-	})
+	}
+
+	result, err := s.fileService.StoreFile(req)
 	if err != nil {
 		return MediaResult{}, err
 	}
 
 	return MediaResult{
 		OriginalName: header.Filename,
-		StoredPath:   result.Metadata.StoredPath,
-		Category:     result.Metadata.Category,
-		MimeType:     result.Metadata.MimeType,
-		Size:         result.Metadata.Size,
-		Hash:         result.Metadata.Hash,
+		StoredPath:   result.StoredPath,
+		Category:     result.Category,
+		MimeType:     result.MimeType,
+		Size:         result.Size,
+		Hash:         result.Hash,
 		Duplicates:   result.Duplicate,
 	}, nil
 }
@@ -232,7 +257,7 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		category = namespace
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{"files", category}, header.Filename, file)
+	relPath, err := s.fileService.StoreMediaFile([]string{"files", category}, header.Filename, file)
 	if err != nil {
 		return GenericResult{}, err
 	}
@@ -295,8 +320,8 @@ func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata 
 	analysis = jsonschema.IncorporateCommentHints(analysis, comment)
 	decision := jsonschema.DecideStorage(namespace, docs, summary, analysis)
 
-	batchRel := s.storage.NextJSONBatchPath(decision.Engine, namespace)
-	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
+	batchRel := s.fileService.NextJSONBatchPath(decision.Engine, namespace)
+	if _, err := s.fileService.AppendNDJSON(batchRel, docs); err != nil {
 		return JSONResult{}, fmt.Errorf("store batch: %w", err)
 	}
 

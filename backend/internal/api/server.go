@@ -19,6 +19,8 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
 	errormiddleware "github.com/Muneer320/RhinoBox/internal/middleware"
+	"github.com/Muneer320/RhinoBox/internal/queue"
+	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,6 +33,8 @@ type Server struct {
 	logger       *slog.Logger
 	router       chi.Router
 	storage      *storage.Manager
+	fileService  *service.FileService
+	jobQueue     *queue.JobQueue
 	server       *http.Server
 	errorHandler *errormiddleware.ErrorHandler
 }
@@ -42,12 +46,16 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 
+	fileService := service.NewFileService(store, logger)
 	errorHandler := errormiddleware.NewErrorHandler(logger)
+
 	s := &Server{
 		cfg:          cfg,
 		logger:       logger,
 		router:       chi.NewRouter(),
 		storage:      store,
+		fileService:  fileService,
+		jobQueue:     nil, // TODO: Initialize when async endpoints are needed
 		errorHandler: errorHandler,
 	}
 	s.routes()

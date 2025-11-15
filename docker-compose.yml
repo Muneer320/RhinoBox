@@ -1,0 +1,126 @@
+version: "3.8"
+
+services:
+  # PostgreSQL 16 with optimized settings for high throughput
+  postgres:
+    image: postgres:16-alpine
+    container_name: rhinobox-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rhinobox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+      POSTGRES_DB: ${POSTGRES_DB:-rhinobox}
+      # Performance tuning
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "max_worker_processes=8"
+      - "-c"
+      - "max_parallel_workers_per_gather=4"
+      - "-c"
+      - "max_parallel_workers=8"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rhinobox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rhinobox-network
+
+  # MongoDB 7 with optimized settings for high throughput
+  mongodb:
+    image: mongo:7
+    container_name: rhinobox-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-rhinobox}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme_in_production}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-rhinobox}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    command:
+      - "mongod"
+      - "--wiredTigerCacheSizeGB"
+      - "1"
+      - "--wiredTigerConcurrentReadTransactions"
+      - "128"
+      - "--wiredTigerConcurrentWriteTransactions"
+      - "128"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rhinobox-network
+
+  # RhinoBox API server
+  rhinobox:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rhinobox-api
+    environment:
+      RHINOBOX_ADDR: ":8090"
+      RHINOBOX_DATA_DIR: "/data"
+      RHINOBOX_MAX_UPLOAD_MB: "512"
+      RHINOBOX_POSTGRES_URL: "postgres://${POSTGRES_USER:-rhinobox}:${POSTGRES_PASSWORD:-changeme_in_production}@postgres:5432/${POSTGRES_DB:-rhinobox}?sslmode=disable"
+      RHINOBOX_MONGO_URL: "mongodb://${MONGO_USER:-rhinobox}:${MONGO_PASSWORD:-changeme_in_production}@mongodb:27017"
+      RHINOBOX_DB_MAX_CONNS: "100"
+    ports:
+      - "8090:8090"
+    volumes:
+      - rhinobox_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - rhinobox-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  mongo_data:
+    driver: local
+  mongo_config:
+    driver: local
+  rhinobox_data:
+    driver: local
+
+networks:
+  rhinobox-network:
+    driver: bridge

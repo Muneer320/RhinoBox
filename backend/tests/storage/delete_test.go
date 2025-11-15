@@ -103,8 +103,9 @@ func TestDeleteFileWithEmptyHash(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for empty hash")
 	}
-	if !errors.Is(err, storage.ErrFileNotFound) {
-		t.Fatalf("expected ErrFileNotFound, got: %v", err)
+	// Empty hash is invalid input, not a file not found scenario
+	if !errors.Is(err, storage.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got: %v", err)
 	}
 }
 
