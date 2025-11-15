@@ -41,6 +41,7 @@ docker-compose down
 ```
 
 **Includes**:
+
 - RhinoBox API (port 8090)
 - PostgreSQL 16 (port 5432)
 - MongoDB 7 (port 27017)
@@ -71,12 +72,14 @@ go run ./cmd/rhinobox
 ### System Requirements
 
 **Minimum (Development)**:
+
 - CPU: 2 cores
 - RAM: 2GB
 - Disk: 10GB
 - OS: Linux, macOS, Windows
 
 **Recommended (Production)**:
+
 - CPU: 8+ cores
 - RAM: 8GB+
 - Disk: 100GB+ SSD
@@ -123,32 +126,34 @@ RhinoBox is configured via environment variables for 12-factor app compliance.
 
 #### Core Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RHINOBOX_ADDR` | `:8090` | Server bind address (`:8090` = all interfaces) |
-| `RHINOBOX_DATA_DIR` | `./data` | Root directory for all storage |
-| `RHINOBOX_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `RHINOBOX_MAX_UPLOAD_SIZE` | `100MB` | Maximum file upload size |
+| Variable                   | Default  | Description                                    |
+| -------------------------- | -------- | ---------------------------------------------- |
+| `RHINOBOX_ADDR`            | `:8090`  | Server bind address (`:8090` = all interfaces) |
+| `RHINOBOX_DATA_DIR`        | `./data` | Root directory for all storage                 |
+| `RHINOBOX_LOG_LEVEL`       | `info`   | Log level: `debug`, `info`, `warn`, `error`    |
+| `RHINOBOX_MAX_UPLOAD_SIZE` | `100MB`  | Maximum file upload size                       |
 
 #### Database Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable                | Default | Description                  |
+| ----------------------- | ------- | ---------------------------- |
 | `RHINOBOX_POSTGRES_URL` | (empty) | PostgreSQL connection string |
-| `RHINOBOX_MONGO_URL` | (empty) | MongoDB connection string |
-| `RHINOBOX_DB_MAX_CONNS` | `100` | Max database connections |
+| `RHINOBOX_MONGO_URL`    | (empty) | MongoDB connection string    |
+| `RHINOBOX_DB_MAX_CONNS` | `100`   | Max database connections     |
 
 **Note**: If database URLs are empty, RhinoBox operates in **NDJSON-only mode** (no database writes).
 
 #### Connection String Formats
 
 **PostgreSQL**:
+
 ```
 postgres://username:password@host:port/database?sslmode=disable
 postgres://rhinobox:secret@localhost:5432/rhinobox?sslmode=require
 ```
 
 **MongoDB**:
+
 ```
 mongodb://username:password@host:port
 mongodb://rhinobox:secret@localhost:27017/?authSource=admin
@@ -157,18 +162,18 @@ mongodb://user:pass@host1:27017,host2:27017,host3:27017/?replicaSet=rs0
 
 #### Job Queue Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RHINOBOX_QUEUE_WORKERS` | `10` | Number of concurrent job workers |
-| `RHINOBOX_QUEUE_BUFFER` | `1000` | Job queue buffer capacity |
+| Variable                 | Default | Description                      |
+| ------------------------ | ------- | -------------------------------- |
+| `RHINOBOX_QUEUE_WORKERS` | `10`    | Number of concurrent job workers |
+| `RHINOBOX_QUEUE_BUFFER`  | `1000`  | Job queue buffer capacity        |
 
 #### Cache Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RHINOBOX_CACHE_DIR` | `./data/cache` | BadgerDB cache directory |
-| `RHINOBOX_CACHE_SIZE` | `10000` | LRU cache size (items) |
-| `RHINOBOX_CACHE_TTL` | `5m` | LRU cache TTL (e.g., `5m`, `1h`) |
+| Variable              | Default        | Description                      |
+| --------------------- | -------------- | -------------------------------- |
+| `RHINOBOX_CACHE_DIR`  | `./data/cache` | BadgerDB cache directory         |
+| `RHINOBOX_CACHE_SIZE` | `10000`        | LRU cache size (items)           |
+| `RHINOBOX_CACHE_TTL`  | `5m`           | LRU cache TTL (e.g., `5m`, `1h`) |
 
 ### Configuration Files
 
@@ -219,7 +224,7 @@ RHINOBOX_ADDR=:9000 go run ./cmd/rhinobox
 #### `docker-compose.yml`
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL Database
@@ -282,7 +287,15 @@ services:
       - rhinobox_data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8090/healthz"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8090/healthz",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -564,6 +577,7 @@ exit
 **Cause**: RhinoBox not running or wrong port
 
 **Solution**:
+
 ```bash
 # Check if running
 docker ps | grep rhinobox
@@ -582,6 +596,7 @@ docker-compose restart rhinobox
 **Cause**: Database not reachable or wrong credentials
 
 **Solution**:
+
 ```bash
 # Check database health
 docker exec rhinobox-postgres pg_isready -U rhinobox
@@ -600,6 +615,7 @@ docker exec rhinobox wget -qO- postgres:5432
 **Cause**: Container running as wrong user or volume permissions
 
 **Solution**:
+
 ```bash
 # Fix volume permissions
 docker-compose down
@@ -614,6 +630,7 @@ docker-compose up -d
 **Cause**: Large cache size or memory leak
 
 **Solution**:
+
 ```bash
 # Reduce cache size
 export RHINOBOX_CACHE_SIZE=5000
@@ -632,6 +649,7 @@ docker stats rhinobox
 **Cause**: Database connection pool exhaustion or disk I/O bottleneck
 
 **Solution**:
+
 ```bash
 # Increase database connections
 export RHINOBOX_DB_MAX_CONNS=200
@@ -722,6 +740,6 @@ RhinoBox deployment is:
 ✅ **Flexible**: NDJSON-only or full database mode  
 ✅ **Scalable**: Horizontal scaling with load balancer  
 ✅ **Observable**: Health checks, logs, metrics  
-✅ **Production-ready**: Security, backups, monitoring  
+✅ **Production-ready**: Security, backups, monitoring
 
 For production deployments, follow the [Production Checklist](#production-checklist) and configure monitoring/alerting.

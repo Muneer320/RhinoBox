@@ -51,6 +51,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "status": "completed",
@@ -72,12 +73,14 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Highlight**:
+
 - ✅ MIME type auto-detected: `image/jpeg`
 - ✅ Organized: `storage/media/images/jpg/vacation_photos/`
 - ✅ SHA-256 hash for deduplication
 - ✅ Response in <50ms
 
 **Show**:
+
 ```bash
 # Verify file was stored
 ls -lh storage/media/images/jpg/vacation_photos/
@@ -98,6 +101,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "status": "completed",
@@ -117,6 +121,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Highlight**:
+
 - ✅ Automatic video classification
 - ✅ Organized: `storage/media/videos/mp4/`
 - ✅ Large files supported (100MB+)
@@ -167,6 +172,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "status": "completed",
@@ -190,12 +196,14 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Highlight**:
+
 - ✅ Automatic SQL detection
 - ✅ Reason: Stable schema + `customer_id` foreign key pattern
 - ✅ PostgreSQL table created automatically
 - ✅ 100K+ inserts/sec with COPY protocol
 
 **Verify in Database**:
+
 ```bash
 # Query PostgreSQL
 docker exec -it rhinobox-postgres psql -U rhinobox -d rhinobox -c "SELECT * FROM orders;"
@@ -255,6 +263,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Response**:
+
 ```json
 {
   "status": "completed",
@@ -278,12 +287,14 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Highlight**:
+
 - ✅ Automatic NoSQL detection
 - ✅ Reason: Inconsistent schema + deep nesting + "flexible" hint
 - ✅ MongoDB collection created automatically
 - ✅ 200K+ inserts/sec with BulkWrite
 
 **Verify in Database**:
+
 ```bash
 # Query MongoDB
 docker exec -it rhinobox-mongo mongosh -u rhinobox -p rhinobox_dev --eval "
@@ -311,6 +322,7 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Response (Second Upload)**:
+
 ```json
 {
   "status": "completed",
@@ -329,12 +341,14 @@ curl -X POST http://localhost:8090/ingest \
 ```
 
 **Highlight**:
+
 - ✅ `is_duplicate: true` flag
 - ✅ Returns existing file path (no new storage)
 - ✅ Detection in <1ms (L1 cache: 231.5ns)
 - ✅ 50%+ storage savings in real-world scenarios
 
 **Show Storage**:
+
 ```bash
 # Only one file stored despite two uploads
 ls -lh storage/media/images/jpg/vacation_photos/ | wc -l
@@ -359,6 +373,7 @@ curl -X POST http://localhost:8090/ingest/async \
 ```
 
 **Expected Response (Immediate)**:
+
 ```json
 {
   "job_id": "job_abc123def456",
@@ -370,16 +385,19 @@ curl -X POST http://localhost:8090/ingest/async \
 ```
 
 **Highlight**:
+
 - ✅ Response in <1ms (client not blocked)
 - ✅ Job ID for tracking progress
 
 **Check Progress**:
+
 ```bash
 # Poll job status (after 2 seconds)
 curl http://localhost:8090/jobs/job_abc123def456
 ```
 
 **Expected Response (Processing)**:
+
 ```json
 {
   "job_id": "job_abc123def456",
@@ -391,9 +409,9 @@ curl http://localhost:8090/jobs/job_abc123def456
   "progress": 60,
   "results": {
     "media": [
-      {"original_name": "photo1.jpg", "status": "completed"},
-      {"original_name": "photo2.jpg", "status": "completed"},
-      {"original_name": "photo3.jpg", "status": "completed"}
+      { "original_name": "photo1.jpg", "status": "completed" },
+      { "original_name": "photo2.jpg", "status": "completed" },
+      { "original_name": "photo3.jpg", "status": "completed" }
     ]
   },
   "current_operation": "Processing video.mp4"
@@ -401,6 +419,7 @@ curl http://localhost:8090/jobs/job_abc123def456
 ```
 
 **Final Status (Completed)**:
+
 ```json
 {
   "job_id": "job_abc123def456",
@@ -411,17 +430,18 @@ curl http://localhost:8090/jobs/job_abc123def456
   "progress": 100,
   "results": {
     "media": [
-      {"original_name": "photo1.jpg", "status": "completed", "path": "..."},
-      {"original_name": "photo2.jpg", "status": "completed", "path": "..."},
-      {"original_name": "photo3.jpg", "status": "completed", "path": "..."},
-      {"original_name": "video.mp4", "status": "completed", "path": "..."},
-      {"original_name": "document.pdf", "status": "completed", "path": "..."}
+      { "original_name": "photo1.jpg", "status": "completed", "path": "..." },
+      { "original_name": "photo2.jpg", "status": "completed", "path": "..." },
+      { "original_name": "photo3.jpg", "status": "completed", "path": "..." },
+      { "original_name": "video.mp4", "status": "completed", "path": "..." },
+      { "original_name": "document.pdf", "status": "completed", "path": "..." }
     ]
   }
 }
 ```
 
 **Highlight**:
+
 - ✅ Background processing with 10 workers
 - ✅ Real-time progress tracking
 - ✅ 1000+ jobs/sec throughput
@@ -439,6 +459,7 @@ curl "http://localhost:8090/files?name=photo"
 ```
 
 **Expected Response**:
+
 ```json
 {
   "files": [
@@ -464,6 +485,7 @@ curl "http://localhost:8090/files?name=photo"
 ```
 
 **Download File**:
+
 ```bash
 # Download specific file
 curl -O "http://localhost:8090/files/storage/media/images/jpg/vacation_photos/abc123...photo.jpg"
@@ -474,6 +496,7 @@ file photo.jpg
 ```
 
 **Highlight**:
+
 - ✅ Full-text search across filenames
 - ✅ Pagination support
 - ✅ Direct file download
@@ -506,11 +529,13 @@ time curl -X POST http://localhost:8090/ingest \
 ```
 
 **Expected Result**:
+
 - **Time**: 50-100ms for 1000 inserts
 - **Throughput**: 10K-20K inserts/sec
 - **Database**: PostgreSQL COPY protocol or MongoDB BulkWrite
 
 **Highlight**:
+
 - ✅ 1000 documents in <100ms
 - ✅ 100K+/sec PostgreSQL COPY throughput
 - ✅ 200K+/sec MongoDB BulkWrite throughput
@@ -519,16 +544,16 @@ time curl -X POST http://localhost:8090/ingest \
 
 ## Summary Table
 
-| Demo | Feature Showcased | Key Metric |
-|------|-------------------|------------|
-| 1. Image Upload | MIME detection, type-based storage | <50ms latency |
-| 2. Video Upload | Multi-type support, large files | 100MB+ files |
-| 3. JSON → SQL | Intelligent SQL routing | 95% confidence, auto-schema |
-| 4. JSON → NoSQL | Intelligent NoSQL routing | Flexible schema support |
-| 5. Deduplication | Content-addressed storage | 50% storage savings, <1ms detection |
-| 6. Async Batch | Background processing, progress tracking | 0ms client blocking, 1677 jobs/sec |
-| 7. Query/Retrieve | File search and download | Full-text search, streaming |
-| 8. Performance | High-volume batch insert | 10K-20K inserts/sec |
+| Demo              | Feature Showcased                        | Key Metric                          |
+| ----------------- | ---------------------------------------- | ----------------------------------- |
+| 1. Image Upload   | MIME detection, type-based storage       | <50ms latency                       |
+| 2. Video Upload   | Multi-type support, large files          | 100MB+ files                        |
+| 3. JSON → SQL     | Intelligent SQL routing                  | 95% confidence, auto-schema         |
+| 4. JSON → NoSQL   | Intelligent NoSQL routing                | Flexible schema support             |
+| 5. Deduplication  | Content-addressed storage                | 50% storage savings, <1ms detection |
+| 6. Async Batch    | Background processing, progress tracking | 0ms client blocking, 1677 jobs/sec  |
+| 7. Query/Retrieve | File search and download                 | Full-text search, streaming         |
+| 8. Performance    | High-volume batch insert                 | 10K-20K inserts/sec                 |
 
 ---
 
