@@ -335,43 +335,69 @@ if err != nil {
 t.Fatalf("First rename failed: %v", err)
 }
 
-// Try to rename file1 to the same name - with hash-based naming,
-// files are unique so this should succeed
-targetFilename := "renamed_target.txt"
-renameReq2 := storage.RenameRequest{
-Hash:             result1.Metadata.Hash,
-NewName:          targetFilename,
-UpdateStoredFile: true,
-}
-_, err = mgr.RenameFile(renameReq2)
-// With our hash-based naming, conflicts are less likely but can happen
-// if the exact same stored filename would result
-// For this test, we check that the rename completes successfully since
-// files are in same category and hash prefix makes them unique
-if err != nil {
-// If there's an error, it should be a conflict error if it happens
-if !isNameConflictError(err) && err != nil {
-t.Logf("Rename resulted in: %v (files have unique hash prefixes)", err)
-}
-}
+	// Try to rename file1 to the same name - with hash-based naming,
+	// files are unique so this should succeed
+	targetFilename := "renamed_target.txt"
+	renameReq2 := storage.RenameRequest{
+		Hash:             result1.Metadata.Hash,
+		NewName:          targetFilename,
+		UpdateStoredFile: true,
+	}
+	result1Renamed, err := mgr.RenameFile(renameReq2)
+	
+	// Assert explicitly: either the rename succeeded (err == nil) or returned the expected conflict error
+	if err != nil {
+		if !isNameConflictError(err) {
+			t.Fatalf("Unexpected error during second rename: %v", err)
+		}
+		// If we got a conflict error, the rename didn't happen, so result1Renamed should be nil
+		if result1Renamed != nil {
+			t.Errorf("Expected nil result when rename fails with conflict error, got: %+v", result1Renamed)
+		}
+	} else {
+		// Rename succeeded, result should not be nil
+		if result1Renamed == nil {
+			t.Fatal("Expected non-nil result when rename succeeds, got nil")
+		}
+	}
 
-// Verify both files still exist and have correct content
-newPath1 := filepath.Join(tmpDir, result1.Metadata.StoredPath)
-newPath2 := filepath.Join(tmpDir, result2Renamed.NewMetadata.StoredPath)
+	// Verify files exist using the NewMetadata.StoredPath values returned by successful renames
+	// File2 was successfully renamed, so use its new path
+	path2 := filepath.Join(tmpDir, result2Renamed.NewMetadata.StoredPath)
+	if _, err := os.Stat(path2); err != nil {
+		t.Fatalf("File2 should exist at %q after successful rename: %v", path2, err)
+	}
 
-// At least one should exist
-exists1 := true
-exists2 := true
-if _, err := os.Stat(newPath1); os.IsNotExist(err) {
-exists1 = false
-}
-if _, err := os.Stat(newPath2); err != nil {
-exists2 = false
-}
+	// File1: if rename succeeded, use new path; if it failed with conflict, use original path
+	var path1 string
+	if err == nil && result1Renamed != nil {
+		// Rename succeeded, use the new path
+		path1 = filepath.Join(tmpDir, result1Renamed.NewMetadata.StoredPath)
+	} else {
+		// Rename failed with conflict, file should still be at original path
+		path1 = filepath.Join(tmpDir, result1.Metadata.StoredPath)
+	}
+	
+	if _, err := os.Stat(path1); err != nil {
+		t.Fatalf("File1 should exist at %q: %v", path1, err)
+	}
 
-if !exists1 && !exists2 {
-t.Error("at least one file should exist after rename operations")
-}
+	// Verify both files have correct content
+	content1Read, err := os.ReadFile(path1)
+	if err != nil {
+		t.Fatalf("Failed to read file1: %v", err)
+	}
+	if string(content1Read) != string(content1) {
+		t.Errorf("File1 content mismatch: expected %q, got %q", string(content1), string(content1Read))
+	}
+
+	content2Read, err := os.ReadFile(path2)
+	if err != nil {
+		t.Fatalf("Failed to read file2: %v", err)
+	}
+	if string(content2Read) != string(content2) {
+		t.Errorf("File2 content mismatch: expected %q, got %q", string(content2), string(content2Read))
+	}
 }
 
 func TestFindByOriginalName(t *testing.T) {
