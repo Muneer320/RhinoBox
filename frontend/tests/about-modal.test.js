@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from './test-utils.js'
 // Setup DOM environment
 beforeEach(() => {
   document.body.innerHTML = `
-    <button id="about-btn" class="icon-button" aria-label="About RhinoBox"></button>
+    <button id="about-btn" class="icon-button" aria-label="About RhinoBox" title="About RhinoBox"></button>
     <div id="about-modal" class="about-modal" role="dialog" aria-labelledby="about-title" aria-hidden="true">
       <div class="about-modal-overlay"></div>
       <div class="about-modal-content">
@@ -235,7 +235,7 @@ describe('About Modal', () => {
       const resourceLinks = document.createElement('div')
       resourceLinks.className = 'resource-links'
       resourceLinks.innerHTML = `
-        <a href="https://github.com/Muneer320/RhinoBox" class="resource-link" target="_blank">
+        <a href="https://github.com/Muneer320/RhinoBox" class="resource-link" target="_blank" rel="noopener noreferrer">
           <span class="resource-icon">💻</span>
           <span>GitHub Repository</span>
           <span class="external-icon">↗</span>
@@ -284,4 +284,5 @@ describe('About Modal', () => {
     })
   })
 })
+
 
