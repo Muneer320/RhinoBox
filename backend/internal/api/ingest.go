@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
+	"github.com/Muneer320/RhinoBox/internal/storage"
 )
 
 // UnifiedIngestRequest represents the unified /ingest payload.
@@ -99,7 +101,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	// Process files (media or generic)
+	// Process files (media, JSON, or generic)
 	if r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
 		processingStart := time.Now()
 		for fieldName, headers := range r.MultipartForm.File {
@@ -113,6 +115,8 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 				switch res := result.(type) {
 				case MediaResult:
 					response.Results.Media = append(response.Results.Media, res)
+				case JSONResult:
+					response.Results.JSON = append(response.Results.JSON, res)
 				case GenericResult:
 					response.Results.Files = append(response.Results.Files, res)
 				}
@@ -158,8 +162,13 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 		slog.String("mime", mimeType),
 		slog.String("field", fieldName))
 
+	// Route based on MIME type
 	if isMediaType(mimeType) {
 		return s.processMediaFile(header, comment)
+	}
+
+	if isJSONType(mimeType) {
+		return s.processJSONFile(header, namespace, comment)
 	}
 
 	return s.processGenericFile(header, namespace)
@@ -175,44 +184,38 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 
 	mimeType := detectMIMEType(header)
 	
-	// Classify media type
-	mediaType := "other"
-	switch {
-	case strings.HasPrefix(mimeType, "image/"):
-		mediaType = "images"
-	case strings.HasPrefix(mimeType, "video/"):
-		mediaType = "videos"
-	case strings.HasPrefix(mimeType, "audio/"):
-		mediaType = "audio"
-	}
-	
-	// Use comment as category if provided, else use base filename
-	category := sanitizePathSegment(comment)
-	if category == "" {
-		category = sanitizePathSegment(strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)))
-	}
-	if category == "" {
-		category = mediaType
-	}
-
-	// Sanitize filename to prevent path traversal
+	// Sanitize user-controlled inputs to prevent path traversal
+	sanitizedComment := sanitizePathSegment(comment)
 	sanitizedFilename := sanitizePathSegment(header.Filename)
 	if sanitizedFilename == "" {
 		sanitizedFilename = "file" + strings.ToLower(filepath.Ext(header.Filename))
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{mediaType, category}, sanitizedFilename, file)
+	metadata := map[string]string{}
+	if comment != "" {
+		metadata["comment"] = comment
+	}
+
+	result, err := s.storage.StoreFile(storage.StoreRequest{
+		Reader:       file,
+		Filename:     sanitizedFilename,
+		MimeType:     mimeType,
+		Size:         header.Size,
+		Metadata:     metadata,
+		CategoryHint: sanitizedComment,
+	})
 	if err != nil {
 		return MediaResult{}, err
 	}
 
 	return MediaResult{
 		OriginalName: header.Filename,
-		StoredPath:   relPath,
-		Category:     category,
-		MimeType:     mimeType,
-		Size:         header.Size,
-		Duplicates:   false,
+		StoredPath:   result.Metadata.StoredPath,
+		Category:     result.Metadata.Category,
+		MimeType:     result.Metadata.MimeType,
+		Size:         result.Metadata.Size,
+		Hash:         result.Metadata.Hash,
+		Duplicates:   result.Duplicate,
 	}, nil
 }
 
@@ -240,6 +243,24 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		FileType:     detectMIMEType(header),
 		Size:         header.Size,
 	}, nil
+}
+
+// processJSONFile handles JSON files uploaded through multipart form.
+func (s *Server) processJSONFile(header *multipart.FileHeader, namespace, comment string) (JSONResult, error) {
+	file, err := header.Open()
+	if err != nil {
+		return JSONResult{}, fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	// Read the JSON content
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return JSONResult{}, fmt.Errorf("read file: %w", err)
+	}
+
+	// Process using the inline JSON handler
+	return s.processInlineJSON(string(data), namespace, comment, nil)
 }
 
 // processInlineJSON handles JSON data from request body or form field.
@@ -342,6 +363,10 @@ func isMediaType(mime string) bool {
 	default:
 		return false
 	}
+}
+
+func isJSONType(mime string) bool {
+	return mime == "application/json" || mime == "text/json"
 }
 
 func generateJobID() string {
