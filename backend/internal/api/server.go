@@ -633,10 +633,31 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 
 	results := s.storage.FindByOriginalName(query)
 
+	// Transform results to include frontend-friendly field names
+	formattedResults := make([]map[string]any, len(results))
+	for i, meta := range results {
+		formattedResults[i] = map[string]any{
+			"id":            meta.Hash,
+			"hash":          meta.Hash,
+			"original_name": meta.OriginalName,
+			"name":          meta.OriginalName,
+			"stored_path":   meta.StoredPath,
+			"path":          meta.StoredPath,
+			"category":      meta.Category,
+			"type":          meta.MimeType,
+			"mime_type":     meta.MimeType,
+			"size":          meta.Size,
+			"uploaded_at":   meta.UploadedAt,
+			"modified_at":   meta.UploadedAt,
+			"ingested_at":   meta.UploadedAt,
+			"metadata":      meta.Metadata,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"query":   query,
-		"results": results,
-		"count":   len(results),
+		"results": formattedResults,
+		"count":   len(formattedResults),
 	})
 }
 
