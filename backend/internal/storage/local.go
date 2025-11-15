@@ -72,6 +72,26 @@ func (m *Manager) Root() string {
 	return m.root
 }
 
+// QueryFiles returns files matching the query criteria.
+func (m *Manager) QueryFiles(q FileQuery) []FileMetadata {
+	return m.index.Query(q)
+}
+
+// CountFiles returns the count of files matching the query criteria.
+func (m *Manager) CountFiles(q FileQuery) int {
+	return m.index.Count(q)
+}
+
+// GetCategories returns category statistics.
+func (m *Manager) GetCategories() map[string]CategoryStats {
+	return m.index.GetCategories()
+}
+
+// GetStats returns storage statistics.
+func (m *Manager) GetStats() StorageStats {
+	return m.index.GetStats()
+}
+
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.
 func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {
