@@ -68,23 +68,24 @@ func (s *Server) routes() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
 
-	// Setup validation (applied per-route so route context is available)
+	// Setup validation as global middleware
+	// Validation will check route context after chi matches routes
 	validator := s.setupValidation()
+	r.Use(validator.Validate)
 
-	// Endpoints with validation applied per-route
-	// Chi matches routes first, then runs middleware, so route context will be available
+	// Endpoints
 	r.Get("/healthz", s.handleHealth)
-	r.Post("/ingest", validator.Validate(http.HandlerFunc(s.handleUnifiedIngest)))
-	r.Post("/ingest/media", validator.Validate(http.HandlerFunc(s.handleMediaIngest)))
-	r.Post("/ingest/json", validator.Validate(http.HandlerFunc(s.handleJSONIngest)))
-	r.Patch("/files/rename", validator.Validate(http.HandlerFunc(s.handleFileRename)))
-	r.Delete("/files/{file_id}", validator.Validate(http.HandlerFunc(s.handleFileDelete)))
-	r.Patch("/files/{file_id}/metadata", validator.Validate(http.HandlerFunc(s.handleMetadataUpdate)))
-	r.Post("/files/metadata/batch", validator.Validate(http.HandlerFunc(s.handleBatchMetadataUpdate)))
-	r.Get("/files/search", validator.Validate(http.HandlerFunc(s.handleFileSearch)))
-	r.Get("/files/download", validator.Validate(http.HandlerFunc(s.handleFileDownload)))
-	r.Get("/files/metadata", validator.Validate(http.HandlerFunc(s.handleFileMetadata)))
-	r.Get("/files/stream", validator.Validate(http.HandlerFunc(s.handleFileStream)))
+	r.Post("/ingest", s.handleUnifiedIngest)
+	r.Post("/ingest/media", s.handleMediaIngest)
+	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/rename", s.handleFileRename)
+	r.Delete("/files/{file_id}", s.handleFileDelete)
+	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
+	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Get("/files/search", s.handleFileSearch)
+	r.Get("/files/download", s.handleFileDownload)
+	r.Get("/files/metadata", s.handleFileMetadata)
+	r.Get("/files/stream", s.handleFileStream)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
