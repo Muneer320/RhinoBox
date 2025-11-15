@@ -172,12 +172,33 @@ function initHomePageFeatures() {
           // Treat as URL
           documents = [{ content: value, type: "url", url: value }];
         } else if (selectedType === "json") {
-          // Try to parse as JSON
+          // Try to parse as JSON with enhanced validation
           try {
             const parsed = JSON.parse(value);
-            documents = Array.isArray(parsed) ? parsed : [parsed];
-          } catch {
-            showToast("Invalid JSON format", "error");
+            // Backend expects array of objects (documents)
+            if (Array.isArray(parsed)) {
+              // Filter to only include plain objects (not arrays, not null)
+              documents = parsed.filter(doc => 
+                doc !== null && 
+                typeof doc === 'object' && 
+                !Array.isArray(doc) &&
+                Object.prototype.toString.call(doc) === '[object Object]'
+              );
+              if (documents.length === 0) {
+                showToast("JSON array must contain objects. Each array item should be an object like {\"key\": \"value\"}", "error");
+                return;
+              }
+            } else if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              // Single object
+              documents = [parsed];
+            } else {
+              // Primitive values or other types - wrap in object
+              documents = [{ value: parsed, type: typeof parsed }];
+            }
+            console.log("Prepared documents for ingestion:", documents);
+          } catch (parseError) {
+            console.error("JSON parse error:", parseError);
+            showToast(`Invalid JSON format: ${parseError.message}`, "error");
             return;
           }
         } else {
@@ -1657,6 +1678,106 @@ const SUPPORTED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'appl
 const ALL_SUPPORTED_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES, ...SUPPORTED_AUDIO_TYPES, ...SUPPORTED_DOCUMENT_TYPES];
 
 /**
+ * Helper function to detect file type category
+ * @param {File} file - File to categorize
+ * @returns {string} Category name
+ */
+function detectFileTypeCategory(file) {
+  const mimeType = file.type || "";
+  const fileName = file.name || "";
+  const extension = fileName.split(".").pop()?.toLowerCase() || "";
+
+  // Image types
+  if (mimeType.startsWith("image/")) {
+    return "images";
+  }
+  
+  // Video types
+  if (mimeType.startsWith("video/")) {
+    return "videos";
+  }
+  
+  // Audio types
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
+  }
+  
+  // Document types
+  if (
+    mimeType.includes("pdf") ||
+    mimeType.includes("document") ||
+    mimeType.includes("text") ||
+    ["doc", "docx", "txt", "rtf", "odt"].includes(extension)
+  ) {
+    return "documents";
+  }
+  
+  // Spreadsheet types
+  if (
+    mimeType.includes("spreadsheet") ||
+    mimeType.includes("excel") ||
+    ["xls", "xlsx", "csv", "ods"].includes(extension)
+  ) {
+    return "spreadsheets";
+  }
+  
+  // Presentation types
+  if (
+    mimeType.includes("presentation") ||
+    mimeType.includes("powerpoint") ||
+    ["ppt", "pptx", "odp"].includes(extension)
+  ) {
+    return "presentations";
+  }
+  
+  // Archive types
+  if (
+    mimeType.includes("zip") ||
+    mimeType.includes("rar") ||
+    mimeType.includes("tar") ||
+    mimeType.includes("gz") ||
+    ["zip", "rar", "tar", "gz", "7z"].includes(extension)
+  ) {
+    return "archives";
+  }
+  
+  // Code types
+  if (
+    ["js", "py", "java", "cpp", "c", "h", "css", "html", "json", "xml", "go", "rs", "ts"].includes(extension)
+  ) {
+    return "code";
+  }
+  
+  // JSON files
+  if (mimeType.includes("json") || extension === "json") {
+    return "json";
+  }
+  
+  return "others";
+}
+
+/**
+ * Get user-friendly file type name
+ * @param {string} category - Category name
+ * @returns {string} User-friendly type name
+ */
+function getFileTypeName(category) {
+  const typeNames = {
+    images: "Image",
+    videos: "Video",
+    audio: "Audio",
+    documents: "Document",
+    spreadsheets: "Spreadsheet",
+    presentations: "Presentation",
+    archives: "Archive",
+    json: "JSON",
+    code: "Code",
+    others: "Other",
+  };
+  return typeNames[category] || "File";
+}
+
+/**
  * Validate file before upload
  * @param {File} file - File to validate
  * @returns {Array} Array of validation errors (empty if valid)
@@ -1718,6 +1839,13 @@ async function uploadFiles(files) {
     }
   }
 
+  // Detect file types before upload
+  const fileTypes = new Map();
+  validFiles.forEach((file) => {
+    const category = detectFileTypeCategory(file);
+    fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
+  });
+
   // Show upload started notification
   const uploadToast = showToast(
     `Uploading ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}...`,
@@ -1749,13 +1877,23 @@ async function uploadFiles(files) {
     // Dismiss upload toast
     dismissToast(uploadToast);
 
-    // Show success
+    // Show success with file type information
+    const typeMessages = [];
+    fileTypes.forEach((count, category) => {
+      const typeName = getFileTypeName(category);
+      typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
+    });
+
+    const typeMessage = typeMessages.join(", ");
     showToast(
-      `Successfully uploaded ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}`,
+      `Successfully uploaded: ${typeMessage}`,
       "success"
     );
 
     uploadResults.success = validFiles;
+
+    // Reload collections to show new folders
+    await loadCollections();
 
     // Reload current collection if viewing one
     if (currentCollectionType) {
