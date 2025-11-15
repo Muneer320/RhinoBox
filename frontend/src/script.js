@@ -15,6 +15,7 @@ import {
   getCollectionStats,
   searchFiles,
   API_CONFIG,
+  APIError,
 } from "./api.js";
 import { configService } from "./configService.js";
 
@@ -158,21 +159,21 @@ function initHomePageFeatures() {
       const selectedType = typeSelect?.value || "text";
 
       if (!value) {
-        showToast("Provide a link, query, or description first");
+        showToast("Provide a link, query, or description first", "warning");
         if (textarea) textarea.focus();
         return;
       }
 
+      let processingToast = null;
       try {
         let documents = [];
-        const categoryType = "codefiles"; // All quick add content goes to codefiles folder
         
         // Handle different types
         if (selectedType === "url") {
           // Treat as URL
           documents = [{ content: value, type: "url", url: value }];
         } else if (selectedType === "json") {
-          // Try to parse as JSON
+          // Try to parse as JSON with enhanced validation
           try {
             const parsed = JSON.parse(value);
             // Backend expects array of objects (documents)
@@ -185,7 +186,7 @@ function initHomePageFeatures() {
                 Object.prototype.toString.call(doc) === '[object Object]'
               );
               if (documents.length === 0) {
-                showToast("JSON array must contain objects. Each array item should be an object like {\"key\": \"value\"}");
+                showToast("JSON array must contain objects. Each array item should be an object like {\"key\": \"value\"}", "error");
                 return;
               }
             } else if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -198,7 +199,7 @@ function initHomePageFeatures() {
             console.log("Prepared documents for ingestion:", documents);
           } catch (parseError) {
             console.error("JSON parse error:", parseError);
-            showToast(`Invalid JSON format: ${parseError.message}`);
+            showToast(`Invalid JSON format: ${parseError.message}`, "error");
             return;
           }
         } else {
@@ -206,22 +207,10 @@ function initHomePageFeatures() {
           documents = [{ content: value, type: selectedType }];
         }
 
-        showToast("Processing...");
-        
-        try {
-          const response = await ingestJSON(documents, categoryType, `Quick add: ${selectedType}`);
-          console.log("Ingest response:", response);
-          
-          showToast(`Successfully added to codefiles folder`);
-        } catch (ingestError) {
-          console.error("Ingest error details:", {
-            error: ingestError,
-            message: ingestError.message,
-            status: ingestError.status,
-            data: ingestError.data
-          });
-          throw ingestError; // Re-throw to be caught by outer catch
-        }
+        processingToast = showToast("Processing...", "info", 0);
+        await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
+        dismissToast(processingToast);
+        showToast("Successfully added item", "success");
         
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -232,16 +221,22 @@ function initHomePageFeatures() {
         if (textarea) textarea.value = "";
         if (typeSelect) typeSelect.value = "text";
 
-        // Reload collections to show new folders
-        await loadCollections();
-
         // Reload current collection if viewing one
         if (currentCollectionType) {
           loadCollectionFiles(currentCollectionType);
         }
       } catch (error) {
         console.error("Quick add error:", error);
-        showToast(`Failed to add item: ${error.message || "Unknown error"}`);
+        if (processingToast) {
+          dismissToast(processingToast);
+        }
+        let errorMessage = "Unknown error";
+        if (error instanceof APIError) {
+          errorMessage = error.getUserMessage();
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        showToast(`Failed to add item: ${errorMessage}`, "error");
       }
     });
   }
@@ -469,7 +464,7 @@ function updateNosqlDiagramColors() {
   });
 
   // Update collection box text - first text in each box is the title (white), rest are fields
-  nosqlSvg.querySelectorAll(".collection-box, .nosql-collection-tile").forEach((box) => {
+  nosqlSvg.querySelectorAll(".collection-box").forEach((box) => {
     const texts = box.querySelectorAll("text");
     texts.forEach((text, index) => {
       if (index === 0) {
@@ -621,9 +616,6 @@ function initSidebarNavigation() {
       } else if (target === "data") {
         // Initialize data tabs when switching to data page
         initDataTabs();
-        // Load SQL and NoSQL data
-        loadSQLTables();
-        loadNoSQLCollections();
         // Update diagram colors
         setTimeout(updateNosqlDiagramColors, 100);
       }
@@ -832,11 +824,20 @@ async function performSearch(query) {
     console.error("Search error:", error);
     if (searchLoading) searchLoading.style.display = "none";
     if (searchEmpty) searchEmpty.style.display = "flex";
+    
+    // Extract user-friendly error message
+    let errorMessage = "Error performing search. Please try again.";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     if (searchResultsList) {
       searchResultsList.innerHTML =
-        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error performing search. Please try again.</div>';
+        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
     }
-    showToast("Search failed: " + (error.message || "Unknown error"));
+    showToast(`Search failed: ${errorMessage}`, "error");
   }
 }
 
@@ -952,29 +953,13 @@ function getFileIcon(fileName) {
   }
 }
 
-// Format file size (always show in MB, GB, or TB - never KB)
+// Format file size
 function formatFileSize(bytes) {
-  if (bytes === 0) return "0 MB";
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const mb = bytes / (k * k);
-  
-  // Always show in MB, even for small files (convert KB to MB)
-  const sizes = ["MB", "GB", "TB"];
-  let i = 0;
-  let size = mb;
-  
-  // If less than 1MB, still show in MB with decimal places
-  if (size < 1) {
-    return parseFloat(size.toFixed(3)) + " MB"; // Show 3 decimal places for small files
-  }
-  
-  // For MB and above, show in MB, GB, or TB
-  while (size >= 1024 && i < sizes.length - 1) {
-    size = size / 1024;
-    i++;
-  }
-  
-  return parseFloat(size.toFixed(2)) + " " + sizes[i];
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
 // Escape HTML to prevent XSS
@@ -1060,10 +1045,26 @@ async function loadCollectionFiles(collectionType) {
     console.error("Error loading files:", error);
     if (loadingState) loadingState.style.display = "none";
     if (emptyState) {
-      emptyState.innerHTML = "<p>Error loading files. Please try again.</p>";
+      let errorMessage = "Error loading files. Please try again.";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      emptyState.innerHTML = `<p>${escapeHtml(errorMessage)}</p>`;
       emptyState.style.display = "block";
     }
-    showToast("Failed to load files");
+    let errorMessage = "Failed to load files";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadCollectionFiles(collectionType),
+    }]);
   }
 }
 
@@ -1077,10 +1078,7 @@ function createFileElement(file, collectionType) {
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || "";
   div.dataset.fileDate =
     file.date || file.uploadedAt || new Date().toISOString();
-  // Format file size to MB
-  const fileSizeBytes = file.size || file.fileSize || 0;
-  const formattedSize = typeof fileSizeBytes === 'number' ? formatFileSize(fileSizeBytes) : (fileSizeBytes || "Unknown");
-  div.dataset.fileSize = formattedSize;
+  div.dataset.fileSize = file.size || file.fileSize || "Unknown";
   div.dataset.fileType = file.type || file.fileType || "Unknown";
   div.dataset.fileDimensions = file.dimensions || file.fileDimensions || "";
 
@@ -1185,10 +1183,7 @@ function createFileElement(file, collectionType) {
       )}</h3>
       <p>${escapeHtml(file.description || file.comment || "")}</p>
       <span class="gallery-item-meta">${
-        (() => {
-          const sizeBytes = file.size || file.fileSize || 0;
-          return typeof sizeBytes === 'number' ? formatFileSize(sizeBytes) : (sizeBytes || "Unknown");
-        })()
+        file.size || file.fileSize || "Unknown"
       } • ${file.type || file.fileType || "Unknown"}</span>
     </div>
   `;
@@ -1243,63 +1238,16 @@ async function loadCollections() {
       statsMap.set(stats.type, stats);
     });
 
-    // Filter out empty collections (collections with 0 files)
-    const nonEmptyCollections = collections.filter((collection) => {
-      const stats = statsMap.get(collection.type) || {
-        file_count: 0,
-        storage_used_formatted: "0 B",
-      };
-      return stats.file_count > 0;
-    });
-
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    // Show message if all collections are empty
-    if (nonEmptyCollections.length === 0) {
-      collectionCards.innerHTML =
-        '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">No collections with files available</p>';
-      return;
-    }
-
-    // Render collection cards for non-empty collections only
-    // Fetch thumbnails for media collections
-    const cardPromises = nonEmptyCollections.map(async (collection) => {
+    // Render collection cards
+    collections.forEach((collection) => {
       const stats = statsMap.get(collection.type) || {
         file_count: 0,
         storage_used_formatted: "0 B",
       };
-      
-      // Try to get a thumbnail for media collections (images, videos)
-      let thumbnailUrl = null;
-      const mediaTypes = ["images", "videos", "audio"];
-      if (mediaTypes.includes(collection.type) && stats.file_count > 0) {
-        try {
-          const filesResponse = await getFiles(collection.type, "", { limit: 1 });
-          const files = filesResponse.files || filesResponse || [];
-          if (files.length > 0 && files[0]) {
-            const firstFile = files[0];
-            // Use thumbnail, url, or path for images/videos
-            thumbnailUrl = firstFile.thumbnail || firstFile.url || firstFile.path || firstFile.downloadUrl || null;
-            // For videos, we might want a poster/thumbnail, for images use the file itself
-            if (collection.type === "images" && thumbnailUrl) {
-              // Ensure it's a full URL if it's a relative path
-              if (thumbnailUrl.startsWith("/") || !thumbnailUrl.startsWith("http")) {
-                thumbnailUrl = `${API_CONFIG.baseURL}${thumbnailUrl.startsWith("/") ? "" : "/"}${thumbnailUrl}`;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`Failed to fetch thumbnail for ${collection.type}:`, err);
-        }
-      }
-      
-      const card = await createCollectionCard(collection, stats, thumbnailUrl);
-      return card;
-    });
-
-    const cards = await Promise.all(cardPromises);
-    cards.forEach((card) => {
+      const card = createCollectionCard(collection, stats);
       collectionCards.appendChild(card);
     });
 
@@ -1309,65 +1257,60 @@ async function loadCollections() {
     console.error("Error loading collections:", error);
     if (loadingState) loadingState.style.display = "none";
     if (errorState) {
+      let errorMessage = "Unknown error";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       errorState.style.display = "block";
-      errorState.innerHTML = `<p>Failed to load collections: ${
-        error.message || "Unknown error"
-      }</p>`;
+      errorState.innerHTML = `<p>Failed to load collections: ${escapeHtml(errorMessage)}</p>`;
     }
-    showToast("Failed to load collections");
+    let errorMessage = "Failed to load collections";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadCollections(),
+    }]);
   }
 }
 
 // Create a collection card element
-async function createCollectionCard(collection, stats, thumbnailUrl = null) {
+function createCollectionCard(collection, stats) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "collection-card";
   button.dataset.collection = collection.type;
 
-  // Use actual thumbnail if provided, otherwise use placeholder
-  let imageUrl = thumbnailUrl;
-  
-  if (!imageUrl) {
-    // Fallback to placeholder images for non-media types
-    const imageMap = {
-      documents:
-        "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
-      spreadsheets:
-        "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
-      presentations:
-        "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
-      archives:
-        "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
-      json:
-        "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
-      code:
-        "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=600&q=80",
-      others:
-        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-      other:
-        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-    };
-    imageUrl = imageMap[collection.type] || imageMap["others"] || imageMap["other"];
-  }
+  // Map collection types to image URLs
+  const imageMap = {
+    images:
+      "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80",
+    videos:
+      "https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80",
+    audio:
+      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80",
+    documents:
+      "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
+    spreadsheets:
+      "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
+    presentations:
+      "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
+    archives:
+      "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
+    other:
+      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
+  };
 
+  const imageUrl = imageMap[collection.type] || imageMap["other"];
   const fileCount = stats.file_count || 0;
-  // Format storage used - always convert to MB
-  let storageUsed = stats.storage_used_formatted || stats.storage_used || "0 MB";
-  // If storage is in bytes, convert to MB
-  if (stats.storage_used && typeof stats.storage_used === 'number') {
-    storageUsed = formatFileSize(stats.storage_used);
-  } else if (storageUsed.includes("KB")) {
-    // Convert KB to MB (always convert, even if less than 1024 KB)
-    const kbValue = parseFloat(storageUsed.replace(" KB", ""));
-    storageUsed = formatFileSize(kbValue * 1024);
-  } else if (storageUsed.includes("B") && !storageUsed.includes("MB") && !storageUsed.includes("GB") && !storageUsed.includes("TB")) {
-    // If it's in bytes, convert to MB
-    const byteValue = parseFloat(storageUsed.replace(" B", "").replace(/[^0-9.]/g, ""));
-    if (!isNaN(byteValue)) {
-      storageUsed = formatFileSize(byteValue);
-    }
-  }
+  const storageUsed =
+    stats.storage_used_formatted || stats.storage_used || "0 B";
 
   button.innerHTML = `
     <img
@@ -1463,11 +1406,26 @@ function initGalleryMenus() {
       if (action === "download") {
         e.preventDefault();
         try {
+          const downloadToast = showToast(`Downloading "${fileName}"...`, "info", 0);
           await downloadFile(fileId, fileName, fileUrl, filePath);
-          showToast(`Downloading "${fileName}"...`);
+          dismissToast(downloadToast);
+          showToast(`Download started for "${fileName}"`, "success");
         } catch (error) {
           console.error("Download error:", error);
-          showToast(`Failed to download: ${error.message || "Unknown error"}`);
+          let errorMessage = "Unknown error";
+          if (error instanceof APIError) {
+            errorMessage = error.getUserMessage();
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          showToast(`Failed to download: ${errorMessage}`, "error", 0, [{
+            id: "retry",
+            label: "Retry",
+            handler: () => {
+              const actionEvent = new Event("click");
+              option.dispatchEvent(actionEvent);
+            },
+          }]);
         }
       } else if (action === "rename") {
         e.preventDefault();
@@ -1477,10 +1435,16 @@ function initGalleryMenus() {
             await renameFile(fileId, newName.trim());
             titleElement.textContent = newName.trim();
             galleryItem.dataset.fileName = newName.trim();
-            showToast(`Renamed to "${newName.trim()}"`);
+            showToast(`Renamed to "${newName.trim()}"`, "success");
           } catch (error) {
             console.error("Rename error:", error);
-            showToast(`Failed to rename: ${error.message || "Unknown error"}`);
+            let errorMessage = "Unknown error";
+            if (error instanceof APIError) {
+              errorMessage = error.getUserMessage();
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            showToast(`Failed to rename: ${errorMessage}`, "error");
           }
         }
       } else if (action === "delete") {
@@ -1492,11 +1456,17 @@ function initGalleryMenus() {
             galleryItem.style.transform = "scale(0.95)";
             setTimeout(() => {
               galleryItem.remove();
-              showToast(`Deleted "${fileName}"`);
+              showToast(`Deleted "${fileName}"`, "success");
             }, 200);
           } catch (error) {
             console.error("Delete error:", error);
-            showToast(`Failed to delete: ${error.message || "Unknown error"}`);
+            let errorMessage = "Unknown error";
+            if (error instanceof APIError) {
+              errorMessage = error.getUserMessage();
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            showToast(`Failed to delete: ${errorMessage}`, "error");
           }
         }
       } else if (action === "copy-path") {
@@ -1522,8 +1492,13 @@ function initGalleryMenus() {
           await openCommentsModal(galleryItem);
         } catch (error) {
           console.error("Error opening comments modal:", error);
-          const errorMessage = getUserFriendlyErrorMessage(error);
-          showToast(`Failed to open notes: ${errorMessage}`);
+          let errorMessage = "Unknown error";
+          if (error instanceof APIError) {
+            errorMessage = error.getUserMessage();
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          showToast(`Failed to open notes: ${errorMessage}`, "error");
         }
       }
     });
@@ -1695,8 +1670,19 @@ function ensureButtonsClickable() {
   });
 }
 
-// Upload files to backend
-// Helper function to detect file type category
+// File validation constants
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp'];
+const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
+const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac'];
+const SUPPORTED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
+const ALL_SUPPORTED_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES, ...SUPPORTED_AUDIO_TYPES, ...SUPPORTED_DOCUMENT_TYPES];
+
+/**
+ * Helper function to detect file type category
+ * @param {File} file - File to categorize
+ * @returns {string} Category name
+ */
 function detectFileTypeCategory(file) {
   const mimeType = file.type || "";
   const fileName = file.name || "";
@@ -1748,11 +1734,19 @@ function detectFileTypeCategory(file) {
   // Archive types
   if (
     mimeType.includes("zip") ||
-    mimeType.includes("archive") ||
-    mimeType.includes("compressed") ||
-    ["zip", "rar", "7z", "tar", "gz"].includes(extension)
+    mimeType.includes("rar") ||
+    mimeType.includes("tar") ||
+    mimeType.includes("gz") ||
+    ["zip", "rar", "tar", "gz", "7z"].includes(extension)
   ) {
     return "archives";
+  }
+  
+  // Code types
+  if (
+    ["js", "py", "java", "cpp", "c", "h", "css", "html", "json", "xml", "go", "rs", "ts"].includes(extension)
+  ) {
+    return "code";
   }
   
   // JSON files
@@ -1760,18 +1754,14 @@ function detectFileTypeCategory(file) {
     return "json";
   }
   
-  // Code files
-  if (
-    ["js", "ts", "py", "java", "cpp", "c", "html", "css", "xml", "yaml", "yml"].includes(extension)
-  ) {
-    return "code";
-  }
-  
-  // Unknown/other types
   return "others";
 }
 
-// Helper function to get human-readable file type name
+/**
+ * Get user-friendly file type name
+ * @param {string} category - Category name
+ * @returns {string} User-friendly type name
+ */
 function getFileTypeName(category) {
   const typeNames = {
     images: "Image",
@@ -1788,40 +1778,107 @@ function getFileTypeName(category) {
   return typeNames[category] || "File";
 }
 
+/**
+ * Validate file before upload
+ * @param {File} file - File to validate
+ * @returns {Array} Array of validation errors (empty if valid)
+ */
+function validateFile(file) {
+  const errors = [];
+
+  // Check file size
+  if (file.size > MAX_FILE_SIZE) {
+    errors.push({
+      type: 'file-too-large',
+      message: `File "${file.name}" exceeds the maximum size limit of 500MB.`,
+    });
+  }
+
+  // Check file type (optional - allow all types but warn)
+  if (file.type && ALL_SUPPORTED_TYPES.length > 0 && !ALL_SUPPORTED_TYPES.includes(file.type)) {
+    // Show non-blocking warning toast for unsupported types
+    showToast(
+      `File type "${file.type}" may not be fully supported. Upload may fail.`,
+      "warning",
+      4000
+    );
+  }
+
+  return errors;
+}
+
+/**
+ * Upload files to backend with progress and error handling
+ */
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
-    showToast("No files selected");
+    showToast("No files selected", "warning");
     return;
   }
 
-  try {
-    showToast(
-      `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
-    );
+  // Validate all files first
+  const validationErrors = [];
+  const validFiles = [];
 
-    // Detect file types before upload
-    const fileTypes = new Map();
-    files.forEach((file) => {
-      const category = detectFileTypeCategory(file);
-      fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
+  for (const file of files) {
+    const errors = validateFile(file);
+    if (errors.length > 0) {
+      validationErrors.push(...errors);
+    } else {
+      validFiles.push(file);
+    }
+  }
+
+  // Show validation errors
+  if (validationErrors.length > 0) {
+    validationErrors.forEach((error) => {
+      showToast(error.message, "error");
     });
+    
+    if (validFiles.length === 0) {
+      return; // No valid files to upload
+    }
+  }
 
+  // Detect file types before upload
+  const fileTypes = new Map();
+  validFiles.forEach((file) => {
+    const category = detectFileTypeCategory(file);
+    fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
+  });
+
+  // Show upload started notification
+  const uploadToast = showToast(
+    `Uploading ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}...`,
+    "info",
+    0 // Don't auto-dismiss
+  );
+
+  const uploadResults = {
+    success: [],
+    failed: [],
+  };
+
+  try {
     // Determine if files are media or mixed
     const mediaTypes = ["image/", "video/", "audio/"];
-    const allMedia = files.every((file) =>
+    const allMedia = validFiles.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
-    let response;
-    if (allMedia && files.length > 0) {
+    let result;
+    if (allMedia && validFiles.length > 0) {
       // Use media endpoint for media files
-      response = await ingestMedia(files);
+      result = await ingestMedia(validFiles);
     } else {
       // Use unified endpoint for mixed files
-      response = await ingestFiles(files);
+      result = await ingestFiles(validFiles);
     }
 
-    // Show file type information
+    // Dismiss upload toast
+    dismissToast(uploadToast);
+
+    // Show success with file type information
     const typeMessages = [];
     fileTypes.forEach((count, category) => {
       const typeName = getFileTypeName(category);
@@ -1830,8 +1887,11 @@ async function uploadFiles(files) {
 
     const typeMessage = typeMessages.join(", ");
     showToast(
-      `Successfully uploaded: ${typeMessage}`
+      `Successfully uploaded: ${typeMessage}`,
+      "success"
     );
+
+    uploadResults.success = validFiles;
 
     // Reload collections to show new folders
     await loadCollections();
@@ -1842,140 +1902,299 @@ async function uploadFiles(files) {
     }
   } catch (error) {
     console.error("Upload error:", error);
-    const errorMessage = error.message || "Unknown error";
-
-    // Provide more helpful error messages
-    if (
-      errorMessage.includes("Cannot connect to backend") ||
-      errorMessage.includes("Failed to fetch")
-    ) {
-      showToast(
-        "Cannot connect to backend. Is the server running on port 8090?"
-      );
-    } else {
-      showToast(`Upload failed: ${errorMessage}`);
-    }
-  }
-}
-
-let toastTimeoutId;
-function showToast(message) {
-  if (!toast) {
-    toast = document.getElementById("toast");
-    if (!toast) return;
-  }
-  toast.textContent = message;
-  toast.hidden = false;
-  toast.classList.add("is-visible");
-  clearTimeout(toastTimeoutId);
-  toastTimeoutId = setTimeout(() => {
-    toast.classList.remove("is-visible");
-    toastTimeoutId = setTimeout(() => {
-      toast.hidden = true;
-    }, 200);
-  }, 2400);
-}
-
-// Initialize About Modal
-let aboutModalInitialized = false;
-function initAboutModal() {
-  if (aboutModalInitialized) return;
-  
-  const aboutBtn = document.getElementById("about-btn");
-  const modal = document.getElementById("about-modal");
-  const closeBtn = modal?.querySelector(".about-close-button");
-  const background = modal?.querySelector(".about-modal-overlay");
-
-  if (!aboutBtn || !modal) {
-    setTimeout(initAboutModal, 100);
-    return;
-  }
-
-  aboutModalInitialized = true;
-
-  // Open modal function
-  const openModal = () => {
-    modal.classList.add("is-active");
-    modal.setAttribute("aria-hidden", "false");
-    document.body.style.overflow = "hidden";
     
-    // Focus first focusable element
-    const firstLink = modal.querySelector("a, button");
-    firstLink?.focus();
-  };
+    // Dismiss upload toast
+    dismissToast(uploadToast);
 
-  // Close modal function
-  const closeModal = () => {
-    modal.classList.remove("is-active");
-    modal.setAttribute("aria-hidden", "true");
-    document.body.style.overflow = "";
-    aboutBtn.focus(); // Return focus to button
-  };
+    // Import APIError if available
+    let errorMessage = "Unknown error";
+    let errorType = "error";
+    let retryAction = null;
 
-  // Open modal on button click
-  aboutBtn.addEventListener("click", openModal);
+    if (error && typeof error === 'object') {
+      // Check if it's an APIError
+      if (error.getUserMessage && typeof error.getUserMessage === 'function') {
+        errorMessage = error.getUserMessage();
+        errorType = error.getErrorType ? error.getErrorType() : 'error';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
 
-  // Close button
-  closeBtn?.addEventListener("click", closeModal);
-
-  // Click outside modal
-  background?.addEventListener("click", closeModal);
-
-  // ESC key handler
-  const handleEscape = (e) => {
-    if (e.key === "Escape" && modal.classList.contains("is-active")) {
-      closeModal();
-    }
-  };
-  document.addEventListener("keydown", handleEscape);
-
-  // Trap focus within modal when open
-  const trapFocus = (e) => {
-    if (!modal.classList.contains("is-active")) return;
-    
-    if (e.key === "Tab") {
-      const focusableElements = modal.querySelectorAll(
-        "a[href], button:not([disabled]), textarea, input, select"
-      );
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
-
-      if (e.shiftKey && document.activeElement === firstElement) {
-        e.preventDefault();
-        lastElement.focus();
-      } else if (!e.shiftKey && document.activeElement === lastElement) {
-        e.preventDefault();
-        firstElement.focus();
+      // Determine error type for better messaging
+      if (errorMessage.includes("Cannot connect") || errorMessage.includes("Failed to fetch") || errorMessage.includes("Network")) {
+        errorMessage = "Cannot connect to backend. Please ensure the server is running.";
+        errorType = "network";
+        retryAction = {
+          id: "retry",
+          label: "Retry",
+          handler: () => uploadFiles(validFiles),
+        };
+      } else if (errorMessage.includes("413") || errorMessage.includes("too large")) {
+        errorMessage = "File exceeds the maximum size limit (500MB).";
+        errorType = "file-too-large";
+      } else if (errorMessage.includes("415") || errorMessage.includes("unsupported")) {
+        errorMessage = "File format not supported.";
+        errorType = "unsupported-format";
       }
     }
-  };
-  modal.addEventListener("keydown", trapFocus);
 
-  // Load version info from backend (optional)
-  loadVersionInfo();
+    // Show error toast with retry option
+    showToast(
+      `Upload failed: ${errorMessage}`,
+      "error",
+      0, // Manual dismiss
+      retryAction ? [retryAction] : []
+    );
+
+    uploadResults.failed = validFiles;
+  }
+
+  return uploadResults;
 }
 
-// Fetch version from backend (optional)
-async function loadVersionInfo() {
-  try {
-    const response = await fetch("/api/version");
-    if (!response.ok) throw new Error("Version endpoint not available");
+// ==================== Toast Notification System ====================
+
+const TOAST_CONTAINER_ID = 'toast-container';
+const MAX_TOASTS = 5;
+const TOAST_DURATIONS = {
+  success: 3000,
+  error: 0, // Manual dismiss for errors
+  info: 5000,
+  warning: 4000,
+};
+
+let toastContainer = null;
+let activeToasts = [];
+
+/**
+ * Initialize toast container
+ */
+function initToastContainer() {
+  if (!toastContainer) {
+    // Check if container already exists
+    toastContainer = document.getElementById(TOAST_CONTAINER_ID);
     
-    const data = await response.json();
-    const versionBadge = document.getElementById("version-badge");
-    const buildInfo = document.getElementById("build-info");
-    
-    if (versionBadge && data.version) {
-      versionBadge.textContent = `v${data.version}`;
+    if (!toastContainer) {
+      // Create toast container
+      toastContainer = document.createElement('div');
+      toastContainer.id = TOAST_CONTAINER_ID;
+      toastContainer.className = 'toast-container';
+      toastContainer.setAttribute('aria-live', 'polite');
+      toastContainer.setAttribute('aria-atomic', 'false');
+      document.body.appendChild(toastContainer);
     }
-    
-    if (buildInfo && data.version && data.build_date) {
-      buildInfo.textContent = `Version ${data.version} • Built on ${data.build_date}`;
-    }
-  } catch (error) {
-    // Silently fail - version endpoint is optional
-    console.debug("Could not load version info:", error);
   }
+  return toastContainer;
+}
+
+/**
+ * Get icon for toast type
+ */
+function getToastIcon(type) {
+  const icons = {
+    success: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>`,
+    error: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+    </svg>`,
+    info: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+    </svg>`,
+    warning: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.008v.008H12v-.008z" />
+    </svg>`,
+  };
+  return icons[type] || icons.info;
+}
+
+/**
+ * Show toast notification
+ * @param {string} message - Toast message
+ * @param {string} type - Toast type: 'success', 'error', 'info', 'warning'
+ * @param {number} duration - Auto-dismiss duration in ms (0 = manual dismiss)
+ * @param {Array} actions - Array of action buttons: [{ id, label, handler }]
+ * @returns {HTMLElement} Toast element
+ */
+function showToast(message, type = 'info', duration = null, actions = []) {
+  const container = initToastContainer();
+  
+  // Remove oldest toast if at max capacity
+  if (activeToasts.length >= MAX_TOASTS) {
+    const oldestToast = activeToasts.shift();
+    dismissToast(oldestToast);
+  }
+  
+  // Use default duration if not specified
+  if (duration === null) {
+    duration = TOAST_DURATIONS[type] || TOAST_DURATIONS.info;
+  }
+  
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  
+  const icon = getToastIcon(type);
+  const actionsHTML = actions
+    .map(
+      (a) =>
+        `<button class="toast-action" data-action="${escapeHtml(a.id)}" aria-label="${escapeHtml(a.label)}">${escapeHtml(a.label)}</button>`
+    )
+    .join('');
+  
+  toast.innerHTML = `
+    <div class="toast-icon">${icon}</div>
+    <div class="toast-content">
+      <div class="toast-message">${escapeHtml(message)}</div>
+      ${actionsHTML ? `<div class="toast-actions">${actionsHTML}</div>` : ''}
+    </div>
+    <button class="toast-close" aria-label="Close" type="button">&times;</button>
+  `;
+  
+  // Add to container and active list
+  container.appendChild(toast);
+  activeToasts.push(toast);
+  
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.classList.add('is-visible');
+  });
+  
+  // Handle close button
+  const closeButton = toast.querySelector('.toast-close');
+  closeButton.addEventListener('click', () => {
+    dismissToast(toast);
+  });
+  
+  // Handle action buttons
+  actions.forEach((action) => {
+    const actionButton = toast.querySelector(`[data-action="${action.id}"]`);
+    if (actionButton && action.handler) {
+      actionButton.addEventListener('click', () => {
+        action.handler();
+        if (action.dismissOnClick !== false) {
+          dismissToast(toast);
+        }
+      });
+    }
+  });
+  
+  // Auto-dismiss for non-error toasts
+  if (type !== 'error' && duration > 0) {
+    const timeoutId = setTimeout(() => {
+      dismissToast(toast);
+    }, duration);
+    
+    // Store timeout ID for potential cancellation
+    toast.dataset.timeoutId = timeoutId;
+  }
+  
+  return toast;
+}
+
+/**
+ * Dismiss a toast
+ */
+function dismissToast(toast) {
+  if (!toast || !toast.parentNode) return;
+  
+  // Clear timeout if exists
+  if (toast.dataset.timeoutId) {
+    clearTimeout(parseInt(toast.dataset.timeoutId, 10));
+  }
+  
+  // Remove from active list
+  const index = activeToasts.indexOf(toast);
+  if (index > -1) {
+    activeToasts.splice(index, 1);
+  }
+  
+  // Animate out
+  toast.classList.remove('is-visible');
+  toast.classList.add('is-dismissing');
+  
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 300);
+}
+
+/**
+ * Dismiss all toasts
+ */
+function dismissAllToasts() {
+  // Use slice() to avoid mutation during iteration
+  activeToasts.slice().forEach((toast) => dismissToast(toast));
+  activeToasts = [];
+}
+
+// ==================== Loading Overlay System ====================
+
+let loadingOverlay = null;
+let loadingOverlayCount = 0;
+
+/**
+ * Show global loading overlay
+ * @param {string} message - Optional loading message
+ */
+function showLoadingOverlay(message = 'Loading...') {
+  if (!loadingOverlay) {
+    loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'loading-overlay';
+    loadingOverlay.className = 'loading-overlay';
+    loadingOverlay.setAttribute('role', 'status');
+    loadingOverlay.setAttribute('aria-live', 'polite');
+    loadingOverlay.setAttribute('aria-label', message);
+    document.body.appendChild(loadingOverlay);
+  }
+
+  loadingOverlay.innerHTML = `
+    <div class="loading-spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-text">${escapeHtml(message)}</div>
+    </div>
+  `;
+
+  loadingOverlayCount++;
+  loadingOverlay.style.display = 'flex';
+}
+
+/**
+ * Hide global loading overlay
+ */
+function hideLoadingOverlay() {
+  if (loadingOverlayCount > 0) {
+    loadingOverlayCount--;
+  }
+
+  if (loadingOverlayCount === 0 && loadingOverlay) {
+    loadingOverlay.style.display = 'none';
+  }
+}
+
+/**
+ * Wrap async function with loading overlay
+ */
+async function withLoadingOverlay(asyncFn, message = 'Loading...') {
+  showLoadingOverlay(message);
+  try {
+    const result = await asyncFn();
+    return result;
+  } finally {
+    hideLoadingOverlay();
+  }
+}
+
+/**
+ * Legacy showToast function for backward compatibility
+ * @deprecated Use showToast(message, type, duration, actions) instead
+ */
+let toastTimeoutId;
+function showToastLegacy(message) {
+  showToast(message, 'info');
 }
 
 // Initialize all features when DOM is ready
@@ -2012,7 +2231,6 @@ async function initAll() {
     initCommentsModal();
     initGhostButton();
     initDataTabs();
-    initAboutModal();
     ensureButtonsClickable();
 
     // Load collections if on files page
@@ -2058,227 +2276,6 @@ function initLayoutToggle() {
       }
     });
   });
-}
-
-// Load SQL tables from backend
-async function loadSQLTables() {
-  const tbody = document.getElementById("sql-tables-body");
-  const emptyRow = document.getElementById("sql-empty");
-  
-  if (!tbody) return;
-
-  try {
-    // For now, we'll get SQL data from JSON collections that were stored as SQL
-    // This would need a proper SQL tables endpoint in the backend
-    // For now, show empty state
-    tbody.innerHTML = "";
-    if (emptyRow) {
-      emptyRow.style.display = "table-row";
-    } else {
-      const emptyTr = document.createElement("tr");
-      emptyTr.id = "sql-empty";
-      emptyTr.innerHTML = `
-        <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-          No SQL tables available. Upload JSON data to create SQL tables.
-        </td>
-      `;
-      tbody.appendChild(emptyTr);
-    }
-  } catch (error) {
-    console.error("Error loading SQL tables:", error);
-    if (tbody) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-            Error loading SQL tables
-          </td>
-        </tr>
-      `;
-    }
-  }
-}
-
-// Load NoSQL collections and create tiles
-async function loadNoSQLCollections() {
-  const nosqlDiagram = document.getElementById("nosql-diagram");
-  if (!nosqlDiagram) return;
-
-  try {
-    const svg = nosqlDiagram.querySelector(".nosql-svg");
-    if (!svg) return;
-
-    // Get or create transform group
-    let transformGroup = svg.querySelector("g.nosql-transform-group");
-    if (!transformGroup) {
-      transformGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      transformGroup.classList.add("nosql-transform-group");
-      svg.appendChild(transformGroup);
-    }
-
-    // Clear existing collection tiles
-    const existingTiles = transformGroup.querySelectorAll(".nosql-collection-tile");
-    existingTiles.forEach(tile => tile.remove());
-    
-    const emptyMessage = document.getElementById("nosql-empty-message");
-    
-    // Try to get JSON collections (NoSQL data)
-    // For now, we'll check if there's a json collection type
-    try {
-      const jsonFiles = await getFiles("json", "", { limit: 100 });
-      const files = jsonFiles.files || jsonFiles || [];
-      
-      if (files.length === 0) {
-        if (emptyMessage) emptyMessage.style.display = "block";
-        return;
-      }
-      
-      if (emptyMessage) emptyMessage.style.display = "none";
-      
-      // Group files by namespace/collection name to create different tiles
-      const collectionsMap = new Map();
-      files.forEach(file => {
-        const namespace = file.namespace || file.collection || "default";
-        if (!collectionsMap.has(namespace)) {
-          collectionsMap.set(namespace, []);
-        }
-        collectionsMap.get(namespace).push(file);
-      });
-      
-      // Create a tile for each collection/namespace
-      let xPos = 50;
-      let yPos = 50;
-      const tileWidth = 200;
-      const tileSpacing = 250;
-      const maxPerRow = 4;
-      let row = 0;
-      let col = 0;
-      
-      collectionsMap.forEach((files, collectionName) => {
-        // Analyze the first file to get schema
-        const firstFile = files[0];
-        let schema = {};
-        
-        try {
-          if (firstFile.content) {
-            const content = typeof firstFile.content === 'string' 
-              ? JSON.parse(firstFile.content) 
-              : firstFile.content;
-            schema = content;
-          } else if (firstFile.data) {
-            schema = typeof firstFile.data === 'string' 
-              ? JSON.parse(firstFile.data) 
-              : firstFile.data;
-          }
-        } catch (e) {
-          console.warn("Could not parse schema for", collectionName, e);
-        }
-        
-        // Calculate position
-        xPos = 50 + (col % maxPerRow) * tileSpacing;
-        yPos = 50 + Math.floor(col / maxPerRow) * tileSpacing;
-        col++;
-        
-        // Create collection tile
-        const tile = createNoSQLCollectionTile(collectionName, schema, xPos, yPos, tileWidth);
-        transformGroup.appendChild(tile);
-      });
-      
-      // Update transform if zoom/pan is initialized
-      if (typeof updateNosqlTransform === 'function') {
-        updateNosqlTransform();
-      }
-      
-    } catch (error) {
-      console.warn("Could not load NoSQL collections:", error);
-      if (emptyMessage) emptyMessage.style.display = "block";
-    }
-    
-  } catch (error) {
-    console.error("Error loading NoSQL collections:", error);
-    const emptyMessage = document.getElementById("nosql-empty-message");
-    if (emptyMessage) emptyMessage.style.display = "block";
-  }
-}
-
-// Create a NoSQL collection tile
-function createNoSQLCollectionTile(collectionName, schema, x, y, width) {
-  const ns = "http://www.w3.org/2000/svg";
-  const g = document.createElementNS(ns, "g");
-  g.classList.add("nosql-collection-tile");
-  g.setAttribute("transform", `translate(${x}, ${y})`);
-  
-  // Get schema fields
-  const fields = [];
-  if (schema && typeof schema === 'object') {
-    Object.keys(schema).forEach(key => {
-      const value = schema[key];
-      let type = typeof value;
-      if (Array.isArray(value)) type = "array";
-      else if (value === null) type = "null";
-      else if (typeof value === 'object') type = "object";
-      fields.push({ name: key, type });
-    });
-  }
-  
-  const height = 40 + (fields.length * 20) + 20;
-  const headerHeight = 32;
-  
-  // Create box
-  const box = document.createElementNS(ns, "rect");
-  box.setAttribute("x", "0");
-  box.setAttribute("y", "0");
-  box.setAttribute("width", width);
-  box.setAttribute("height", height);
-  box.setAttribute("rx", "8");
-  box.setAttribute("fill", "var(--surface)");
-  box.setAttribute("stroke", "var(--border)");
-  box.setAttribute("stroke-width", "2");
-  box.setAttribute("class", "collection-box");
-  g.appendChild(box);
-  
-  // Create header
-  const header = document.createElementNS(ns, "rect");
-  header.setAttribute("x", "0");
-  header.setAttribute("y", "0");
-  header.setAttribute("width", width);
-  header.setAttribute("height", headerHeight);
-  header.setAttribute("rx", "8");
-  header.setAttribute("fill", "var(--accent)");
-  header.setAttribute("class", "collection-box");
-  g.appendChild(header);
-  
-  // Collection name
-  const nameText = document.createElementNS(ns, "text");
-  nameText.setAttribute("x", "10");
-  nameText.setAttribute("y", "20");
-  nameText.setAttribute("fill", "white");
-  nameText.setAttribute("font-size", "14");
-  nameText.setAttribute("font-weight", "600");
-  nameText.textContent = collectionName || "collection";
-  g.appendChild(nameText);
-  
-  // Fields
-  fields.slice(0, 10).forEach((field, index) => {
-    const fieldText = document.createElementNS(ns, "text");
-    fieldText.setAttribute("x", "10");
-    fieldText.setAttribute("y", String(headerHeight + 20 + (index * 20)));
-    fieldText.setAttribute("fill", "var(--text-primary)");
-    fieldText.setAttribute("font-size", "12");
-    fieldText.textContent = `${field.name} (${field.type})`;
-    g.appendChild(fieldText);
-  });
-  
-  if (fields.length > 10) {
-    const moreText = document.createElementNS(ns, "text");
-    moreText.setAttribute("x", "10");
-    moreText.setAttribute("y", String(headerHeight + 20 + (10 * 20)));
-    moreText.setAttribute("fill", "var(--text-secondary)");
-    moreText.setAttribute("font-size", "11");
-    moreText.textContent = `... and ${fields.length - 10} more`;
-    g.appendChild(moreText);
-  }
-  
-  return g;
 }
 
 // Initialize data tabs (SQL/NoSQL)
@@ -2329,12 +2326,9 @@ function initDataTabs() {
       if (tabType === "sql") {
         sqlSection.style.display = "flex";
         nosqlSection.style.display = "none";
-        loadSQLTables();
       } else if (tabType === "nosql") {
         sqlSection.style.display = "none";
         nosqlSection.style.display = "flex";
-        // Load NoSQL collections when switching to NoSQL tab
-        loadNoSQLCollections();
         // Update diagram colors when switching to NoSQL tab
         setTimeout(updateNosqlDiagramColors, 100);
         // Initialize zoom and pan when switching to NoSQL tab
@@ -2570,7 +2564,7 @@ async function renderComments(fileId) {
 // Add a new comment
 async function addComment(fileId, text) {
   if (!text.trim()) {
-    showToast("Note cannot be empty");
+    showToast("Note cannot be empty", "warning");
     return;
   }
 
@@ -2578,10 +2572,16 @@ async function addComment(fileId, text) {
     await addNote(fileId, text.trim());
     commentInput.value = "";
     await renderComments(fileId);
-    showToast("Note added");
+    showToast("Note added", "success");
   } catch (error) {
     console.error("Error adding note:", error);
-    showToast(`Failed to add note: ${error.message || "Unknown error"}`);
+    let errorMessage = "Unknown error";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(`Failed to add note: ${errorMessage}`, "error");
   }
 }
 
@@ -2594,10 +2594,16 @@ async function deleteComment(fileId, commentId) {
   try {
     await deleteNote(fileId, commentId);
     await renderComments(fileId);
-    showToast("Note deleted");
+    showToast("Note deleted", "success");
   } catch (error) {
     console.error("Error deleting note:", error);
-    showToast(`Failed to delete note: ${error.message || "Unknown error"}`);
+    let errorMessage = "Unknown error";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(`Failed to delete note: ${errorMessage}`, "error");
   }
 }
 
@@ -2772,32 +2778,8 @@ async function loadStatistics() {
 
     // Render statistics cards
     const totalFiles = stats.totalFiles || stats.files || 0;
+    const storageUsed = stats.storageUsed || stats.storage || "0 B";
     const collections = stats.collections || stats.collectionCount || 0;
-    
-    // Format storage used - always convert to MB
-    let storageUsed = "0 MB";
-    if (stats.storageUsedBytes && typeof stats.storageUsedBytes === 'number') {
-      // Use bytes if available and convert to MB
-      storageUsed = formatFileSize(stats.storageUsedBytes);
-    } else {
-      // Parse the formatted string and convert to MB
-      const storageStr = stats.storageUsed || stats.storage || "0 B";
-      if (storageStr.includes("KB")) {
-        const kbValue = parseFloat(storageStr.replace(" KB", "").replace(/[^0-9.]/g, ""));
-        if (!isNaN(kbValue)) {
-          storageUsed = formatFileSize(kbValue * 1024);
-        }
-      } else if (storageStr.includes("MB") || storageStr.includes("GB") || storageStr.includes("TB")) {
-        // Already in MB/GB/TB, use as is
-        storageUsed = storageStr;
-      } else if (storageStr.includes("B") && !storageStr.includes("KB") && !storageStr.includes("MB")) {
-        // In bytes, convert to MB
-        const byteValue = parseFloat(storageStr.replace(" B", "").replace(/[^0-9.]/g, ""));
-        if (!isNaN(byteValue)) {
-          storageUsed = formatFileSize(byteValue);
-        }
-      }
-    }
 
     statsGrid.innerHTML = `
       <div class="stat-card">
@@ -2842,9 +2824,25 @@ async function loadStatistics() {
     console.error("Error loading statistics:", error);
     if (statsLoading) statsLoading.style.display = "none";
     if (statsGrid) {
+      let errorMessage = "Error loading statistics";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       statsGrid.innerHTML =
-        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading statistics</div>';
+        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
     }
-    showToast("Failed to load statistics");
+    let errorMessage = "Failed to load statistics";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadStatistics(),
+    }]);
   }
 }
