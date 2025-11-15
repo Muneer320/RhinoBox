@@ -154,10 +154,8 @@ func (m *Manager) ensureCategoryDirectory(category string) (string, error) {
 }
 
 // checkFilenameConflict checks if a file with the same name exists in the target category.
+// REQUIRES: Caller must hold m.mu lock before calling this function.
 func (m *Manager) checkFilenameConflict(hash, targetCategory string, filename string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	for h, meta := range m.index.data {
 		// Skip the file being moved
 		if h == hash {

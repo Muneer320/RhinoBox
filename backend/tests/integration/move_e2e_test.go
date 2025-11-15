@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,7 +33,7 @@ func TestFileMoveEndToEnd(t *testing.T) {
 	// Step 1: Upload a file
 	testContent := []byte("This is a test file for move testing. " + strings.Repeat("Content ", 50))
 	testFilename := "test_move.txt"
-	uploadHash, uploadPath := uploadTestFile(t, srv, testFilename, testContent, "text/plain")
+	uploadHash, _ := uploadTestFile(t, srv, testFilename, testContent, "text/plain")
 
 	// Step 2: Get initial metadata
 	initialMetadata := getFileMetadata(t, srv, uploadHash)
@@ -229,76 +228,5 @@ func TestFileMoveNotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for nonexistent file, got %d", w.Code)
 	}
-}
-
-// Helper function to upload a test file
-func uploadTestFile(t *testing.T, srv *api.Server, filename string, content []byte, mimeType string) (string, string) {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("failed to create form file: %v", err)
-	}
-	if _, err := part.Write(content); err != nil {
-		t.Fatalf("failed to write content: %v", err)
-	}
-	writer.Close()
-
-	req := httptest.NewRequest("POST", "/ingest/media", &buf)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("upload failed with status %d: %s", w.Code, w.Body.String())
-	}
-
-	var response map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		t.Fatalf("failed to parse upload response: %v", err)
-	}
-
-	stored := response["stored"].([]interface{})
-	if len(stored) == 0 {
-		t.Fatal("no files stored")
-	}
-
-	fileData := stored[0].(map[string]interface{})
-	hash := fileData["hash"].(string)
-	path := fileData["path"].(string)
-
-	return hash, path
-}
-
-// Helper function to get file metadata
-func getFileMetadata(t *testing.T, srv *api.Server, hash string) map[string]interface{} {
-	req := httptest.NewRequest("GET", fmt.Sprintf("/files/metadata?hash=%s", hash), nil)
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("get metadata failed with status %d: %s", w.Code, w.Body.String())
-	}
-
-	var metadata map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &metadata); err != nil {
-		t.Fatalf("failed to parse metadata: %v", err)
-	}
-
-	return metadata
-}
-
-// Helper function to download file by hash
-func downloadFileByHash(t *testing.T, srv *api.Server, hash string) []byte {
-	req := httptest.NewRequest("GET", fmt.Sprintf("/files/download?hash=%s", hash), nil)
-	w := httptest.NewRecorder()
-	srv.Router().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("download failed with status %d: %s", w.Code, w.Body.String())
-	}
-
-	return w.Body.Bytes()
 }
 
