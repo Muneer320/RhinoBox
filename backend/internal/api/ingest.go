@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -183,6 +184,13 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 
 	mimeType := detectMIMEType(header)
 	
+	// Sanitize user-controlled inputs to prevent path traversal
+	sanitizedComment := sanitizePathSegment(comment)
+	sanitizedFilename := sanitizePathSegment(header.Filename)
+	if sanitizedFilename == "" {
+		sanitizedFilename = "file" + strings.ToLower(filepath.Ext(header.Filename))
+	}
+
 	metadata := map[string]string{}
 	if comment != "" {
 		metadata["comment"] = comment
@@ -190,11 +198,11 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 
 	result, err := s.storage.StoreFile(storage.StoreRequest{
 		Reader:       file,
-		Filename:     header.Filename,
+		Filename:     sanitizedFilename,
 		MimeType:     mimeType,
 		Size:         header.Size,
 		Metadata:     metadata,
-		CategoryHint: comment,
+		CategoryHint: sanitizedComment,
 	})
 	if err != nil {
 		return MediaResult{}, err
@@ -363,4 +371,34 @@ func isJSONType(mime string) bool {
 
 func generateJobID() string {
 	return fmt.Sprintf("job_%d", time.Now().UnixNano())
+}
+
+var pathSegmentPattern = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
+
+// sanitizePathSegment removes path separators, OS-specific characters, and enforces
+// a safe character whitelist to prevent path traversal and invalid filenames.
+func sanitizePathSegment(input string) string {
+	// Trim whitespace
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return ""
+	}
+	
+	// Remove or replace path separators and dangerous characters
+	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, "\\", "")
+	s = strings.ReplaceAll(s, "..", "")
+	
+	// Enforce safe character whitelist (alphanumerics, hyphen, underscore, dot)
+	s = pathSegmentPattern.ReplaceAllString(s, "_")
+	
+	// Trim leading/trailing separators that might have been converted
+	s = strings.Trim(s, "_.-")
+	
+	// Cap length to 100 characters
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	
+	return s
 }
