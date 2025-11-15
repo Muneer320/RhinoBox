@@ -17,6 +17,17 @@ import {
   API_CONFIG,
 } from "./api.js";
 
+// Import upload manager
+import { uploadManager } from "./upload-manager.js";
+import { uploadQueueUI } from "./upload-queue.js";
+
+// Import keyboard shortcuts
+import { keyboardShortcuts } from "./keyboard-shortcuts.js";
+
+// Import file filters and bulk operations
+import { fileFilterManager } from "./file-filters.js";
+import { bulkOperationsManager } from "./bulk-operations.js";
+
 const root = document.documentElement;
 const THEME_KEY = "rhinobox-theme";
 let currentCollectionType = null;
@@ -948,6 +959,9 @@ function initCollectionCards() {
   });
 }
 
+// Store current files for filtering
+let currentFiles = [];
+
 // Load files for a collection from API
 async function loadCollectionFiles(collectionType) {
   const gallery = document.getElementById("files-gallery");
@@ -980,24 +994,34 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType);
     const files = response.files || response || [];
 
+    // Store files for filtering
+    currentFiles = files;
+
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    if (files.length === 0) {
-      if (emptyState) emptyState.style.display = "block";
+    // Apply filters and sort
+    const filteredFiles = fileFilterManager.apply(files);
+
+    if (filteredFiles.length === 0) {
+      if (emptyState) {
+        emptyState.innerHTML = "<p>No files match your filters.</p>";
+        emptyState.style.display = "block";
+      }
       return;
     }
 
     if (emptyState) emptyState.style.display = "none";
 
     // Render files
-    files.forEach((file) => {
+    filteredFiles.forEach((file) => {
       const fileElement = createFileElement(file, collectionType);
       gallery.appendChild(fileElement);
     });
 
     // Re-initialize gallery menus for new elements
     initGalleryMenus();
+    initBulkSelectionCheckboxes();
   } catch (error) {
     console.error("Error loading files:", error);
     if (loadingState) loadingState.style.display = "none";
@@ -1013,7 +1037,8 @@ async function loadCollectionFiles(collectionType) {
 function createFileElement(file, collectionType) {
   const div = document.createElement("div");
   div.className = "gallery-item";
-  div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`;
+  const fileId = file.id || file.fileId || file.hash || `file-${Date.now()}`;
+  div.dataset.fileId = fileId;
   div.dataset.fileName = file.name || file.fileName || "Untitled";
   div.dataset.filePath = file.path || file.filePath || "";
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || "";
@@ -1029,6 +1054,9 @@ function createFileElement(file, collectionType) {
 
   div.innerHTML = `
     <div class="gallery-item-header">
+      <div class="bulk-select-checkbox">
+        <input type="checkbox" class="file-checkbox" data-file-id="${fileId}" aria-label="Select file">
+      </div>
       <div class="gallery-image-container">
         ${
           isImage
@@ -1565,7 +1593,7 @@ function ensureButtonsClickable() {
   });
 }
 
-// Upload files to backend
+// Upload files to backend with progress tracking
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
     showToast("No files selected");
@@ -1573,31 +1601,37 @@ async function uploadFiles(files) {
   }
 
   try {
-    showToast(
-      `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
-    );
+    // Initialize upload queue UI if not already done
+    uploadQueueUI.init();
 
-    // Determine if files are media or mixed
+    // Determine if files are media or mixed for options
     const mediaTypes = ["image/", "video/", "audio/"];
     const allMedia = files.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
-    if (allMedia && files.length > 0) {
-      // Use media endpoint for media files
-      await ingestMedia(files);
+    const options = allMedia
+      ? { category: "" }
+      : { namespace: "", comment: "" };
+
+    // Start uploads with progress tracking
+    const results = await uploadManager.uploadFiles(files, options);
+
+    // Show success message for completed uploads
+    const completed = results.filter(
+      (r) => r.status === "fulfilled"
+    ).length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+
+    if (completed > 0) {
       showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
+        `Successfully uploaded ${completed} file${completed > 1 ? "s" : ""}`
       );
-    } else {
-      // Use unified endpoint for mixed files
-      await ingestFiles(files);
+    }
+
+    if (failed > 0) {
       showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
+        `${failed} file${failed > 1 ? "s" : ""} failed to upload. Check upload queue.`
       );
     }
 
@@ -1663,6 +1697,10 @@ function initAll() {
     initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
+    uploadQueueUI.init();
+    initKeyboardShortcuts();
+    initFileFilters();
+    initBulkOperations();
 
     // Load collections if on files page
     if (
@@ -2049,6 +2087,231 @@ function closeCommentsModal() {
 }
 
 // Comments modal initialization moved to initCommentsModal()
+
+// Initialize keyboard shortcuts
+function initKeyboardShortcuts() {
+  keyboardShortcuts.init();
+
+  // Register shortcuts
+  keyboardShortcuts.register('Ctrl+k', () => {
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+  }, 'Open global search');
+
+  keyboardShortcuts.register('Ctrl+u', () => {
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+      fileInput.click();
+    }
+  }, 'Open file upload');
+
+  keyboardShortcuts.register('Ctrl+/', () => {
+    keyboardShortcuts.showHelp();
+  }, 'Show keyboard shortcuts');
+
+  keyboardShortcuts.register('Escape', () => {
+    // Close modals
+    const searchModal = document.getElementById('search-modal');
+    if (searchModal && searchModal.style.display !== 'none') {
+      closeSearchModal();
+      return;
+    }
+
+    const commentsModal = document.getElementById('comments-modal');
+    if (commentsModal && commentsModal.style.display === 'flex') {
+      closeCommentsModal();
+      return;
+    }
+
+    const quickAddPanel = document.getElementById('quickAdd-panel');
+    if (quickAddPanel && quickAddPanel.classList.contains('is-open')) {
+      quickAddPanel.classList.remove('is-open');
+      document.body.style.overflow = '';
+      return;
+    }
+
+    // Close keyboard shortcuts help
+    keyboardShortcuts.hideHelp();
+  }, 'Close modal/search');
+
+  // Sidebar navigation shortcuts
+  keyboardShortcuts.register('Ctrl+1', () => {
+    const homeBtn = document.querySelector('[data-target="home"]');
+    if (homeBtn) homeBtn.click();
+  }, 'Switch to Home page');
+
+  keyboardShortcuts.register('Ctrl+2', () => {
+    const filesBtn = document.querySelector('[data-target="files"]');
+    if (filesBtn) filesBtn.click();
+  }, 'Switch to Files page');
+
+  keyboardShortcuts.register('Ctrl+3', () => {
+    const dataBtn = document.querySelector('[data-target="data"]');
+    if (dataBtn) dataBtn.click();
+  }, 'Switch to Data page');
+
+  keyboardShortcuts.register('Ctrl+4', () => {
+    const statsBtn = document.querySelector('[data-target="statistics"]');
+    if (statsBtn) statsBtn.click();
+  }, 'Switch to Statistics page');
+
+  // Refresh file list
+  keyboardShortcuts.register('Ctrl+r', (e) => {
+    e.preventDefault(); // Prevent browser refresh
+    if (currentCollectionType) {
+      loadCollectionFiles(currentCollectionType);
+      showToast('Refreshed file list');
+    }
+  }, 'Refresh file list');
+}
+
+// Initialize file filters UI
+function initFileFilters() {
+  const filterTypeBtn = document.getElementById('filter-type');
+  const filterDateBtn = document.getElementById('filter-date');
+  const filterSizeBtn = document.getElementById('filter-size');
+  const clearFiltersBtn = document.getElementById('clear-filters');
+  const sortSelect = document.getElementById('sort-by');
+
+  // Register filter change callback
+  fileFilterManager.onFilterChange(() => {
+    if (currentCollectionType && currentFiles.length > 0) {
+      const gallery = document.getElementById('files-gallery');
+      if (gallery) {
+        gallery.innerHTML = '';
+        const filteredFiles = fileFilterManager.apply(currentFiles);
+        filteredFiles.forEach((file) => {
+          const fileElement = createFileElement(file, currentCollectionType);
+          gallery.appendChild(fileElement);
+        });
+        initGalleryMenus();
+        initBulkSelectionCheckboxes();
+      }
+    }
+    updateFilterCounts();
+  });
+
+  // Sort change handler
+  if (sortSelect) {
+    sortSelect.addEventListener('change', (e) => {
+      fileFilterManager.setSortBy(e.target.value);
+    });
+  }
+
+  // Clear filters
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', () => {
+      fileFilterManager.clearFilters();
+      if (sortSelect) sortSelect.value = 'date-desc';
+    });
+  }
+
+  // Update filter counts
+  updateFilterCounts();
+}
+
+// Update filter count badges
+function updateFilterCounts() {
+  const filterTypeCount = document.getElementById('filter-type-count');
+  if (filterTypeCount) {
+    const filters = fileFilterManager.getFilters();
+    filterTypeCount.textContent = filters.fileTypes.length;
+    filterTypeCount.style.display = filters.fileTypes.length > 0 ? 'inline' : 'none';
+  }
+}
+
+// Initialize bulk operations
+function initBulkOperations() {
+  const bulkActionsBar = document.getElementById('bulk-actions-bar');
+  const selectionCount = document.getElementById('selection-count');
+  const bulkDownloadBtn = document.getElementById('bulk-download');
+  const bulkDeleteBtn = document.getElementById('bulk-delete');
+  const bulkDeselectBtn = document.getElementById('bulk-deselect');
+
+  // Register selection change callback
+  bulkOperationsManager.onSelectionChange((count, ids) => {
+    if (selectionCount) {
+      selectionCount.textContent = count;
+    }
+    if (bulkActionsBar) {
+      bulkActionsBar.style.display = count > 0 ? 'flex' : 'none';
+    }
+    updateCheckboxStates();
+  });
+
+  // Bulk download
+  if (bulkDownloadBtn) {
+    bulkDownloadBtn.addEventListener('click', async () => {
+      try {
+        showToast('Preparing download...');
+        await bulkOperationsManager.bulkDownloadAsZip(currentFiles);
+        showToast('Download started');
+      } catch (error) {
+        console.error('Bulk download error:', error);
+        showToast(`Download failed: ${error.message || 'Unknown error'}`);
+      }
+    });
+  }
+
+  // Bulk delete
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', async () => {
+      const count = bulkOperationsManager.getSelectedCount();
+      if (!confirm(`Are you sure you want to delete ${count} file${count > 1 ? 's' : ''}?`)) {
+        return;
+      }
+
+      try {
+        showToast('Deleting files...');
+        const result = await bulkOperationsManager.bulkDelete(currentFiles);
+        showToast(`Deleted ${result.succeeded} of ${result.total} file${result.total > 1 ? 's' : ''}`);
+        
+        // Reload files
+        if (currentCollectionType) {
+          await loadCollectionFiles(currentCollectionType);
+        }
+      } catch (error) {
+        console.error('Bulk delete error:', error);
+        showToast(`Delete failed: ${error.message || 'Unknown error'}`);
+      }
+    });
+  }
+
+  // Deselect all
+  if (bulkDeselectBtn) {
+    bulkDeselectBtn.addEventListener('click', () => {
+      bulkOperationsManager.deselectAll();
+    });
+  }
+}
+
+// Initialize bulk selection checkboxes
+function initBulkSelectionCheckboxes() {
+  const checkboxes = document.querySelectorAll('.file-checkbox');
+  checkboxes.forEach((checkbox) => {
+    checkbox.addEventListener('change', (e) => {
+      const fileId = e.target.dataset.fileId;
+      if (e.target.checked) {
+        bulkOperationsManager.selectFile(fileId);
+      } else {
+        bulkOperationsManager.deselectFile(fileId);
+      }
+    });
+  });
+  updateCheckboxStates();
+}
+
+// Update checkbox states based on selection
+function updateCheckboxStates() {
+  const checkboxes = document.querySelectorAll('.file-checkbox');
+  checkboxes.forEach((checkbox) => {
+    const fileId = checkbox.dataset.fileId;
+    checkbox.checked = bulkOperationsManager.isSelected(fileId);
+  });
+}
 
 // Load statistics from API
 async function loadStatistics() {
