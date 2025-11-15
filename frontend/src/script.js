@@ -19,6 +19,17 @@ import {
 } from "./api.js";
 import { configService } from "./configService.js";
 
+// Import upload manager
+import { uploadManager } from "./upload-manager.js";
+import { uploadQueueUI } from "./upload-queue.js";
+
+// Import keyboard shortcuts
+import { keyboardShortcuts } from "./keyboard-shortcuts.js";
+
+// Import file filters and bulk operations
+import { fileFilterManager } from "./file-filters.js";
+import { bulkOperationsManager } from "./bulk-operations.js";
+
 const root = document.documentElement;
 const THEME_KEY = "rhinobox-theme";
 let currentCollectionType = null;
@@ -992,6 +1003,9 @@ function initCollectionCards() {
   });
 }
 
+// Store current files for filtering
+let currentFiles = [];
+
 // Load files for a collection from API
 async function loadCollectionFiles(collectionType) {
   const gallery = document.getElementById("files-gallery");
@@ -1024,24 +1038,34 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType);
     const files = response.files || response || [];
 
+    // Store files for filtering
+    currentFiles = files;
+
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    if (files.length === 0) {
-      if (emptyState) emptyState.style.display = "block";
+    // Apply filters and sort
+    const filteredFiles = fileFilterManager.apply(files);
+
+    if (filteredFiles.length === 0) {
+      if (emptyState) {
+        emptyState.innerHTML = "<p>No files match your filters.</p>";
+        emptyState.style.display = "block";
+      }
       return;
     }
 
     if (emptyState) emptyState.style.display = "none";
 
     // Render files
-    files.forEach((file) => {
+    filteredFiles.forEach((file) => {
       const fileElement = createFileElement(file, collectionType);
       gallery.appendChild(fileElement);
     });
 
     // Re-initialize gallery menus for new elements
     initGalleryMenus();
+    initBulkSelectionCheckboxes();
   } catch (error) {
     console.error("Error loading files:", error);
     if (loadingState) loadingState.style.display = "none";
@@ -1073,7 +1097,8 @@ async function loadCollectionFiles(collectionType) {
 function createFileElement(file, collectionType) {
   const div = document.createElement("div");
   div.className = "gallery-item";
-  div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`;
+  const fileId = file.id || file.fileId || file.hash || `file-${Date.now()}`;
+  div.dataset.fileId = fileId;
   div.dataset.fileName = file.name || file.fileName || "Untitled";
   div.dataset.filePath = file.path || file.filePath || "";
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || "";
@@ -1089,6 +1114,9 @@ function createFileElement(file, collectionType) {
 
   div.innerHTML = `
     <div class="gallery-item-header">
+      <div class="bulk-select-checkbox">
+        <input type="checkbox" class="file-checkbox" data-file-id="${fileId}" aria-label="Select file">
+      </div>
       <div class="gallery-image-container">
         ${
           isImage
@@ -1671,19 +1699,7 @@ function ensureButtonsClickable() {
   });
 }
 
-// File validation constants
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
-const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp'];
-const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
-const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac'];
-const SUPPORTED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
-const ALL_SUPPORTED_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES, ...SUPPORTED_AUDIO_TYPES, ...SUPPORTED_DOCUMENT_TYPES];
-
-/**
- * Helper function to detect file type category
- * @param {File} file - File to categorize
- * @returns {string} Category name
- */
+// Helper function to detect file type category
 function detectFileTypeCategory(file) {
   const mimeType = file.type || "";
   const fileName = file.name || "";
@@ -1779,47 +1795,16 @@ function getFileTypeName(category) {
   return typeNames[category] || "File";
 }
 
-/**
- * Validate file before upload
- * @param {File} file - File to validate
- * @returns {Array} Array of validation errors (empty if valid)
- */
-function validateFile(file) {
-  const errors = [];
-
-  // Check file size
-  if (file.size > MAX_FILE_SIZE) {
-    errors.push({
-      type: 'file-too-large',
-      message: `File "${file.name}" exceeds the maximum size limit of 500MB.`,
-    });
-  }
-
-  // Check file type (optional - allow all types but warn)
-  if (file.type && ALL_SUPPORTED_TYPES.length > 0 && !ALL_SUPPORTED_TYPES.includes(file.type)) {
-    // Show non-blocking warning toast for unsupported types
-    showToast(
-      `File type "${file.type}" may not be fully supported. Upload may fail.`,
-      "warning",
-      4000
-    );
-  }
-
-  return errors;
-}
-
-/**
- * Upload files to backend with progress and error handling
- */
+// Upload files to backend with progress tracking
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
     showToast("No files selected", "warning");
     return;
   }
 
-  // Validate all files first
-  const validationErrors = [];
-  const validFiles = [];
+  try {
+    // Initialize upload queue UI if not already done
+    uploadQueueUI.init();
 
   for (const file of files) {
     const errors = validateFile(file);
@@ -1841,39 +1826,47 @@ async function uploadFiles(files) {
     }
   }
 
-  // Detect file types before upload
-  const fileTypes = new Map();
-  validFiles.forEach((file) => {
-    const category = detectFileTypeCategory(file);
-    fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
-  });
-
-  // Show upload started notification
-  const uploadToast = showToast(
-    `Uploading ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}...`,
-    "info",
-    0 // Don't auto-dismiss
-  );
-
-  const uploadResults = {
-    success: [],
-    failed: [],
-  };
-
-  try {
-    // Determine if files are media or mixed
+    // Determine if files are media or mixed for options
     const mediaTypes = ["image/", "video/", "audio/"];
     const allMedia = validFiles.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
-    let result;
-    if (allMedia && validFiles.length > 0) {
-      // Use media endpoint for media files
-      result = await ingestMedia(validFiles);
-    } else {
-      // Use unified endpoint for mixed files
-      result = await ingestFiles(validFiles);
+    const options = allMedia
+      ? { category: "" }
+      : { namespace: "", comment: "" };
+
+    // Start uploads with progress tracking
+    const results = await uploadManager.uploadFiles(files, options);
+
+    // Show success message for completed uploads
+    const completed = results.filter(
+      (r) => r.status === "fulfilled"
+    ).length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+
+    if (completed > 0) {
+      // Show file type information
+      const typeMessages = [];
+      fileTypes.forEach((count, category) => {
+        const typeName = getFileTypeName(category);
+        typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
+      });
+
+      const typeMessage = typeMessages.join(", ");
+      showToast(
+        `Successfully uploaded ${completed} file${completed > 1 ? "s" : ""}: ${typeMessage}`
+      );
+    }
+
+    if (failed > 0) {
+      showToast(
+        `${failed} file${failed > 1 ? "s" : ""} failed to upload. Check upload queue.`
+      );
+    }
+
+    // Reload collections to show new folders
+    await loadCollections();
     }
 
     // Dismiss upload toast
@@ -2233,6 +2226,10 @@ async function initAll() {
     initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
+    uploadQueueUI.init();
+    initKeyboardShortcuts();
+    initFileFilters();
+    initBulkOperations();
 
     // Load collections if on files page
     if (
@@ -2931,130 +2928,229 @@ function closeCommentsModal() {
 
 // Comments modal initialization moved to initCommentsModal()
 
-// Initialize authentication UI based on configuration
-function initAuthUI() {
-  const profileButton = document.querySelector(".profile-button");
-  const userIcon = document.getElementById("user-icon");
+// Initialize keyboard shortcuts
+function initKeyboardShortcuts() {
+  keyboardShortcuts.init();
 
-  if (configService.isAuthEnabled()) {
-    // Show auth UI
-    if (profileButton) {
-      profileButton.classList.remove("hidden");
+  // Register shortcuts
+  keyboardShortcuts.register('Ctrl+k', () => {
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
     }
-    if (userIcon) {
-      userIcon.classList.remove("hidden");
+  }, 'Open global search');
+
+  keyboardShortcuts.register('Ctrl+u', () => {
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+      fileInput.click();
+    }
+  }, 'Open file upload');
+
+  keyboardShortcuts.register('Ctrl+/', () => {
+    keyboardShortcuts.showHelp();
+  }, 'Show keyboard shortcuts');
+
+  keyboardShortcuts.register('Escape', () => {
+    // Close modals
+    const searchModal = document.getElementById('search-modal');
+    if (searchModal && searchModal.style.display !== 'none') {
+      closeSearchModal();
+      return;
     }
 
-    // Check if user is logged in (future implementation)
-    // For now, just show the UI
-    console.info("Authentication is enabled");
-  } else {
-    // Hide all auth UI
-    if (profileButton) {
-      profileButton.classList.add("hidden");
-    }
-    if (userIcon) {
-      userIcon.classList.add("hidden");
+    const commentsModal = document.getElementById('comments-modal');
+    if (commentsModal && commentsModal.style.display === 'flex') {
+      closeCommentsModal();
+      return;
     }
 
-    console.info("Authentication is disabled");
-  }
+    const quickAddPanel = document.getElementById('quickAdd-panel');
+    if (quickAddPanel && quickAddPanel.classList.contains('is-open')) {
+      quickAddPanel.classList.remove('is-open');
+      document.body.style.overflow = '';
+      return;
+    }
+
+    // Close keyboard shortcuts help
+    keyboardShortcuts.hideHelp();
+  }, 'Close modal/search');
+
+  // Sidebar navigation shortcuts
+  keyboardShortcuts.register('Ctrl+1', () => {
+    const homeBtn = document.querySelector('[data-target="home"]');
+    if (homeBtn) homeBtn.click();
+  }, 'Switch to Home page');
+
+  keyboardShortcuts.register('Ctrl+2', () => {
+    const filesBtn = document.querySelector('[data-target="files"]');
+    if (filesBtn) filesBtn.click();
+  }, 'Switch to Files page');
+
+  keyboardShortcuts.register('Ctrl+3', () => {
+    const dataBtn = document.querySelector('[data-target="data"]');
+    if (dataBtn) dataBtn.click();
+  }, 'Switch to Data page');
+
+  keyboardShortcuts.register('Ctrl+4', () => {
+    const statsBtn = document.querySelector('[data-target="statistics"]');
+    if (statsBtn) statsBtn.click();
+  }, 'Switch to Statistics page');
+
+  // Refresh file list
+  keyboardShortcuts.register('Ctrl+r', (e) => {
+    e.preventDefault(); // Prevent browser refresh
+    if (currentCollectionType) {
+      loadCollectionFiles(currentCollectionType);
+      showToast('Refreshed file list');
+    }
+  }, 'Refresh file list');
 }
 
-// Show loading overlay
-function showLoadingOverlay(message) {
-  let overlay = document.getElementById("loading-overlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "loading-overlay";
-    overlay.className = "loading-overlay";
-    overlay.innerHTML = `
-      <div class="loading-spinner"></div>
-      <p style="margin-top: 1rem; color: white;">${message || "Loading..."}</p>
-    `;
-    document.body.appendChild(overlay);
-  }
-  overlay.style.display = "flex";
-}
+// Initialize file filters UI
+function initFileFilters() {
+  const filterTypeBtn = document.getElementById('filter-type');
+  const filterDateBtn = document.getElementById('filter-date');
+  const filterSizeBtn = document.getElementById('filter-size');
+  const clearFiltersBtn = document.getElementById('clear-filters');
+  const sortSelect = document.getElementById('sort-by');
 
-// Hide loading overlay
-function hideLoadingOverlay() {
-  const overlay = document.getElementById("loading-overlay");
-  if (overlay) {
-    overlay.style.display = "none";
-  }
-}
-
-// Initialize About modal
-let aboutModalInitialized = false;
-function initAboutModal() {
-  if (aboutModalInitialized) return;
-
-  const aboutBtn = document.getElementById("about-btn");
-  const aboutModal = document.getElementById("about-modal");
-  const aboutCloseBtn = document.getElementById("about-close-button");
-
-  if (!aboutBtn || !aboutModal) {
-    // Try again later if elements not found
-    setTimeout(initAboutModal, 100);
-    return;
-  }
-
-  aboutModalInitialized = true;
-
-  // Open modal
-  aboutBtn.addEventListener("click", () => {
-    updateAboutModal();
-    aboutModal.style.display = "flex";
-    document.body.style.overflow = "hidden";
+  // Register filter change callback
+  fileFilterManager.onFilterChange(() => {
+    if (currentCollectionType && currentFiles.length > 0) {
+      const gallery = document.getElementById('files-gallery');
+      if (gallery) {
+        gallery.innerHTML = '';
+        const filteredFiles = fileFilterManager.apply(currentFiles);
+        filteredFiles.forEach((file) => {
+          const fileElement = createFileElement(file, currentCollectionType);
+          gallery.appendChild(fileElement);
+        });
+        initGalleryMenus();
+        initBulkSelectionCheckboxes();
+      }
+    }
+    updateFilterCounts();
   });
 
-  // Close modal
-  if (aboutCloseBtn) {
-    aboutCloseBtn.addEventListener("click", () => {
-      aboutModal.style.display = "none";
-      document.body.style.overflow = "";
+  // Sort change handler
+  if (sortSelect) {
+    sortSelect.addEventListener('change', (e) => {
+      fileFilterManager.setSortBy(e.target.value);
     });
   }
 
-  // Close on overlay click
-  const overlay = aboutModal.querySelector(".about-modal-overlay");
-  if (overlay) {
-    overlay.addEventListener("click", () => {
-      aboutModal.style.display = "none";
-      document.body.style.overflow = "";
+  // Clear filters
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', () => {
+      fileFilterManager.clearFilters();
+      if (sortSelect) sortSelect.value = 'date-desc';
     });
   }
 
-  // Close on Escape key
-  document.addEventListener("keydown", (e) => {
-    if (
-      e.key === "Escape" &&
-      aboutModal &&
-      aboutModal.style.display === "flex"
-    ) {
-      aboutModal.style.display = "none";
-      document.body.style.overflow = "";
-    }
-  });
+  // Update filter counts
+  updateFilterCounts();
 }
 
-// Update About modal with auth status
-function updateAboutModal() {
-  const authStatusEl = document.getElementById("auth-status");
+// Update filter count badges
+function updateFilterCounts() {
+  const filterTypeCount = document.getElementById('filter-type-count');
+  if (filterTypeCount) {
+    const filters = fileFilterManager.getFilters();
+    filterTypeCount.textContent = filters.fileTypes.length;
+    filterTypeCount.style.display = filters.fileTypes.length > 0 ? 'inline' : 'none';
+  }
+}
 
-  if (authStatusEl) {
-    const isEnabled = configService.isAuthEnabled();
-    authStatusEl.innerHTML = isEnabled
-      ? '🔓 <strong>Authentication:</strong> Enabled'
-      : '🔒 <strong>Authentication:</strong> Disabled';
+// Initialize bulk operations
+function initBulkOperations() {
+  const bulkActionsBar = document.getElementById('bulk-actions-bar');
+  const selectionCount = document.getElementById('selection-count');
+  const bulkDownloadBtn = document.getElementById('bulk-download');
+  const bulkDeleteBtn = document.getElementById('bulk-delete');
+  const bulkDeselectBtn = document.getElementById('bulk-deselect');
+
+  // Register selection change callback
+  bulkOperationsManager.onSelectionChange((count, ids) => {
+    if (selectionCount) {
+      selectionCount.textContent = count;
+    }
+    if (bulkActionsBar) {
+      bulkActionsBar.style.display = count > 0 ? 'flex' : 'none';
+    }
+    updateCheckboxStates();
+  });
+
+  // Bulk download
+  if (bulkDownloadBtn) {
+    bulkDownloadBtn.addEventListener('click', async () => {
+      try {
+        showToast('Preparing download...');
+        await bulkOperationsManager.bulkDownloadAsZip(currentFiles);
+        showToast('Download started');
+      } catch (error) {
+        console.error('Bulk download error:', error);
+        showToast(`Download failed: ${error.message || 'Unknown error'}`);
+      }
+    });
   }
 
-  // Update version
-  const versionEl = document.getElementById("app-version");
-  if (versionEl) {
-    versionEl.textContent = configService.getVersion();
+  // Bulk delete
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', async () => {
+      const count = bulkOperationsManager.getSelectedCount();
+      if (!confirm(`Are you sure you want to delete ${count} file${count > 1 ? 's' : ''}?`)) {
+        return;
+      }
+
+      try {
+        showToast('Deleting files...');
+        const result = await bulkOperationsManager.bulkDelete(currentFiles);
+        showToast(`Deleted ${result.succeeded} of ${result.total} file${result.total > 1 ? 's' : ''}`);
+        
+        // Reload files
+        if (currentCollectionType) {
+          await loadCollectionFiles(currentCollectionType);
+        }
+      } catch (error) {
+        console.error('Bulk delete error:', error);
+        showToast(`Delete failed: ${error.message || 'Unknown error'}`);
+      }
+    });
   }
+
+  // Deselect all
+  if (bulkDeselectBtn) {
+    bulkDeselectBtn.addEventListener('click', () => {
+      bulkOperationsManager.deselectAll();
+    });
+  }
+}
+
+// Initialize bulk selection checkboxes
+function initBulkSelectionCheckboxes() {
+  const checkboxes = document.querySelectorAll('.file-checkbox');
+  checkboxes.forEach((checkbox) => {
+    checkbox.addEventListener('change', (e) => {
+      const fileId = e.target.dataset.fileId;
+      if (e.target.checked) {
+        bulkOperationsManager.selectFile(fileId);
+      } else {
+        bulkOperationsManager.deselectFile(fileId);
+      }
+    });
+  });
+  updateCheckboxStates();
+}
+
+// Update checkbox states based on selection
+function updateCheckboxStates() {
+  const checkboxes = document.querySelectorAll('.file-checkbox');
+  checkboxes.forEach((checkbox) => {
+    const fileId = checkbox.dataset.fileId;
+    checkbox.checked = bulkOperationsManager.isSelected(fileId);
+  });
 }
 
 // Load statistics from API
