@@ -20,8 +20,6 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/media"
 	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
-	"github.com/Muneer320/RhinoBox/internal/service"
-
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -34,61 +32,6 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
-	jobQueue    *queue.JobQueue
-	server      *http.Server
-}
-
-// NewServer constructs the HTTP server with routing and dependencies.
-func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
-	store, err := storage.NewManager(cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	s := &Server{
-		cfg:      cfg,
-		logger:   logger,
-		router:   chi.NewRouter(),
-		storage:  store,
-		jobQueue: nil, // TODO: Initialize when async endpoints are needed
-	}
-package api
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"log/slog"
-	"mime/multipart"
-	"net/http"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
-
-	"github.com/Muneer320/RhinoBox/internal/config"
-	"github.com/Muneer320/RhinoBox/internal/jsonschema"
-	"github.com/Muneer320/RhinoBox/internal/media"
-	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
-	"github.com/Muneer320/RhinoBox/internal/queue"
-	"github.com/Muneer320/RhinoBox/internal/service"
-	"github.com/Muneer320/RhinoBox/internal/storage"
-	chi "github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
-)
-
-// Server wires everything together.
-type Server struct {
-	cfg         config.Config
-	logger      *slog.Logger
-	router      chi.Router
-	storage     *storage.Manager
-	fileService service.FileService
-	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -104,8 +47,6 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
-		fileService: service.NewFileService(store),
-		jobQueue:    nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
@@ -118,20 +59,9 @@ func (s *Server) setupValidation() *validationmw.Validator {
 	return validator
 }
 
-// Stop gracefully stops the server and cleans up resources.
-func (s *Server) Stop() {
-	// Job queue shutdown will be implemented when async endpoints are added
-	if s.jobQueue != nil {
-		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
-	}
-}
-
 func (s *Server) routes() {
 	r := s.router
 
-	// CORS middleware
-	r.Use(s.corsMiddleware)
-
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -157,76 +87,6 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
-	r.Get("/collections", s.handleGetCollections)
-	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
-}
-
-// corsMiddleware handles CORS headers for frontend requests
-func (s *Server) corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		// Handle preflight requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-
-	// Lightweight middleware for performance
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(s.customLogger)       // Custom lightweight logger
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
-
-	// Setup validation as global middleware
-	// Validation will check route context after chi matches routes
-	validator := s.setupValidation()
-	r.Use(validator.Validate)
-
-	// Endpoints
-	r.Get("/healthz", s.handleHealth)
-	r.Post("/ingest", s.handleUnifiedIngest)
-	r.Post("/ingest/media", s.handleMediaIngest)
-	r.Post("/ingest/json", s.handleJSONIngest)
-	r.Patch("/files/rename", s.handleFileRename)
-	r.Delete("/files/{file_id}", s.handleFileDelete)
-	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
-	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
-	r.Get("/files/search", s.handleFileSearch)
-	r.Get("/files/download", s.handleFileDownload)
-	r.Get("/files/metadata", s.handleFileMetadata)
-	r.Get("/files/stream", s.handleFileStream)
-	r.Get("/collections", s.handleGetCollections)
-	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
-}
-
-// corsMiddleware handles CORS headers for frontend requests
-func (s *Server) corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		// Handle preflight requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -1048,72 +908,6 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
-}
-
-// handleGetCollections returns all available collection types with metadata.
-func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
-	collections := s.storage.GetCollections()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"collections": collections,
-		"count":       len(collections),
-	})
-}
-
-// handleCollectionStats returns statistics for a specific collection type.
-func (s *Server) handleCollectionStats(w http.ResponseWriter, r *http.Request) {
-	collectionType := chi.URLParam(r, "collection_type")
-	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "collection_type is required")
-		return
-	}
-
-	// Get all files for this collection type
-	files := s.storage.FindByCategoryPrefix(collectionType)
-
-	// Calculate statistics
-	fileCount := len(files)
-	var totalSize int64
-	var lastUpdated time.Time
-
-	for _, file := range files {
-		totalSize += file.Size
-		if file.UploadedAt.After(lastUpdated) {
-			lastUpdated = file.UploadedAt
-		}
-	}
-
-	// Format storage size
-	storageUsed := formatBytes(totalSize)
-
-	// Build response
-	stats := map[string]any{
-		"collection_type": collectionType,
-		"file_count":      fileCount,
-		"storage_used":    storageUsed,
-		"storage_bytes":   totalSize,
-		"last_updated":    lastUpdated.Format(time.RFC3339),
-	}
-
-	// If no files, set last_updated to null
-	if fileCount == 0 {
-		stats["last_updated"] = nil
-	}
-
-	writeJSON(w, http.StatusOK, stats)
-}
-
-// formatBytes formats bytes into human-readable format (KB, MB, GB, TB).
-func formatBytes(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // Helper structs
