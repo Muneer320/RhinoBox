@@ -11,7 +11,6 @@ import {
   addNote,
   deleteNote,
   getStatistics,
-  getCollections,
   getCollectionStats
 } from './api.js'
 
@@ -244,8 +243,7 @@ function initSidebarNavigation() {
       if (target === 'statistics') {
         await loadStatistics()
       } else if (target === 'files') {
-        // Load collections when switching to files page
-        await loadCollections()
+        // Files page shows collections, no need to load here
       }
       
       showToast(`Switched to ${target === 'home' ? 'Home' : target.charAt(0).toUpperCase() + target.slice(1)}`)
@@ -273,6 +271,45 @@ function initCollectionCards() {
       }
     })
   })
+  
+  // Load statistics for all collections
+  loadAllCollectionStats()
+}
+
+// Load statistics for all collection cards
+async function loadAllCollectionStats() {
+  const collectionTypes = ['images', 'videos', 'audio', 'documents', 'spreadsheets', 'presentations', 'archives', 'other']
+  
+  // Load stats for all collections in parallel
+  const statsPromises = collectionTypes.map(async (type) => {
+    try {
+      const stats = await getCollectionStats(type)
+      updateCollectionCardStats(type, stats)
+    } catch (error) {
+      console.error(`Error loading stats for ${type}:`, error)
+      // Set error state on the card
+      updateCollectionCardStats(type, { file_count: 0, storage_used: 'Error' })
+    }
+  })
+  
+  await Promise.allSettled(statsPromises)
+}
+
+// Update a collection card with statistics
+function updateCollectionCardStats(collectionType, stats) {
+  const statsContainer = document.querySelector(`[data-stats="${collectionType}"]`)
+  if (!statsContainer) return
+  
+  const fileCountEl = statsContainer.querySelector('[data-stat="file_count"]')
+  const storageUsedEl = statsContainer.querySelector('[data-stat="storage_used"]')
+  
+  if (fileCountEl) {
+    fileCountEl.textContent = stats.file_count !== undefined ? stats.file_count.toLocaleString() : '-'
+  }
+  
+  if (storageUsedEl) {
+    storageUsedEl.textContent = stats.storage_used || '-'
+  }
 }
 
 // Load files for a collection from API
@@ -446,123 +483,6 @@ function createFileElement(file, collectionType) {
   `
   
   return div
-}
-
-// Load collections from backend and render cards
-async function loadCollections() {
-  const collectionCards = document.getElementById('collectionCards')
-  const loadingState = document.getElementById('collections-loading')
-  const errorState = document.getElementById('collections-error')
-  
-  if (!collectionCards) return
-  
-  try {
-    // Show loading state
-    if (loadingState) loadingState.style.display = 'block'
-    if (errorState) errorState.style.display = 'none'
-    
-    // Clear existing cards (except loading/error states)
-    const existingCards = collectionCards.querySelectorAll('.collection-card')
-    existingCards.forEach(card => card.remove())
-    
-    // Fetch collections from API
-    const response = await getCollections()
-    const collections = response.collections || response || []
-    
-    if (collections.length === 0) {
-      if (loadingState) loadingState.style.display = 'none'
-      collectionCards.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">No collections available</p>'
-      return
-    }
-    
-    // Fetch stats for each collection in parallel
-    const statsPromises = collections.map(collection => 
-      getCollectionStats(collection.type).catch(err => {
-        console.warn(`Failed to fetch stats for ${collection.type}:`, err)
-        return { type: collection.type, file_count: 0, storage_used: 0, storage_used_formatted: '0 B' }
-      })
-    )
-    
-    const statsResults = await Promise.all(statsPromises)
-    const statsMap = new Map()
-    statsResults.forEach(stats => {
-      statsMap.set(stats.type, stats)
-    })
-    
-    // Hide loading state
-    if (loadingState) loadingState.style.display = 'none'
-    
-    // Render collection cards
-    collections.forEach(collection => {
-      const stats = statsMap.get(collection.type) || { file_count: 0, storage_used_formatted: '0 B' }
-      const card = createCollectionCard(collection, stats)
-      collectionCards.appendChild(card)
-    })
-    
-    // Re-initialize collection card click handlers
-    initCollectionCards()
-    
-  } catch (error) {
-    console.error('Error loading collections:', error)
-    if (loadingState) loadingState.style.display = 'none'
-    if (errorState) {
-      errorState.style.display = 'block'
-      errorState.innerHTML = `<p>Failed to load collections: ${error.message || 'Unknown error'}</p>`
-    }
-    showToast('Failed to load collections')
-  }
-}
-
-// Create a collection card element
-function createCollectionCard(collection, stats) {
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.className = 'collection-card'
-  button.dataset.collection = collection.type
-  
-  // Map collection types to image URLs
-  const imageMap = {
-    'images': 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80',
-    'videos': 'https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80',
-    'audio': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80',
-    'documents': 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80',
-    'spreadsheets': 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80',
-    'presentations': 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80',
-    'archives': 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80',
-    'other': 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80'
-  }
-  
-  const imageUrl = imageMap[collection.type] || imageMap['other']
-  const fileCount = stats.file_count || 0
-  const storageUsed = stats.storage_used_formatted || stats.storage_used || '0 B'
-  
-  button.innerHTML = `
-    <img
-      src="${imageUrl}"
-      alt="${collection.name || collection.type}"
-      loading="lazy"
-    />
-    <div class="collection-meta">
-      <h3>${escapeHtml(collection.name || collection.type)}</h3>
-      <p>${escapeHtml(collection.description || '')}</p>
-      <div class="collection-stats">
-        <span class="stat-item">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px; vertical-align: middle;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-          </svg>
-          ${fileCount.toLocaleString()} file${fileCount !== 1 ? 's' : ''}
-        </span>
-        <span class="stat-item">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px; vertical-align: middle;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-          </svg>
-          ${escapeHtml(storageUsed)}
-        </span>
-      </div>
-    </div>
-  `
-  
-  return button
 }
 
 // Collection cards initialization is now in initAll()
@@ -915,11 +835,6 @@ function initAll() {
     initCommentsModal()
     initGhostButton()
     ensureButtonsClickable()
-    
-    // Load collections if on files page
-    if (document.getElementById('page-files') && document.getElementById('page-files').style.display !== 'none') {
-      loadCollections()
-    }
     
     console.log('All features initialized successfully')
   } catch (error) {

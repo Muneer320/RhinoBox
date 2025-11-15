@@ -618,3 +618,187 @@ func newJSONRequest(t *testing.T, path string, payload any) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
+
+func TestCollectionStatsEmptyCollection(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/collections/images/stats", nil)
+	resp := httptest.NewRecorder()
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var stats struct {
+		CollectionType string      `json:"collection_type"`
+		FileCount      int         `json:"file_count"`
+		StorageUsed    string      `json:"storage_used"`
+		StorageBytes   int64       `json:"storage_bytes"`
+		LastUpdated    interface{} `json:"last_updated"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if stats.CollectionType != "images" {
+		t.Errorf("expected collection_type 'images', got %s", stats.CollectionType)
+	}
+	if stats.FileCount != 0 {
+		t.Errorf("expected file_count 0, got %d", stats.FileCount)
+	}
+	if stats.StorageBytes != 0 {
+		t.Errorf("expected storage_bytes 0, got %d", stats.StorageBytes)
+	}
+	if stats.LastUpdated != nil {
+		t.Errorf("expected last_updated to be null for empty collection, got %v", stats.LastUpdated)
+	}
+}
+
+func TestCollectionStatsWithFiles(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Upload multiple image files
+	files := []struct {
+		name    string
+		content []byte
+	}{
+		{"test1.jpg", []byte("fake image 1")},
+		{"test2.png", []byte("fake image 2 content")},
+		{"test3.gif", []byte("fake image 3 content longer")},
+	}
+
+	var totalSize int64
+	for _, file := range files {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		fileWriter, err := writer.CreateFormFile("file", file.name)
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		fileWriter.Write(file.content)
+		writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp := httptest.NewRecorder()
+		srv.router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for upload, got %d: %s", resp.Code, resp.Body.String())
+		}
+
+		// Calculate total size (approximate - actual stored size may differ)
+		totalSize += int64(len(file.content))
+	}
+
+	// Get collection stats
+	statsReq := httptest.NewRequest(http.MethodGet, "/collections/images/stats", nil)
+	statsResp := httptest.NewRecorder()
+	srv.router.ServeHTTP(statsResp, statsReq)
+
+	if statsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", statsResp.Code, statsResp.Body.String())
+	}
+
+	var stats struct {
+		CollectionType string  `json:"collection_type"`
+		FileCount      int     `json:"file_count"`
+		StorageUsed    string  `json:"storage_used"`
+		StorageBytes   int64   `json:"storage_bytes"`
+		LastUpdated    string  `json:"last_updated"`
+	}
+	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if stats.CollectionType != "images" {
+		t.Errorf("expected collection_type 'images', got %s", stats.CollectionType)
+	}
+	if stats.FileCount != len(files) {
+		t.Errorf("expected file_count %d, got %d", len(files), stats.FileCount)
+	}
+	if stats.StorageBytes <= 0 {
+		t.Errorf("expected storage_bytes > 0, got %d", stats.StorageBytes)
+	}
+	if stats.StorageUsed == "" {
+		t.Errorf("expected storage_used to be formatted, got empty string")
+	}
+	if stats.LastUpdated == "" {
+		t.Errorf("expected last_updated to be set, got empty string")
+	}
+}
+
+func TestCollectionStatsMissingType(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Test with empty collection type (should be handled by router, but test anyway)
+	req := httptest.NewRequest(http.MethodGet, "/collections//stats", nil)
+	resp := httptest.NewRecorder()
+	srv.router.ServeHTTP(resp, req)
+
+	// Router will likely return 404, but handler should validate
+	if resp.Code != http.StatusNotFound && resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 404 or 400, got %d: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestCollectionStatsDifferentTypes(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Upload files to different collections
+	collections := []struct {
+		collection string
+		filename   string
+		mimeType   string
+		content    []byte
+	}{
+		{"images", "test.jpg", "image/jpeg", []byte("image content")},
+		{"videos", "test.mp4", "video/mp4", []byte("video content")},
+		{"audio", "test.mp3", "audio/mpeg", []byte("audio content")},
+	}
+
+	for _, col := range collections {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		fileWriter, err := writer.CreateFormFile("file", col.filename)
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		fileWriter.Write(col.content)
+		writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp := httptest.NewRecorder()
+		srv.router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for upload to %s, got %d", col.collection, resp.Code)
+		}
+
+		// Get stats for this collection
+		statsReq := httptest.NewRequest(http.MethodGet, "/collections/"+col.collection+"/stats", nil)
+		statsResp := httptest.NewRecorder()
+		srv.router.ServeHTTP(statsResp, statsReq)
+
+		if statsResp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for stats, got %d: %s", statsResp.Code, statsResp.Body.String())
+		}
+
+		var stats struct {
+			CollectionType string `json:"collection_type"`
+			FileCount      int    `json:"file_count"`
+		}
+		if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+
+		if stats.CollectionType != col.collection {
+			t.Errorf("expected collection_type %s, got %s", col.collection, stats.CollectionType)
+		}
+		if stats.FileCount != 1 {
+			t.Errorf("expected file_count 1 for %s, got %d", col.collection, stats.FileCount)
+		}
+	}
+}
