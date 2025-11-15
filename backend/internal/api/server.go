@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Muneer320/RhinoBox/internal/cache"
 	"github.com/Muneer320/RhinoBox/internal/config"
 	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
@@ -25,6 +26,7 @@ import (
 	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
+	"github.com/Muneer320/RhinoBox/internal/services"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -33,15 +35,16 @@ import (
 
 // Server wires everything together.
 type Server struct {
-	cfg          config.Config
-	logger       *slog.Logger
-	router       chi.Router
-	storage      *storage.Manager
-	fileService  *service.FileService
-	jobQueue     *queue.JobQueue
-	server       *http.Server
-	errorHandler *errormiddleware.ErrorHandler
-	rateLimiter  *middleware.RateLimiter
+	cfg              config.Config
+	logger           *slog.Logger
+	router           chi.Router
+	storage          *storage.Manager
+	fileService      *service.FileService
+	collectionService *services.CollectionService
+	jobQueue         *queue.JobQueue
+	server           *http.Server
+	errorHandler     *errormiddleware.ErrorHandler
+	rateLimiter      *middleware.RateLimiter
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -54,14 +57,26 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	fileService := service.NewFileService(store, logger)
 	errorHandler := errormiddleware.NewErrorHandler(logger)
 
+	// Initialize cache for collection service
+	cacheConfig := cache.DefaultConfig()
+	cacheConfig.L3Path = filepath.Join(cfg.DataDir, "cache", "collections")
+	cacheInstance, err := cache.New(cacheConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize collection cache: %w", err)
+	}
+
+	// Initialize collection service
+	collectionService := services.NewCollectionService(store, cacheInstance, logger)
+
 	s := &Server{
-		cfg:          cfg,
-		logger:       logger,
-		router:       chi.NewRouter(),
-		storage:      store,
-		fileService:  fileService,
-		jobQueue:     nil, // TODO: Initialize when async endpoints are needed
-		errorHandler: errorHandler,
+		cfg:              cfg,
+		logger:           logger,
+		router:           chi.NewRouter(),
+		storage:          store,
+		fileService:      fileService,
+		collectionService: collectionService,
+		jobQueue:         nil, // TODO: Initialize when async endpoints are needed
+		errorHandler:      errorHandler,
 	}
 	s.routes()
 	return s, nil
@@ -949,27 +964,40 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-// handleGetCollections returns all available collection types with metadata.
+// handleGetCollections returns all collections with their statistics.
 func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
-	collections := s.storage.GetCollections()
-	writeJSON(w, http.StatusOK, map[string]any{"collections": collections})
+	response, err := s.collectionService.GetAllCollections()
+	if err != nil {
+		s.logger.Error("failed to get collections", slog.Any("err", err))
+		s.handleError(w, r, apierrors.InternalServerErrorf("failed to get collections: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleGetCollectionStats returns statistics for a specific collection type.
 func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
 	collectionType := chi.URLParam(r, "type")
 	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "collection type is required")
+		s.handleError(w, r, apierrors.BadRequest("collection type is required"))
 		return
 	}
 
-	stats, err := s.storage.GetCollectionStats(collectionType)
+	response, err := s.collectionService.GetCollectionStats(collectionType)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		if strings.Contains(err.Error(), "invalid collection type") {
+			s.handleError(w, r, apierrors.BadRequest(err.Error()))
+			return
+		}
+		s.logger.Error("failed to get collection stats",
+			slog.String("type", collectionType),
+			slog.Any("err", err))
+		s.handleError(w, r, apierrors.InternalServerErrorf("failed to get collection stats: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, stats)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleGetFilesByType returns files filtered by collection type with pagination.
