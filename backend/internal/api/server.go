@@ -73,6 +73,8 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/collections", s.handleGetCollections)
+	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -894,6 +896,32 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetCollections returns all available collection types with metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections := s.storage.GetCollections()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collections": collections,
+		"count":       len(collections),
+	})
+}
+
+// handleGetCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "collection type is required")
+		return
+	}
+
+	stats, err := s.storage.GetCollectionStats(collectionType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // Helper structs
