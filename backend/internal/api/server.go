@@ -66,6 +66,8 @@ func (s *Server) routes() {
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
+	r.Patch("/files/{file_id}/move", s.handleFileMove)
+	r.Patch("/files/batch/move", s.handleBatchFileMove)
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
@@ -1102,6 +1104,103 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+func (s *Server) handleFileMove(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req storage.MoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	// Set the hash from URL parameter
+	req.Hash = fileID
+
+	// Validate required fields
+	if req.NewCategory == "" {
+		httpError(w, http.StatusBadRequest, "new_category is required")
+		return
+	}
+
+	result, err := s.storage.MoveFile(req)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrInvalidCategory):
+			httpError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, storage.ErrCategoryConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrMoveFailed):
+			httpError(w, http.StatusInternalServerError, err.Error())
+		default:
+			// Check if error message contains validation keywords
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "hash is required") ||
+				strings.Contains(errMsg, "new_category is required") ||
+				strings.Contains(errMsg, "invalid category") ||
+				strings.Contains(errMsg, "path traversal") ||
+				strings.Contains(errMsg, "control characters") {
+				httpError(w, http.StatusBadRequest, err.Error())
+			} else {
+				httpError(w, http.StatusInternalServerError, fmt.Sprintf("move failed: %v", err))
+			}
+		}
+		return
+	}
+
+	s.logger.Info("file moved",
+		slog.String("hash", req.Hash),
+		slog.String("old_category", result.OldCategory),
+		slog.String("new_category", result.NewCategory),
+		slog.String("reason", req.Reason),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleBatchFileMove(w http.ResponseWriter, r *http.Request) {
+	var req storage.BatchMoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Files) == 0 {
+		httpError(w, http.StatusBadRequest, "no files provided")
+		return
+	}
+
+	if len(req.Files) > 100 {
+		httpError(w, http.StatusBadRequest, "too many files (max 100)")
+		return
+	}
+
+	result, err := s.storage.BatchMoveFile(req)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no files provided") ||
+			strings.Contains(errMsg, "batch move limited") {
+			httpError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("batch move failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("batch file move",
+		slog.Int("total", result.Total),
+		slog.Int("success", result.SuccessCount),
+		slog.Int("failed", result.FailureCount),
+	)
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // Helper structs
