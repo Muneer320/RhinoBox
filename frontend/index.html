@@ -723,6 +723,45 @@
                   Photos, graphics, and visual media files
                 </p>
               </div>
+              
+              <!-- File List Controls: Filters and Sorting -->
+              <div class="file-list-controls">
+                <div class="filters">
+                  <button type="button" class="filter-btn" id="filter-type">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+                    </svg>
+                    Type
+                    <span class="filter-count" id="filter-type-count">0</span>
+                  </button>
+                  <button type="button" class="filter-btn" id="filter-date">Date Range</button>
+                  <button type="button" class="filter-btn" id="filter-size">Size</button>
+                  <button type="button" class="clear-filters" id="clear-filters">Clear All</button>
+                </div>
+                <div class="sort-controls">
+                  <select id="sort-by" class="sort-select">
+                    <option value="date-desc">Newest First</option>
+                    <option value="date-asc">Oldest First</option>
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="name-desc">Name (Z-A)</option>
+                    <option value="size-desc">Largest First</option>
+                    <option value="size-asc">Smallest First</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Bulk Actions Bar -->
+              <div class="bulk-actions-bar" id="bulk-actions-bar" style="display: none">
+                <div class="bulk-actions-info">
+                  <span id="selection-count">0</span> file(s) selected
+                </div>
+                <div class="bulk-actions-buttons">
+                  <button type="button" class="bulk-action-btn" id="bulk-download">Download as ZIP</button>
+                  <button type="button" class="bulk-action-btn bulk-action-danger" id="bulk-delete">Delete</button>
+                  <button type="button" class="bulk-action-btn" id="bulk-deselect">Deselect All</button>
+                </div>
+              </div>
+
               <div class="image-gallery" id="files-gallery">
                 <!-- Files will be dynamically loaded here -->
                 <div
