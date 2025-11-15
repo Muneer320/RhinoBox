@@ -59,6 +59,11 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// File retrieval endpoints
+	r.Get("/files/download", s.handleFileDownload)
+	r.Get("/files/metadata", s.handleFileMetadata)
+	r.Get("/files/stream", s.handleFileStream)
 }
 
 // Router exposes the HTTP router for testing.

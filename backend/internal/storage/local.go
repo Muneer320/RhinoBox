@@ -281,3 +281,31 @@ var storageLayout = map[string][]string{
 	"code":          {"py", "js", "go", "java", "cpp"},
 	"other":         {"unknown"},
 }
+
+// GetMetadataByHash retrieves file metadata by hash
+func (m *Manager) GetMetadataByHash(hash string) *FileMetadata {
+	if m.index == nil {
+		return nil
+	}
+	return m.index.FindByHash(hash)
+}
+
+// GetMetadataByPath retrieves file metadata by stored path
+func (m *Manager) GetMetadataByPath(path string) *FileMetadata {
+	if m.index == nil {
+		return nil
+	}
+	
+	// Search through all metadata to find matching path
+	m.index.mu.RLock()
+	defer m.index.mu.RUnlock()
+	
+	normalizedPath := filepath.ToSlash(path)
+	for _, meta := range m.index.data {
+		if meta.StoredPath == normalizedPath {
+			clone := meta
+			return &clone
+		}
+	}
+	return nil
+}
