@@ -159,6 +159,208 @@ func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	return &StoreResult{Metadata: metadata, Duplicate: false}, nil
 }
 
+// MoveRequest captures parameters for moving a file to a new category.
+type MoveRequest struct {
+	FileHash     string // Hash to identify the file
+	FilePath     string // Or path to identify the file
+	NewCategory  string // New category path (e.g., "images/png", "documents/pdf/reports")
+	Reason       string // Reason for the move (for logging)
+}
+
+// MoveResult surfaces the outcome of a move operation.
+type MoveResult struct {
+	OldPath      string       `json:"old_path"`
+	NewPath      string       `json:"new_path"`
+	OldCategory  string       `json:"old_category"`
+	NewCategory  string       `json:"new_category"`
+	Metadata     FileMetadata `json:"metadata"`
+	Renamed      bool         `json:"renamed"` // True if file was renamed to avoid conflict
+}
+
+// MoveFile moves a file to a new category while maintaining metadata integrity.
+func (m *Manager) MoveFile(req MoveRequest) (*MoveResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Find the file by hash or path
+	var meta *FileMetadata
+	if req.FileHash != "" {
+		meta = m.index.FindByHash(req.FileHash)
+	} else if req.FilePath != "" {
+		meta = m.index.FindByPath(req.FilePath)
+	}
+	
+	if meta == nil {
+		return nil, errors.New("file not found")
+	}
+
+	// Parse new category
+	if req.NewCategory == "" {
+		return nil, errors.New("new category is required")
+	}
+	
+	// Split category into components
+	newComponents := strings.Split(req.NewCategory, "/")
+	if len(newComponents) == 0 {
+		return nil, errors.New("invalid category format")
+	}
+
+	// Build new directory path
+	fullNewDir := filepath.Join(append([]string{m.storageRoot}, newComponents...)...)
+	if err := os.MkdirAll(fullNewDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create target directory: %w", err)
+	}
+
+	// Get current file info
+	oldAbsPath := filepath.Join(m.root, filepath.FromSlash(meta.StoredPath))
+	if _, err := os.Stat(oldAbsPath); err != nil {
+		return nil, fmt.Errorf("source file not found: %w", err)
+	}
+
+	// Construct new filename (keep the same name)
+	filename := filepath.Base(oldAbsPath)
+	newAbsPath := filepath.Join(fullNewDir, filename)
+	
+	// Check for naming conflict and resolve
+	renamed := false
+	if _, err := os.Stat(newAbsPath); err == nil {
+		// File exists, add suffix to avoid conflict
+		ext := filepath.Ext(filename)
+		base := strings.TrimSuffix(filename, ext)
+		newFilename := fmt.Sprintf("%s_moved_%d%s", base, time.Now().Unix(), ext)
+		newAbsPath = filepath.Join(fullNewDir, newFilename)
+		renamed = true
+	}
+
+	// Move the physical file
+	if err := os.Rename(oldAbsPath, newAbsPath); err != nil {
+		return nil, fmt.Errorf("move file: %w", err)
+	}
+
+	// Calculate new relative path
+	newRelPath, err := filepath.Rel(m.root, newAbsPath)
+	if err != nil {
+		// Rollback: move file back
+		_ = os.Rename(newAbsPath, oldAbsPath)
+		return nil, fmt.Errorf("calculate relative path: %w", err)
+	}
+
+	// Update metadata
+	oldPath := meta.StoredPath
+	oldCategory := meta.Category
+	meta.StoredPath = filepath.ToSlash(newRelPath)
+	meta.Category = req.NewCategory
+
+	// Add reason to metadata if provided
+	if req.Reason != "" {
+		if meta.Metadata == nil {
+			meta.Metadata = make(map[string]string)
+		}
+		meta.Metadata["move_reason"] = req.Reason
+		meta.Metadata["moved_at"] = time.Now().UTC().Format(time.RFC3339)
+		meta.Metadata["moved_from"] = oldPath
+	}
+
+	// Update index
+	if err := m.index.Update(*meta); err != nil {
+		// Rollback: move file back and restore metadata
+		_ = os.Rename(newAbsPath, oldAbsPath)
+		return nil, fmt.Errorf("update metadata: %w", err)
+	}
+
+	// Clean up empty directories
+	oldDir := filepath.Dir(oldAbsPath)
+	_ = m.cleanupEmptyDirs(oldDir)
+
+	return &MoveResult{
+		OldPath:     oldPath,
+		NewPath:     meta.StoredPath,
+		OldCategory: oldCategory,
+		NewCategory: meta.Category,
+		Metadata:    *meta,
+		Renamed:     renamed,
+	}, nil
+}
+
+// BatchMoveRequest represents a batch move operation.
+type BatchMoveRequest struct {
+	Files []MoveRequest `json:"files"`
+}
+
+// BatchMoveResult contains results for all files in a batch move.
+type BatchMoveResult struct {
+	Results  []MoveResult `json:"results"`
+	Errors   []string     `json:"errors,omitempty"`
+	Success  int          `json:"success"`
+	Failed   int          `json:"failed"`
+}
+
+// BatchMoveFiles moves multiple files atomically (all succeed or all fail).
+func (m *Manager) BatchMoveFiles(req BatchMoveRequest) (*BatchMoveResult, error) {
+	if len(req.Files) == 0 {
+		return nil, errors.New("no files to move")
+	}
+
+	result := &BatchMoveResult{
+		Results: make([]MoveResult, 0, len(req.Files)),
+		Errors:  make([]string, 0),
+	}
+
+	// Track moves for potential rollback
+	type moveRecord struct {
+		oldPath string
+		newPath string
+		meta    FileMetadata
+	}
+	completed := make([]moveRecord, 0, len(req.Files))
+
+	// Attempt all moves
+	for i, fileReq := range req.Files {
+		moveResult, err := m.MoveFile(fileReq)
+		if err != nil {
+			// Rollback all completed moves
+			for j := len(completed) - 1; j >= 0; j-- {
+				record := completed[j]
+				oldAbs := filepath.Join(m.root, filepath.FromSlash(record.oldPath))
+				newAbs := filepath.Join(m.root, filepath.FromSlash(record.newPath))
+				_ = os.Rename(newAbs, oldAbs)
+				// Restore old metadata
+				record.meta.StoredPath = record.oldPath
+				_ = m.index.Update(record.meta)
+			}
+			
+			result.Failed = len(req.Files)
+			result.Errors = append(result.Errors, fmt.Sprintf("file %d: %v", i, err))
+			return result, fmt.Errorf("batch move failed at file %d: %w", i, err)
+		}
+
+		completed = append(completed, moveRecord{
+			oldPath: moveResult.OldPath,
+			newPath: moveResult.NewPath,
+			meta:    moveResult.Metadata,
+		})
+		result.Results = append(result.Results, *moveResult)
+		result.Success++
+	}
+
+	return result, nil
+}
+
+// cleanupEmptyDirs removes empty directories up to the storage root.
+func (m *Manager) cleanupEmptyDirs(dir string) error {
+	for dir != m.storageRoot && dir != m.root {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		if err := os.Remove(dir); err != nil {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+	return nil
+}
+
 // StoreMedia streams the reader contents into the categorized folder and returns the relative path.
 func (m *Manager) StoreMedia(subdirs []string, originalName string, reader io.Reader) (string, error) {
 	dirParts := append([]string{m.root, "media"}, subdirs...)

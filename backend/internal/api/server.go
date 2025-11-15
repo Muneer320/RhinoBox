@@ -59,6 +59,8 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/{file_id}/move", s.handleMoveFile)
+	r.Patch("/files/batch/move", s.handleBatchMoveFiles)
 }
 
 // Router exposes the HTTP router for testing.
@@ -381,4 +383,155 @@ func init() {
 	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
 		tr.MaxIdleConnsPerHost = 32
 	}
+}
+
+// handleMoveFile moves a single file to a new category.
+func (s *Server) handleMoveFile(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req struct {
+		NewCategory string `json:"new_category"`
+		Reason      string `json:"reason"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+
+	if req.NewCategory == "" {
+		httpError(w, http.StatusBadRequest, "new_category is required")
+		return
+	}
+
+	// Try to identify file by hash first, then by path
+	moveReq := storage.MoveRequest{
+		FileHash:    fileID,
+		NewCategory: req.NewCategory,
+		Reason:      req.Reason,
+	}
+
+	result, err := s.storage.MoveFile(moveReq)
+	if err != nil {
+		// Try with file path if hash didn't work
+		moveReq.FileHash = ""
+		moveReq.FilePath = fileID
+		result, err = s.storage.MoveFile(moveReq)
+		if err != nil {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("move file: %v", err))
+			return
+		}
+	}
+
+	// Log the move operation
+	logRecord := map[string]any{
+		"file_hash":    result.Metadata.Hash,
+		"old_path":     result.OldPath,
+		"new_path":     result.NewPath,
+		"old_category": result.OldCategory,
+		"new_category": result.NewCategory,
+		"reason":       req.Reason,
+		"renamed":      result.Renamed,
+		"moved_at":     time.Now().UTC().Format(time.RFC3339),
+	}
+	
+	if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "move_log.ndjson")), []map[string]any{logRecord}); err != nil {
+		s.logger.Warn("failed to append move log", slog.Any("err", err))
+	}
+
+	response := map[string]any{
+		"status":       "success",
+		"old_path":     result.OldPath,
+		"new_path":     result.NewPath,
+		"old_category": result.OldCategory,
+		"new_category": result.NewCategory,
+		"renamed":      result.Renamed,
+		"metadata":     result.Metadata,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleBatchMoveFiles moves multiple files in a single transaction.
+func (s *Server) handleBatchMoveFiles(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Files []struct {
+			Hash        string `json:"hash"`
+			Path        string `json:"path"`
+			NewCategory string `json:"new_category"`
+			Reason      string `json:"reason"`
+		} `json:"files"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+
+	if len(req.Files) == 0 {
+		httpError(w, http.StatusBadRequest, "no files provided")
+		return
+	}
+
+	// Convert to storage move requests
+	batchReq := storage.BatchMoveRequest{
+		Files: make([]storage.MoveRequest, len(req.Files)),
+	}
+
+	for i, f := range req.Files {
+		if f.NewCategory == "" {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("file %d: new_category is required", i))
+			return
+		}
+		
+		batchReq.Files[i] = storage.MoveRequest{
+			FileHash:    f.Hash,
+			FilePath:    f.Path,
+			NewCategory: f.NewCategory,
+			Reason:      f.Reason,
+		}
+	}
+
+	result, err := s.storage.BatchMoveFiles(batchReq)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("batch move failed: %v", err))
+		return
+	}
+
+	// Log batch move operation
+	logRecords := make([]map[string]any, 0, len(result.Results))
+	for _, r := range result.Results {
+		logRecords = append(logRecords, map[string]any{
+			"file_hash":    r.Metadata.Hash,
+			"old_path":     r.OldPath,
+			"new_path":     r.NewPath,
+			"old_category": r.OldCategory,
+			"new_category": r.NewCategory,
+			"renamed":      r.Renamed,
+			"moved_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	
+	if len(logRecords) > 0 {
+		if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "move_log.ndjson")), logRecords); err != nil {
+			s.logger.Warn("failed to append batch move log", slog.Any("err", err))
+		}
+	}
+
+	response := map[string]any{
+		"status":  "success",
+		"success": result.Success,
+		"failed":  result.Failed,
+		"results": result.Results,
+	}
+	
+	if len(result.Errors) > 0 {
+		response["errors"] = result.Errors
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }

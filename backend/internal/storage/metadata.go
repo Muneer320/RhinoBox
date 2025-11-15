@@ -97,3 +97,27 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
 }
+
+// Update modifies an existing metadata entry.
+func (idx *MetadataIndex) Update(meta FileMetadata) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    if _, exists := idx.data[meta.Hash]; !exists {
+        return errors.New("metadata not found")
+    }
+    idx.data[meta.Hash] = meta
+    return idx.persistLocked()
+}
+
+// FindByPath searches for a file by its stored path.
+func (idx *MetadataIndex) FindByPath(path string) *FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    for _, meta := range idx.data {
+        if meta.StoredPath == path {
+            clone := meta
+            return &clone
+        }
+    }
+    return nil
+}
