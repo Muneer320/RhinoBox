@@ -164,16 +164,19 @@ function initHomePageFeatures() {
 
       try {
         let documents = [];
+        let categoryType = "others"; // Default category
         
         // Handle different types
         if (selectedType === "url") {
           // Treat as URL
           documents = [{ content: value, type: "url", url: value }];
+          categoryType = "others";
         } else if (selectedType === "json") {
           // Try to parse as JSON
           try {
             const parsed = JSON.parse(value);
             documents = Array.isArray(parsed) ? parsed : [parsed];
+            categoryType = "json";
           } catch {
             showToast("Invalid JSON format");
             return;
@@ -181,11 +184,21 @@ function initHomePageFeatures() {
         } else {
           // Other types (text, python, javascript, etc.)
           documents = [{ content: value, type: selectedType }];
+          // Map selected type to category
+          if (["python", "javascript", "typescript", "html", "css", "sql", "yaml", "xml"].includes(selectedType)) {
+            categoryType = "code";
+          } else if (selectedType === "json") {
+            categoryType = "json";
+          } else {
+            categoryType = "others";
+          }
         }
 
         showToast("Processing...");
-        await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
-        showToast("Successfully added item");
+        await ingestJSON(documents, categoryType, `Quick add: ${selectedType}`);
+        
+        const typeName = getFileTypeName(categoryType);
+        showToast(`Successfully added ${typeName} item`);
         
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -195,6 +208,9 @@ function initHomePageFeatures() {
         }
         if (textarea) textarea.value = "";
         if (typeSelect) typeSelect.value = "text";
+
+        // Reload collections to show new folders
+        await loadCollections();
 
         // Reload current collection if viewing one
         if (currentCollectionType) {
@@ -1179,11 +1195,27 @@ async function loadCollections() {
       statsMap.set(stats.type, stats);
     });
 
+    // Filter out empty collections (collections with 0 files)
+    const nonEmptyCollections = collections.filter((collection) => {
+      const stats = statsMap.get(collection.type) || {
+        file_count: 0,
+        storage_used_formatted: "0 B",
+      };
+      return stats.file_count > 0;
+    });
+
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    // Render collection cards
-    collections.forEach((collection) => {
+    // Show message if all collections are empty
+    if (nonEmptyCollections.length === 0) {
+      collectionCards.innerHTML =
+        '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">No collections with files available</p>';
+      return;
+    }
+
+    // Render collection cards for non-empty collections only
+    nonEmptyCollections.forEach((collection) => {
       const stats = statsMap.get(collection.type) || {
         file_count: 0,
         storage_used_formatted: "0 B",
@@ -1230,11 +1262,17 @@ function createCollectionCard(collection, stats) {
       "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
     archives:
       "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
+    json:
+      "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
+    code:
+      "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&w=600&q=80",
+    others:
+      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
     other:
       "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
   };
 
-  const imageUrl = imageMap[collection.type] || imageMap["other"];
+  const imageUrl = imageMap[collection.type] || imageMap["others"] || imageMap["other"];
   const fileCount = stats.file_count || 0;
   const storageUsed =
     stats.storage_used_formatted || stats.storage_used || "0 B";
@@ -1566,6 +1604,98 @@ function ensureButtonsClickable() {
 }
 
 // Upload files to backend
+// Helper function to detect file type category
+function detectFileTypeCategory(file) {
+  const mimeType = file.type || "";
+  const fileName = file.name || "";
+  const extension = fileName.split(".").pop()?.toLowerCase() || "";
+
+  // Image types
+  if (mimeType.startsWith("image/")) {
+    return "images";
+  }
+  
+  // Video types
+  if (mimeType.startsWith("video/")) {
+    return "videos";
+  }
+  
+  // Audio types
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
+  }
+  
+  // Document types
+  if (
+    mimeType.includes("pdf") ||
+    mimeType.includes("document") ||
+    mimeType.includes("text") ||
+    ["doc", "docx", "txt", "rtf", "odt"].includes(extension)
+  ) {
+    return "documents";
+  }
+  
+  // Spreadsheet types
+  if (
+    mimeType.includes("spreadsheet") ||
+    mimeType.includes("excel") ||
+    ["xls", "xlsx", "csv", "ods"].includes(extension)
+  ) {
+    return "spreadsheets";
+  }
+  
+  // Presentation types
+  if (
+    mimeType.includes("presentation") ||
+    mimeType.includes("powerpoint") ||
+    ["ppt", "pptx", "odp"].includes(extension)
+  ) {
+    return "presentations";
+  }
+  
+  // Archive types
+  if (
+    mimeType.includes("zip") ||
+    mimeType.includes("archive") ||
+    mimeType.includes("compressed") ||
+    ["zip", "rar", "7z", "tar", "gz"].includes(extension)
+  ) {
+    return "archives";
+  }
+  
+  // JSON files
+  if (mimeType.includes("json") || extension === "json") {
+    return "json";
+  }
+  
+  // Code files
+  if (
+    ["js", "ts", "py", "java", "cpp", "c", "html", "css", "xml", "yaml", "yml"].includes(extension)
+  ) {
+    return "code";
+  }
+  
+  // Unknown/other types
+  return "others";
+}
+
+// Helper function to get human-readable file type name
+function getFileTypeName(category) {
+  const typeNames = {
+    images: "Image",
+    videos: "Video",
+    audio: "Audio",
+    documents: "Document",
+    spreadsheets: "Spreadsheet",
+    presentations: "Presentation",
+    archives: "Archive",
+    json: "JSON",
+    code: "Code",
+    others: "Other",
+  };
+  return typeNames[category] || "File";
+}
+
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
     showToast("No files selected");
@@ -1577,29 +1707,42 @@ async function uploadFiles(files) {
       `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
     );
 
+    // Detect file types before upload
+    const fileTypes = new Map();
+    files.forEach((file) => {
+      const category = detectFileTypeCategory(file);
+      fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
+    });
+
     // Determine if files are media or mixed
     const mediaTypes = ["image/", "video/", "audio/"];
     const allMedia = files.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
+    let response;
     if (allMedia && files.length > 0) {
       // Use media endpoint for media files
-      await ingestMedia(files);
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
-      );
+      response = await ingestMedia(files);
     } else {
       // Use unified endpoint for mixed files
-      await ingestFiles(files);
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
-      );
+      response = await ingestFiles(files);
     }
+
+    // Show file type information
+    const typeMessages = [];
+    fileTypes.forEach((count, category) => {
+      const typeName = getFileTypeName(category);
+      typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
+    });
+
+    const typeMessage = typeMessages.join(", ");
+    showToast(
+      `Successfully uploaded: ${typeMessage}`
+    );
+
+    // Reload collections to show new folders
+    await loadCollections();
 
     // Reload current collection if viewing one
     if (currentCollectionType) {
