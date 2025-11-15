@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,12 +19,15 @@ import (
 	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/middleware"
 	errormiddleware "github.com/Muneer320/RhinoBox/internal/middleware"
+	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
 
@@ -37,6 +41,7 @@ type Server struct {
 	jobQueue     *queue.JobQueue
 	server       *http.Server
 	errorHandler *errormiddleware.ErrorHandler
+	rateLimiter  *middleware.RateLimiter
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -62,18 +67,66 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return s, nil
 }
 
+// setupValidation configures validation middleware
+func (s *Server) setupValidation() *validationmw.Validator {
+	validator := validationmw.NewValidator(s.logger)
+	validationmw.RegisterAllSchemas(validator, s.cfg.MaxUploadBytes)
+	return validator
+}
+
+// Stop gracefully stops the server and cleans up resources.
+func (s *Server) Stop() {
+	// Stop rate limiter cleanup goroutine
+	if s.rateLimiter != nil {
+		s.rateLimiter.Stop()
+	}
+	// Job queue shutdown will be implemented when async endpoints are added
+	if s.jobQueue != nil {
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
+	}
+}
+
 func (s *Server) routes() {
 	r := s.router
 
-	// Handle CORS preflight OPTIONS requests first, before any other middleware
-	r.Use(s.handleCORS)
-
 	// Lightweight middleware for performance
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+
+	// Security middleware - order matters!
+	// 1. IP Filter (first - block/allow before processing)
+	ipFilter := middleware.NewIPFilterMiddleware(s.cfg.Security, s.logger)
+	r.Use(ipFilter.Handler)
+
+	// 2. Request Size Limit (early - before body is read)
+	requestSizeLimit := middleware.NewRequestSizeLimitMiddleware(s.cfg.Security, s.logger)
+	r.Use(requestSizeLimit.Handler)
+
+	// 3. Rate Limiting (after IP filter, before processing)
+	s.rateLimiter = middleware.NewRateLimiter(s.cfg.Security, s.logger)
+	r.Use(s.rateLimiter.Handler)
+
+	// 4. CORS (before other headers) - replaces old handleCORS
+	cors := middleware.NewCORSMiddleware(s.cfg.Security, s.logger)
+	r.Use(cors.Handler)
+
+	// 5. Security Headers (after CORS)
+	securityHeaders := middleware.NewSecurityHeadersMiddleware(s.cfg.Security, s.logger)
+	r.Use(securityHeaders.Handler)
+	
+	// Response transformation middleware (keep for response formatting)
+	responseConfig := respmw.DefaultResponseConfig(s.logger)
+	responseConfig.EnableCORS = false // Disable CORS here since we have dedicated middleware
+	r.Use(respmw.NewResponseMiddleware(responseConfig).Handler)
+	
 	r.Use(s.customLogger)                    // Custom lightweight logger
 	r.Use(s.errorHandler.Handler)            // Centralized error handling with panic recovery
-	r.Use(middleware.Compress(5))            // gzip level 5 (balance speed/compression)
+	r.Use(chimw.Compress(5))                 // gzip level 5 (balance speed/compression)
+
+	// Setup validation as global middleware
+	// Validation will check route context after chi matches routes
+	validator := s.setupValidation()
+	r.Use(validator.Validate)
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)
@@ -81,13 +134,15 @@ func (s *Server) routes() {
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
-	r.Delete("/files/{file_id}", s.handleFileDelete)
-	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
-	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	// More specific routes must come before parameterized routes
+	r.Get("/files/type/{type}", s.handleGetFilesByType)
 	r.Get("/files/search", s.handleFileSearch)
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Delete("/files/{file_id}", s.handleFileDelete)
+	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
+	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
 
 	// Notes endpoints
 	r.Get("/files/{file_id}/notes", s.handleGetNotes)
@@ -100,30 +155,12 @@ func (s *Server) routes() {
 	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
 }
 
-// handleCORS handles CORS preflight OPTIONS requests and sets CORS headers on all responses
-func (s *Server) handleCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers on all responses
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Max-Age", "3600")
-		
-		// Handle preflight OPTIONS requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
 func (s *Server) customLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 		
 		defer func() {
 			duration := time.Since(start)
@@ -934,6 +971,100 @@ func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleGetFilesByType returns files filtered by collection type with pagination.
+func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		s.handleError(w, r, apierrors.BadRequest("collection type is required"))
+		return
+	}
+
+	// Parse pagination parameters
+	page := 1
+	limit := 50
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	// Parse category filter
+	category := r.URL.Query().Get("category")
+
+	// Build request
+	req := storage.GetFilesByTypeRequest{
+		Type:     collectionType,
+		Page:     page,
+		Limit:    limit,
+		Category: category,
+	}
+
+	// Get files
+	result, err := s.storage.GetFilesByType(req)
+	if err != nil {
+		s.handleError(w, r, apierrors.InternalServerError(fmt.Sprintf("failed to get files: %v", err)))
+		return
+	}
+
+	// Convert FileMetadata to response format
+	files := make([]map[string]any, 0, len(result.Files))
+	for _, file := range result.Files {
+		// Extract optional fields from metadata map
+		dimensions := ""
+		description := ""
+		if file.Metadata != nil {
+			if dims, ok := file.Metadata["dimensions"]; ok {
+				dimensions = dims
+			}
+			if desc, ok := file.Metadata["description"]; ok {
+				description = desc
+			}
+			if comment, ok := file.Metadata["comment"]; ok && description == "" {
+				description = comment
+			}
+		}
+
+		files = append(files, map[string]any{
+			"id":            file.Hash, // Use hash as ID
+			"name":          file.OriginalName,
+			"fileName":      file.OriginalName, // Alias for compatibility
+			"path":          file.StoredPath,
+			"filePath":      file.StoredPath, // Alias for compatibility
+			"storedPath":    file.StoredPath,
+			"size":          file.Size,
+			"fileSize":      file.Size, // Alias for compatibility
+			"type":          file.MimeType,
+			"fileType":      file.MimeType, // Alias for compatibility
+			"date":          file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":    file.UploadedAt.Format(time.RFC3339),
+			"hash":          file.Hash,
+			"url":           fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":   fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":    dimensions,
+			"fileDimensions": dimensions, // Alias for compatibility
+			"description":   description,
+			"comment":       description, // Alias for compatibility
+		})
+	}
+
+	// Build response matching frontend expectations
+	response := map[string]any{
+		"files":      files,
+		"type":       collectionType,
+		"total":      result.Total,
+		"page":       result.Page,
+		"limit":      result.Limit,
+		"total_pages": result.TotalPages,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
 // Helper structs
 
 type jsonIngestRequest struct {
@@ -942,6 +1073,16 @@ Documents []map[string]any `json:"documents"`
 Namespace string           `json:"namespace"`
 Comment   string           `json:"comment"`
 Metadata  map[string]any   `json:"metadata"`
+}
+
+// getRequestID extracts the request ID from the context
+func getRequestID(r *http.Request) string {
+	if id := r.Context().Value(chimw.RequestIDKey); id != nil {
+		if str, ok := id.(string); ok {
+			return str
+		}
+	}
+	return ""
 }
 
 // handleError processes errors through the centralized error handler
