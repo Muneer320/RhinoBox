@@ -51,14 +51,16 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 }
 
 func (s *Server) routes() {
-	r := s.router
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+r := s.router
+r.Use(middleware.Logger)
+r.Use(middleware.Recoverer)
 
-	r.Get("/healthz", s.handleHealth)
-	r.Post("/ingest", s.handleUnifiedIngest)
-	r.Post("/ingest/media", s.handleMediaIngest)
-	r.Post("/ingest/json", s.handleJSONIngest)
+r.Get("/healthz", s.handleHealth)
+r.Post("/ingest", s.handleUnifiedIngest)
+r.Post("/ingest/media", s.handleMediaIngest)
+r.Post("/ingest/json", s.handleJSONIngest)
+r.Patch("/files/rename", s.handleFileRename)
+r.Get("/files/search", s.handleFileSearch)
 }
 
 // Router exposes the HTTP router for testing.
@@ -355,14 +357,73 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
+var req storage.RenameRequest
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+return
+}
+
+// Validate required fields
+if req.Hash == "" {
+httpError(w, http.StatusBadRequest, "hash is required")
+return
+}
+if req.NewName == "" {
+httpError(w, http.StatusBadRequest, "new_name is required")
+return
+}
+
+result, err := s.storage.RenameFile(req)
+if err != nil {
+switch {
+case errors.Is(err, storage.ErrFileNotFound):
+httpError(w, http.StatusNotFound, err.Error())
+case errors.Is(err, storage.ErrInvalidFilename):
+httpError(w, http.StatusBadRequest, err.Error())
+case errors.Is(err, storage.ErrNameConflict):
+httpError(w, http.StatusConflict, err.Error())
+default:
+httpError(w, http.StatusInternalServerError, fmt.Sprintf("rename failed: %v", err))
+}
+return
+}
+
+s.logger.Info("file renamed",
+slog.String("hash", req.Hash),
+slog.String("old_name", result.OldMetadata.OriginalName),
+slog.String("new_name", result.NewMetadata.OriginalName),
+slog.Bool("updated_stored_file", req.UpdateStoredFile),
+)
+
+writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
+// Get search query from URL parameter
+query := r.URL.Query().Get("name")
+if query == "" {
+httpError(w, http.StatusBadRequest, "name query parameter is required")
+return
+}
+
+results := s.storage.FindByOriginalName(query)
+
+writeJSON(w, http.StatusOK, map[string]any{
+"query":   query,
+"results": results,
+"count":   len(results),
+})
+}
+
 // Helper structs
 
 type jsonIngestRequest struct {
-	Document  map[string]any   `json:"document"`
-	Documents []map[string]any `json:"documents"`
-	Namespace string           `json:"namespace"`
-	Comment   string           `json:"comment"`
-	Metadata  map[string]any   `json:"metadata"`
+Document  map[string]any   `json:"document"`
+Documents []map[string]any `json:"documents"`
+Namespace string           `json:"namespace"`
+Comment   string           `json:"comment"`
+Metadata  map[string]any   `json:"metadata"`
 }
 
 func httpError(w http.ResponseWriter, code int, msg string) {
