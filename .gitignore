@@ -25,3 +25,9 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+docker/.env
+
+# Compiled binaries
+backend/rhinobox
+backend/*.exe
+backend/*.dll

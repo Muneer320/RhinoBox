@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -41,10 +43,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		router:      chi.NewRouter(),
-		storage:     store,
+		cfg:      cfg,
+		logger:   logger,
+		router:   chi.NewRouter(),
+		storage:  store,
+		jobQueue: nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
@@ -897,15 +900,9 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	return s.storage.LogDownload(log)
 }
 
-// handleGetCollections returns all available collections with their metadata.
+// handleGetCollections returns all available collection types with metadata.
 func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
-	collections, err := s.storage.GetCollections()
-	if err != nil {
-		s.logger.Error("failed to get collections", slog.Any("err", err))
-		httpError(w, http.StatusInternalServerError, "failed to get collections")
-		return
-	}
-
+	collections := s.storage.GetCollections()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"collections": collections,
 		"count":       len(collections),

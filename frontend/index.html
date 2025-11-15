@@ -137,7 +137,13 @@
                 </div>
               </div>
               <div class="collection-cards" id="collectionCards">
-                <!-- Collections will be dynamically loaded from API -->
+                <!-- Collection cards will be dynamically loaded here -->
+                <div class="loading-state" id="collections-loading" style="display: none;">
+                  <p>Loading collections...</p>
+                </div>
+                <div class="error-state" id="collections-error" style="display: none;">
+                  <p>Failed to load collections. Please try again.</p>
+                </div>
               </div>
             </section>
           </div>

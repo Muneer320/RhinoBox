@@ -1,119 +1,189 @@
 package storage
 
 import (
-	"os"
-	"path/filepath"
+	"bytes"
 	"testing"
 )
 
-func TestGetCollectionsEmpty(t *testing.T) {
-	root := t.TempDir()
-	mgr, err := NewManager(root)
-	if err != nil {
-		t.Fatalf("new manager: %v", err)
-	}
+func TestGetCollections(t *testing.T) {
+	manager := newTestManager(t)
+	defer cleanupManager(t, manager)
 
-	collections, err := mgr.GetCollections()
-	if err != nil {
-		t.Fatalf("get collections: %v", err)
-	}
-
-	if len(collections) != 0 {
-		t.Errorf("expected 0 collections for empty storage, got %d", len(collections))
-	}
-}
-
-func TestGetCollectionsWithFiles(t *testing.T) {
-	root := t.TempDir()
-	mgr, err := NewManager(root)
-	if err != nil {
-		t.Fatalf("new manager: %v", err)
-	}
-
-	// Create test files in storage directories
-	testFiles := []struct {
-		path   string
-		content string
-	}{
-		{"storage/images/jpg/test1.jpg", "fake image 1"},
-		{"storage/images/png/test2.png", "fake image 2"},
-		{"storage/videos/mp4/test3.mp4", "fake video"},
-		{"storage/audio/mp3/test4.mp3", "fake audio"},
-	}
-
-	for _, tf := range testFiles {
-		fullPath := filepath.Join(root, tf.path)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-			t.Fatalf("create directory: %v", err)
-		}
-		if err := os.WriteFile(fullPath, []byte(tf.content), 0o644); err != nil {
-			t.Fatalf("write file: %v", err)
-		}
-	}
-
-	collections, err := mgr.GetCollections()
-	if err != nil {
-		t.Fatalf("get collections: %v", err)
-	}
+	collections := manager.GetCollections()
 
 	if len(collections) == 0 {
-		t.Fatalf("expected at least 1 collection after creating files, got 0")
+		t.Fatalf("expected at least one collection, got %d", len(collections))
 	}
 
-	// Verify we have the expected collections
-	collectionTypes := make(map[string]bool)
-	for _, coll := range collections {
-		collectionTypes[coll.Type] = true
+	// Verify expected collection types
+	expectedTypes := map[string]bool{
+		"images":       false,
+		"videos":       false,
+		"audio":        false,
+		"documents":    false,
+		"spreadsheets": false,
+		"presentations": false,
+		"archives":     false,
+		"other":        false,
+	}
 
-		// Verify required fields
-		if coll.Name == "" {
-			t.Errorf("collection missing name: %+v", coll)
+	for _, collection := range collections {
+		if _, exists := expectedTypes[collection.Type]; exists {
+			expectedTypes[collection.Type] = true
 		}
-		if coll.Description == "" {
-			t.Errorf("collection missing description: %+v", coll)
+		if collection.Name == "" {
+			t.Errorf("collection %s has empty name", collection.Type)
 		}
-		if coll.Icon == "" {
-			t.Errorf("collection missing icon: %+v", coll)
-		}
-		if coll.FileCount <= 0 {
-			t.Errorf("collection should have positive file_count: %+v", coll)
-		}
-		if coll.TotalSize <= 0 {
-			t.Errorf("collection should have positive total_size: %+v", coll)
-		}
-		if coll.FormattedSize == "" {
-			t.Errorf("collection missing formatted_size: %+v", coll)
+		if collection.Description == "" {
+			t.Errorf("collection %s has empty description", collection.Type)
 		}
 	}
 
-	// Check for expected collection types
-	expectedTypes := []string{"images", "videos", "audio"}
-	for _, expectedType := range expectedTypes {
-		if !collectionTypes[expectedType] {
-			t.Errorf("expected to find collection type '%s', but it was not found", expectedType)
+	for typeName, found := range expectedTypes {
+		if !found {
+			t.Errorf("expected collection type %s not found", typeName)
 		}
 	}
 }
 
-func TestFormatSize(t *testing.T) {
+func TestGetCollectionStatsEmpty(t *testing.T) {
+	manager := newTestManager(t)
+	defer cleanupManager(t, manager)
+
+	stats, err := manager.GetCollectionStats("images")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stats.Type != "images" {
+		t.Errorf("expected type 'images', got %s", stats.Type)
+	}
+	if stats.FileCount != 0 {
+		t.Errorf("expected 0 files, got %d", stats.FileCount)
+	}
+	if stats.StorageUsed != 0 {
+		t.Errorf("expected 0 storage, got %d", stats.StorageUsed)
+	}
+	if stats.StorageUsedFormatted != "0 B" {
+		t.Errorf("expected '0 B', got %s", stats.StorageUsedFormatted)
+	}
+}
+
+func TestGetCollectionStatsWithFiles(t *testing.T) {
+	manager := newTestManager(t)
+	defer cleanupManager(t, manager)
+
+	// Store a test image file
+	imageData := []byte("fake image data")
+	req := StoreRequest{
+		Reader:   bytes.NewReader(imageData),
+		Filename: "test.jpg",
+		MimeType: "image/jpeg",
+		Size:     int64(len(imageData)),
+	}
+
+	result, err := manager.StoreFile(req)
+	if err != nil {
+		t.Fatalf("failed to store file: %v", err)
+	}
+
+	if result == nil {
+		t.Fatalf("expected store result, got nil")
+	}
+
+	// Get stats for images collection
+	stats, err := manager.GetCollectionStats("images")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stats.FileCount < 1 {
+		t.Errorf("expected at least 1 file, got %d", stats.FileCount)
+	}
+	if stats.StorageUsed <= 0 {
+		t.Errorf("expected storage > 0, got %d", stats.StorageUsed)
+	}
+	if stats.StorageUsedFormatted == "" {
+		t.Errorf("expected formatted storage, got empty string")
+	}
+}
+
+func TestGetCollectionStatsMultipleTypes(t *testing.T) {
+	manager := newTestManager(t)
+	defer cleanupManager(t, manager)
+
+	// Store files of different types
+	files := []struct {
+		filename string
+		mimeType string
+		data     []byte
+		expectedCollection string
+	}{
+		{"test.jpg", "image/jpeg", []byte("image data"), "images"},
+		{"test.mp4", "video/mp4", []byte("video data"), "videos"},
+		{"test.mp3", "audio/mpeg", []byte("audio data"), "audio"},
+	}
+
+	for _, file := range files {
+		req := StoreRequest{
+			Reader:   bytes.NewReader(file.data),
+			Filename: file.filename,
+			MimeType: file.mimeType,
+			Size:     int64(len(file.data)),
+		}
+
+		_, err := manager.StoreFile(req)
+		if err != nil {
+			t.Fatalf("failed to store %s: %v", file.filename, err)
+		}
+	}
+
+	// Check stats for each collection
+	for _, file := range files {
+		stats, err := manager.GetCollectionStats(file.expectedCollection)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", file.expectedCollection, err)
+		}
+
+		if stats.FileCount < 1 {
+			t.Errorf("expected at least 1 file for %s, got %d", file.expectedCollection, stats.FileCount)
+		}
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
 	tests := []struct {
-		bytes int64
-		want  string
+		bytes    int64
+		expected string
 	}{
 		{0, "0 B"},
 		{512, "512 B"},
-		{1024, "1.0 KB"},
-		{1536, "1.5 KB"},
-		{1048576, "1.0 MB"},
-		{1073741824, "1.0 GB"},
+		{1024, "1.00 KB"},
+		{1536, "1.50 KB"},
+		{1048576, "1.00 MB"},
+		{1073741824, "1.00 GB"},
 	}
 
-	for _, tt := range tests {
-		got := formatSize(tt.bytes)
-		if got != tt.want {
-			t.Errorf("formatSize(%d) = %q, want %q", tt.bytes, got, tt.want)
+	for _, test := range tests {
+		result := formatBytes(test.bytes)
+		if result != test.expected {
+			t.Errorf("formatBytes(%d) = %s, expected %s", test.bytes, result, test.expected)
 		}
 	}
 }
 
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+	tmpDir := t.TempDir()
+	manager, err := NewManager(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+	return manager
+}
+
+func cleanupManager(t *testing.T, manager *Manager) {
+	t.Helper()
+	// Cleanup is handled by t.TempDir()
+}
 
