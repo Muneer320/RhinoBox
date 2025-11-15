@@ -40,12 +40,12 @@ backend/
 
 ### HTTP Surface
 
-| Method | Path            | Description                                                                                 |
-| ------ | --------------- | ------------------------------------------------------------------------------------------- |
-| GET    | `/healthz`      | Returns `{status:"ok", time:...}` for probes                                                |
+| Method | Path            | Description                                                                                                            |
+| ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/healthz`      | Returns `{status:"ok", time:...}` for probes                                                                           |
 | POST   | `/ingest`       | **Unified endpoint**: handles media, JSON, and generic files in single or mixed batches (see `docs/UNIFIED_INGEST.md`) |
-| POST   | `/ingest/media` | Multipart upload with one or more `file` parts, optional `category` + `comment`             |
-| POST   | `/ingest/json`  | JSON body containing `document` or `documents`, `namespace`, optional `comment`, `metadata` |
+| POST   | `/ingest/media` | Multipart upload with one or more `file` parts, optional `category` + `comment`                                        |
+| POST   | `/ingest/json`  | JSON body containing `document` or `documents`, `namespace`, optional `comment`, `metadata`                            |
 
 ### Sample Requests
 

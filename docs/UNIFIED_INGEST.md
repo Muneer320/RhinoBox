@@ -15,13 +15,13 @@ Content-Type: multipart/form-data
 
 ### Form Fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `files` | File(s) | No | One or more files (media, documents, or generic) |
-| `data` | JSON string | No | Inline JSON data (object or array) |
-| `namespace` | string | No | Organization/category namespace |
-| `comment` | string | No | Hints for categorization or decision engine |
-| `metadata` | JSON string | No | Additional context (tags, source, description) |
+| Field       | Type        | Required | Description                                      |
+| ----------- | ----------- | -------- | ------------------------------------------------ |
+| `files`     | File(s)     | No       | One or more files (media, documents, or generic) |
+| `data`      | JSON string | No       | Inline JSON data (object or array)               |
+| `namespace` | string      | No       | Organization/category namespace                  |
+| `comment`   | string      | No       | Hints for categorization or decision engine      |
+| `metadata`  | JSON string | No       | Additional context (tags, source, description)   |
 
 **Note**: At least one of `files` or `data` must be provided.
 
@@ -103,6 +103,7 @@ Content-Type: multipart/form-data
 Detected by MIME type or extension: `.jpg`, `.png`, `.gif`, `.mp4`, `.mov`, `.mp3`, `.wav`
 
 **Processing:**
+
 - Automatic categorization
 - Directory organization
 - Metadata extraction
@@ -112,6 +113,7 @@ Detected by MIME type or extension: `.jpg`, `.png`, `.gif`, `.mp4`, `.mov`, `.mp
 Provided via `data` field or `.json` files.
 
 **Processing:**
+
 - Schema analysis
 - SQL vs NoSQL decision
 - Relationship detection
@@ -122,6 +124,7 @@ Provided via `data` field or `.json` files.
 PDFs, documents, archives, and other file types.
 
 **Processing:**
+
 - Namespace-based organization
 - Hash computation
 - Metadata indexing
@@ -221,13 +224,13 @@ If all items fail, returns HTTP 400:
 
 ## Comparison with Specialized Endpoints
 
-| Feature | `/ingest` | `/ingest/media` | `/ingest/json` |
-|---------|-----------|-----------------|----------------|
-| Media files | ✅ | ✅ | ❌ |
-| JSON data | ✅ | ❌ | ✅ |
-| Generic files | ✅ | ❌ | ❌ |
-| Mixed batches | ✅ | ❌ | ❌ |
-| Unified response | ✅ | ❌ | ❌ |
+| Feature          | `/ingest` | `/ingest/media` | `/ingest/json` |
+| ---------------- | --------- | --------------- | -------------- |
+| Media files      | ✅        | ✅              | ❌             |
+| JSON data        | ✅        | ❌              | ✅             |
+| Generic files    | ✅        | ❌              | ❌             |
+| Mixed batches    | ✅        | ❌              | ❌             |
+| Unified response | ✅        | ❌              | ❌             |
 
 **Recommendation**: Use `/ingest` for maximum flexibility; specialized endpoints remain available for focused workflows.
 
