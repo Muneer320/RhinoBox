@@ -78,6 +78,10 @@ func main() {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutting down gracefully...")
+		
+		// Stop job queue first
+		srv.Stop()
+		
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

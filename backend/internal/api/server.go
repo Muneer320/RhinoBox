@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -40,11 +42,21 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize job queue
+	queueCfg := queue.DefaultConfig()
+	queueCfg.PersistPath = filepath.Join(cfg.DataDir, "jobs")
+	processor := queue.NewMediaProcessor(store)
+	jobQueue, err := queue.New(queueCfg, processor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job queue: %w", err)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
+		jobQueue:    jobQueue,
 	}
 	s.routes()
 	return s, nil
@@ -65,12 +77,28 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Async endpoints
+	r.Post("/ingest/async", s.handleAsyncIngest)
+	r.Post("/ingest/media/async", s.handleMediaIngestAsync)
+	r.Post("/ingest/json/async", s.handleJSONIngestAsync)
+	
+	// Job management
+	r.Get("/jobs", s.handleListJobs)
+	r.Get("/jobs/{job_id}", s.handleJobStatus)
+	r.Get("/jobs/{job_id}/result", s.handleJobResult)
+	r.Delete("/jobs/{job_id}", s.handleCancelJob)
+	r.Get("/jobs/stats", s.handleJobStats)
+	
+	// File operations
 	r.Patch("/files/rename", s.handleFileRename)
 	r.Patch("/files/{file_id}/move", s.handleFileMove)
 	r.Patch("/files/batch/move", s.handleBatchFileMove)
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Post("/files/{file_id}/copy", s.handleFileCopy)
+	r.Post("/files/copy/batch", s.handleBatchFileCopy)
 	r.Get("/files/search", s.handleFileSearch)
 	r.Get("/files", s.handleFileList)
 	r.Get("/files/browse", s.handleBrowseDirectory)
@@ -104,6 +132,15 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// Stop gracefully stops the server and job queue
+func (s *Server) Stop() {
+	if s.jobQueue != nil {
+		s.logger.Info("stopping job queue...")
+		s.jobQueue.Stop()
+		s.logger.Info("job queue stopped")
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -1106,6 +1143,7 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	return s.storage.LogDownload(log)
 }
 
+// handleFileMove handles PATCH /files/{file_id}/move - move a single file to a new category.
 func (s *Server) handleFileMove(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
@@ -1165,6 +1203,61 @@ func (s *Server) handleFileMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleFileCopy handles POST /files/{file_id}/copy - copy a single file.
+func (s *Server) handleFileCopy(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req struct {
+		NewName     string            `json:"new_name,omitempty"`
+		NewCategory string            `json:"new_category,omitempty"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
+		HardLink    bool              `json:"hard_link,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	copyReq := storage.CopyRequest{
+		Hash:        fileID,
+		NewName:     req.NewName,
+		NewCategory: req.NewCategory,
+		Metadata:    req.Metadata,
+		HardLink:    req.HardLink,
+	}
+
+	result, err := s.storage.CopyFile(copyReq)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrCopyConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrInvalidFilename):
+			httpError(w, http.StatusBadRequest, err.Error())
+		default:
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("copy failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("file copied",
+		slog.String("original_hash", result.OriginalHash),
+		slog.String("new_hash", result.NewHash),
+		slog.String("original_name", result.OriginalMeta.OriginalName),
+		slog.String("new_name", result.NewMeta.OriginalName),
+		slog.Bool("hard_link", result.HardLink),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileMove handles PATCH /files/batch/move - move multiple files to new categories.
 func (s *Server) handleBatchFileMove(w http.ResponseWriter, r *http.Request) {
 	var req storage.BatchMoveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1201,6 +1294,67 @@ func (s *Server) handleBatchFileMove(w http.ResponseWriter, r *http.Request) {
 	)
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileCopy handles POST /files/copy/batch - copy multiple files.
+func (s *Server) handleBatchFileCopy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Copies []storage.CopyRequest `json:"copies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Copies) == 0 {
+		httpError(w, http.StatusBadRequest, "no copies provided")
+		return
+	}
+
+	if len(req.Copies) > 100 {
+		httpError(w, http.StatusBadRequest, "too many copies (max 100)")
+		return
+	}
+
+	results := make([]map[string]any, len(req.Copies))
+	successCount := 0
+	failureCount := 0
+
+	for i, copyReq := range req.Copies {
+		result, err := s.storage.CopyFile(copyReq)
+		if err != nil {
+			results[i] = map[string]any{
+				"hash":    copyReq.Hash,
+				"success": false,
+				"error":   err.Error(),
+			}
+			failureCount++
+		} else {
+			results[i] = map[string]any{
+				"original_hash": result.OriginalHash,
+				"new_hash":      result.NewHash,
+				"original_meta": result.OriginalMeta,
+				"new_meta":      result.NewMeta,
+				"hard_link":     result.HardLink,
+				"success":       true,
+			}
+			successCount++
+		}
+	}
+
+	s.logger.Info("batch file copy",
+		slog.Int("total", len(req.Copies)),
+		slog.Int("success", successCount),
+		slog.Int("failed", failureCount),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results":       results,
+		"total":         len(req.Copies),
+		"success_count": successCount,
+		"failure_count": failureCount,
+	})
 }
 
 // Helper structs
