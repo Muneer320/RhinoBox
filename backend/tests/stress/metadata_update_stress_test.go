@@ -320,6 +320,9 @@ uploadResp := uploadTestFile(t, srv, "test.txt", "content", "")
 hash := uploadResp["hash"].(string)
 
 // Test with various payload sizes
+// Note: Total size = sum of (key_length + value_size) for all fields
+// MaxMetadataSize = 64KB, MaxMetadataValueSize = 32KB
+// Key format "field_N" is ~7-8 bytes, using 8 bytes for calculations
 testCases := []struct {
 name       string
 fieldCount int
@@ -329,10 +332,11 @@ shouldPass bool
 {"small payload", 10, 100, true},
 {"medium payload", 50, 500, true},
 {"large payload", 100, 1000, true},
-{"very large payload", 100, 10000, true},
-{"near limit", 50, 1000, true},
-{"exceeds value limit", 1, 33 * 1024, false},
-{"exceeds total limit", 100, 1000, false},
+{"near limit", 50, 1300, true}, // 50 * (8 + 1300) = 65400 bytes < 64KB
+{"at limit", 64, 1016, true},   // 64 * (8 + 1016) = 65536 bytes = 64KB exactly
+{"exceeds value limit", 1, 32*1024 + 1, false}, // 32769 bytes > 32KB per value
+{"exceeds total limit", 100, 700, false},        // 100 * (8 + 700) = 70800 bytes > 64KB
+{"very large payload", 100, 10000, false},       // 100 * (8 + 10000) = 1000800 bytes >> 64KB
 }
 
 for _, tc := range testCases {
