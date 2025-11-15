@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -200,4 +201,95 @@ func (m *Manager) LogDownload(log DownloadLog) error {
 	// Write as newline-delimited JSON
 	encoder := json.NewEncoder(file)
 	return encoder.Encode(log)
+}
+
+// GetFilesByTypeRequest contains parameters for filtering files by type.
+type GetFilesByTypeRequest struct {
+	Type     string // Collection type (images, videos, audio, documents, etc.)
+	Page     int    // Page number (1-indexed)
+	Limit    int    // Number of items per page
+	Category string // Optional category filter within the type
+}
+
+// GetFilesByTypeResponse contains paginated file results.
+type GetFilesByTypeResponse struct {
+	Files      []FileMetadata `json:"files"`
+	Total      int            `json:"total"`
+	Page       int            `json:"page"`
+	Limit      int            `json:"limit"`
+	TotalPages int            `json:"total_pages"`
+}
+
+// GetFilesByType retrieves files filtered by collection type with pagination support.
+func (m *Manager) GetFilesByType(req GetFilesByTypeRequest) (*GetFilesByTypeResponse, error) {
+	if req.Type == "" {
+		return nil, fmt.Errorf("type is required")
+	}
+
+	// Default pagination values
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.Limit < 1 {
+		req.Limit = 50 // Default limit
+	}
+	if req.Limit > 1000 {
+		req.Limit = 1000 // Max limit to prevent excessive memory usage
+	}
+
+	m.mu.Lock()
+	allFiles := m.index.FindByType(req.Type)
+	m.mu.Unlock()
+
+	// Filter by category if specified
+	filteredFiles := allFiles
+	if req.Category != "" {
+		categoryLower := strings.ToLower(req.Category)
+		filtered := make([]FileMetadata, 0)
+		for _, file := range allFiles {
+			// Check if category matches any part of the category path
+			categoryParts := strings.Split(file.Category, "/")
+			for _, part := range categoryParts {
+				if strings.ToLower(part) == categoryLower {
+					filtered = append(filtered, file)
+					break
+				}
+			}
+		}
+		filteredFiles = filtered
+	}
+
+	// Sort by upload date (newest first)
+	sort.Slice(filteredFiles, func(i, j int) bool {
+		return filteredFiles[i].UploadedAt.After(filteredFiles[j].UploadedAt)
+	})
+
+	total := len(filteredFiles)
+	totalPages := (total + req.Limit - 1) / req.Limit
+
+	// Calculate pagination
+	start := (req.Page - 1) * req.Limit
+	end := start + req.Limit
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	// Extract page
+	var pageFiles []FileMetadata
+	if start < total {
+		pageFiles = filteredFiles[start:end]
+	} else {
+		pageFiles = []FileMetadata{}
+	}
+
+	return &GetFilesByTypeResponse{
+		Files:      pageFiles,
+		Total:      total,
+		Page:       req.Page,
+		Limit:      req.Limit,
+		TotalPages: totalPages,
+	}, nil
 }

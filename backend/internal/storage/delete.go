@@ -56,26 +56,49 @@ func (m *Manager) DeleteFile(req DeleteRequest) (*DeleteResult, error) {
 	// Capture timestamp once for consistency
 	deletedAt := time.Now().UTC()
 
+	// Check if this is a hard link (has references)
+	filePath := filepath.Join(m.root, existing.StoredPath)
+	shouldDeletePhysicalFile := true
+	
+	if m.referenceIndex != nil {
+		refCount := m.referenceIndex.GetReferenceCount(filePath)
+		if refCount > 1 {
+			// This is a hard link with other references - only delete metadata
+			shouldDeletePhysicalFile = false
+		}
+	}
+
 	// Delete metadata first to maintain consistency
 	// If metadata deletion fails, we haven't touched the physical file yet
 	if err := m.index.Delete(req.Hash); err != nil {
 		return nil, fmt.Errorf("failed to delete metadata: %w", err)
 	}
 
-	// Delete the physical file
-	filePath := filepath.Join(m.root, existing.StoredPath)
-	if err := os.Remove(filePath); err != nil {
-		// If file doesn't exist on disk, that's okay - metadata is already deleted
-		// If it's a different error, attempt to rollback metadata deletion
-		if !errors.Is(err, os.ErrNotExist) {
-			// Attempt to restore metadata entry
-			// Note: This is best-effort; if it fails, we log the inconsistency
-			if restoreErr := m.index.Add(*existing); restoreErr != nil {
-				// Log both errors but return the original file deletion error
-				// The metadata is now inconsistent (deleted but file still exists)
-				return nil, fmt.Errorf("failed to delete file (metadata rollback also failed): %w (rollback: %v)", err, restoreErr)
+	// Remove reference if it exists and check if we should delete physical file
+	if m.referenceIndex != nil {
+		_ = m.referenceIndex.RemoveReference(filePath, req.Hash)
+		// After removal, check if there are any remaining references
+		remainingRefs := m.referenceIndex.GetReferenceCount(filePath)
+		if remainingRefs > 0 {
+			shouldDeletePhysicalFile = false
+		}
+	}
+
+	// Delete the physical file only if it's not a hard link or it's the last reference
+	if shouldDeletePhysicalFile {
+		if err := os.Remove(filePath); err != nil {
+			// If file doesn't exist on disk, that's okay - metadata is already deleted
+			// If it's a different error, attempt to rollback metadata deletion
+			if !errors.Is(err, os.ErrNotExist) {
+				// Attempt to restore metadata entry
+				// Note: This is best-effort; if it fails, we log the inconsistency
+				if restoreErr := m.index.Add(*existing); restoreErr != nil {
+					// Log both errors but return the original file deletion error
+					// The metadata is now inconsistent (deleted but file still exists)
+					return nil, fmt.Errorf("failed to delete file (metadata rollback also failed): %w (rollback: %v)", err, restoreErr)
+				}
+				return nil, fmt.Errorf("failed to delete file: %w", err)
 			}
-			return nil, fmt.Errorf("failed to delete file: %w", err)
 		}
 	}
 

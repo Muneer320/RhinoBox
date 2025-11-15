@@ -5,6 +5,7 @@ import (
     "errors"
     "os"
     "path/filepath"
+    "strings"
     "sync"
     "time"
 )
@@ -107,4 +108,41 @@ func (idx *MetadataIndex) Delete(hash string) error {
     }
     delete(idx.data, hash)
     return idx.persistLocked()
+}
+
+// FindByType returns all files matching the given collection type.
+// The type should match the first component of the Category path (e.g., "images", "videos").
+func (idx *MetadataIndex) FindByType(collectionType string) []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    results := make([]FileMetadata, 0)
+    typeLower := strings.ToLower(collectionType)
+    
+    for _, meta := range idx.data {
+        // Category format is "type/subcategory/..." or just "type"
+        categoryParts := strings.Split(meta.Category, "/")
+        if len(categoryParts) > 0 && strings.ToLower(categoryParts[0]) == typeLower {
+            results = append(results, meta)
+        }
+    }
+    
+    return results
+}
+
+// FindByCategoryPrefix returns all files whose category starts with the given prefix.
+// This is useful for finding all files in a collection type (e.g., "images" matches "images/jpg", "images/png", etc.).
+func (idx *MetadataIndex) FindByCategoryPrefix(prefix string) []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    results := make([]FileMetadata, 0)
+    for _, meta := range idx.data {
+        // Check if category starts with prefix (exact match or prefix with "/")
+        if meta.Category == prefix || 
+           (len(meta.Category) > len(prefix) && meta.Category[:len(prefix)+1] == prefix+"/") {
+            results = append(results, meta)
+        }
+    }
+    return results
 }

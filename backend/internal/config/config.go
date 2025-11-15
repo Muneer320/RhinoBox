@@ -12,6 +12,11 @@ type Config struct {
 	Addr           string
 	DataDir        string
 	MaxUploadBytes int64
+	
+	// Database connection strings (optional - if empty, only NDJSON storage is used)
+	PostgresURL    string
+	MongoURL       string
+	DBMaxConns     int
 }
 
 // Load reads environment variables and falls back to sane defaults for hackathon usage.
@@ -30,7 +35,25 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("create data dir: %w", err)
 	}
 
-	return Config{Addr: addr, DataDir: dataDir, MaxUploadBytes: maxUploadBytes}, nil
+	// Database configuration (optional)
+	postgresURL := getEnv("RHINOBOX_POSTGRES_URL", "")
+	mongoURL := getEnv("RHINOBOX_MONGO_URL", "")
+	
+	dbMaxConns := 100
+	if raw := os.Getenv("RHINOBOX_DB_MAX_CONNS"); raw != "" {
+		if conns, err := strconv.Atoi(raw); err == nil && conns > 0 {
+			dbMaxConns = conns
+		}
+	}
+
+	return Config{
+		Addr:           addr,
+		DataDir:        dataDir,
+		MaxUploadBytes: maxUploadBytes,
+		PostgresURL:    postgresURL,
+		MongoURL:       mongoURL,
+		DBMaxConns:     dbMaxConns,
+	}, nil
 }
 
 func getEnv(key, fallback string) string {

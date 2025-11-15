@@ -18,6 +18,9 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
@@ -32,6 +35,7 @@ type Server struct {
 	router      chi.Router
 	storage     *storage.Manager
 	fileService service.FileService
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -48,9 +52,25 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		router:      chi.NewRouter(),
 		storage:     store,
 		fileService: service.NewFileService(store),
+		jobQueue:    nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
+}
+
+// setupValidation configures validation middleware
+func (s *Server) setupValidation() *validationmw.Validator {
+	validator := validationmw.NewValidator(s.logger)
+	validationmw.RegisterAllSchemas(validator, s.cfg.MaxUploadBytes)
+	return validator
+}
+
+// Stop gracefully stops the server and cleans up resources.
+func (s *Server) Stop() {
+	// Job queue shutdown will be implemented when async endpoints are added
+	if s.jobQueue != nil {
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
+	}
 }
 
 func (s *Server) routes() {
@@ -59,9 +79,21 @@ func (s *Server) routes() {
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	
+	// Response transformation middleware
+	responseConfig := respmw.DefaultResponseConfig(s.logger)
+	responseConfig.EnableCORS = true
+	responseConfig.CORSOrigins = []string{"*"}
+	r.Use(respmw.NewResponseMiddleware(responseConfig).Handler)
+	
 	r.Use(s.customLogger)       // Custom lightweight logger
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
+
+	// Setup validation as global middleware
+	// Validation will check route context after chi matches routes
+	validator := s.setupValidation()
+	r.Use(validator.Validate)
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)
@@ -104,17 +136,17 @@ func (s *Server) Router() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC()})
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC()})
 }
 
 func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
-		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
+		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
 
 	if r.MultipartForm == nil || len(r.MultipartForm.File) == 0 {
-		httpError(w, http.StatusBadRequest, "no files provided")
+		httpError(w, r, http.StatusBadRequest, "no files provided")
 		return
 	}
 
@@ -141,7 +173,7 @@ func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
 		for _, header := range headers {
 			record, err := s.storeSingleFile(header, categoryHint, comment)
 			if err != nil {
-				httpError(w, http.StatusBadRequest, err.Error())
+				httpError(w, r, http.StatusBadRequest, err.Error())
 				return
 			}
 			records = append(records, record)
@@ -156,7 +188,7 @@ func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"stored": responses})
+	writeJSON(w, r, http.StatusOK, map[string]any{"stored": responses})
 }
 
 // handleMediaIngestParallel processes multiple files concurrently using worker pool
@@ -167,7 +199,7 @@ func (s *Server) handleMediaIngestParallel(w http.ResponseWriter, r *http.Reques
 	// Create worker pool
 	pool := media.NewWorkerPool(ctx, s.storage, 0) // 0 = auto-detect worker count
 	if err := pool.Start(); err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("start worker pool: %v", err))
+		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("start worker pool: %v", err))
 		return
 	}
 	defer pool.Shutdown()
@@ -184,7 +216,7 @@ func (s *Server) handleMediaIngestParallel(w http.ResponseWriter, r *http.Reques
 				Index:        jobIndex,
 			}
 			if err := pool.Submit(job); err != nil {
-				httpError(w, http.StatusInternalServerError, fmt.Sprintf("submit job: %v", err))
+				httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("submit job: %v", err))
 				return
 			}
 			jobIndex++
@@ -206,14 +238,14 @@ func (s *Server) handleMediaIngestParallel(w http.ResponseWriter, r *http.Reques
 				firstError = result.Error
 			}
 		case <-ctx.Done():
-			httpError(w, http.StatusRequestTimeout, "processing timeout")
+			httpError(w, r, http.StatusRequestTimeout, "processing timeout")
 			return
 		}
 	}
 
 	// If any failures occurred, return error
 	if firstError != nil {
-		httpError(w, http.StatusBadRequest, fmt.Sprintf("processing error: %v", firstError))
+		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("processing error: %v", firstError))
 		return
 	}
 
@@ -239,7 +271,7 @@ func (s *Server) handleMediaIngestParallel(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"stored": responses})
+	writeJSON(w, r, http.StatusOK, map[string]any{"stored": responses})
 }
 
 func (s *Server) storeSingleFile(header *multipart.FileHeader, categoryHint, comment string) (map[string]any, error) {
@@ -303,7 +335,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.UseNumber()
 	if err := dec.Decode(&req); err != nil {
-		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 		return
 	}
 
@@ -312,7 +344,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		docs = append(docs, req.Document)
 	}
 	if len(docs) == 0 {
-		httpError(w, http.StatusBadRequest, "no JSON documents provided")
+		httpError(w, r, http.StatusBadRequest, "no JSON documents provided")
 		return
 	}
 
@@ -325,7 +357,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 
 	batchRel := s.storage.NextJSONBatchPath(decision.Engine, req.Namespace)
 	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("store batch: %v", err))
+		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("store batch: %v", err))
 		return
 	}
 
@@ -341,7 +373,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		var err error
 		schemaPath, err = s.storage.WriteJSONFile(filepath.Join("json", "sql", decision.Table, "schema.json"), schemaPayload)
 		if err != nil {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("write schema: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("write schema: %v", err))
 			return
 		}
 	}
@@ -361,7 +393,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("failed to append json log", slog.Any("err", err))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"decision":    decision,
 		"batch_path":  batchRel,
 		"schema_path": schemaPath,
@@ -372,17 +404,17 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
 var req storage.RenameRequest
 if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 return
 }
 
 // Validate required fields
 if req.Hash == "" {
-httpError(w, http.StatusBadRequest, "hash is required")
+httpError(w, r, http.StatusBadRequest, "hash is required")
 return
 }
 if req.NewName == "" {
-httpError(w, http.StatusBadRequest, "new_name is required")
+httpError(w, r, http.StatusBadRequest, "new_name is required")
 return
 }
 
@@ -390,13 +422,13 @@ return
 if err != nil {
 switch {
 case errors.Is(err, storage.ErrFileNotFound):
-httpError(w, http.StatusNotFound, err.Error())
+httpError(w, r, http.StatusNotFound, err.Error())
 case errors.Is(err, storage.ErrInvalidFilename):
-httpError(w, http.StatusBadRequest, err.Error())
+httpError(w, r, http.StatusBadRequest, err.Error())
 case errors.Is(err, storage.ErrNameConflict):
-httpError(w, http.StatusConflict, err.Error())
+httpError(w, r, http.StatusConflict, err.Error())
 default:
-httpError(w, http.StatusInternalServerError, fmt.Sprintf("rename failed: %v", err))
+httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("rename failed: %v", err))
 }
 return
 }
@@ -408,13 +440,13 @@ slog.String("new_name", result.NewMetadata.OriginalName),
 slog.Bool("updated_stored_file", req.UpdateStoredFile),
 )
 
-writeJSON(w, http.StatusOK, result)
+writeJSON(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, http.StatusBadRequest, "file_id is required")
+		httpError(w, r, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
@@ -426,11 +458,11 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrInvalidInput):
-			httpError(w, http.StatusBadRequest, err.Error())
+			httpError(w, r, http.StatusBadRequest, err.Error())
 		case errors.Is(err, storage.ErrFileNotFound):
-			httpError(w, http.StatusNotFound, err.Error())
+			httpError(w, r, http.StatusNotFound, err.Error())
 		default:
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("delete failed: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("delete failed: %v", err))
 		}
 		return
 	}
@@ -441,19 +473,19 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		slog.String("stored_path", result.StoredPath),
 	)
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleMetadataUpdate(w http.ResponseWriter, r *http.Request) {
 fileID := chi.URLParam(r, "file_id")
 if fileID == "" {
-httpError(w, http.StatusBadRequest, "file_id is required")
+httpError(w, r, http.StatusBadRequest, "file_id is required")
 return
 }
 
 var req storage.MetadataUpdateRequest
 if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 return
 }
 
@@ -469,11 +501,11 @@ req.Action = "merge"
 if err != nil {
 	switch {
 	case errors.Is(err, storage.ErrMetadataNotFound):
-		httpError(w, http.StatusNotFound, err.Error())
+		httpError(w, r, http.StatusNotFound, err.Error())
 	case errors.Is(err, storage.ErrMetadataTooLarge),
 		errors.Is(err, storage.ErrInvalidMetadataKey),
 		errors.Is(err, storage.ErrProtectedField):
-		httpError(w, http.StatusBadRequest, err.Error())
+		httpError(w, r, http.StatusBadRequest, err.Error())
 	default:
 		// Check if error message contains validation keywords
 		errMsg := err.Error()
@@ -483,9 +515,9 @@ if err != nil {
 			strings.Contains(errMsg, "too large") ||
 			strings.Contains(errMsg, "invalid metadata key") ||
 			strings.Contains(errMsg, "protected") {
-			httpError(w, http.StatusBadRequest, err.Error())
+			httpError(w, r, http.StatusBadRequest, err.Error())
 		} else {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("metadata update failed: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("metadata update failed: %v", err))
 		}
 	}
 	return
@@ -498,7 +530,7 @@ slog.String("action", req.Action),
 slog.Int("field_count", len(result.NewMetadata)),
 )
 
-writeJSON(w, http.StatusOK, result)
+writeJSON(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleBatchMetadataUpdate(w http.ResponseWriter, r *http.Request) {
@@ -507,17 +539,17 @@ Updates []storage.MetadataUpdateRequest `json:"updates"`
 }
 
 if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 return
 }
 
 if len(req.Updates) == 0 {
-httpError(w, http.StatusBadRequest, "no updates provided")
+httpError(w, r, http.StatusBadRequest, "no updates provided")
 return
 }
 
 if len(req.Updates) > 100 {
-httpError(w, http.StatusBadRequest, "too many updates (max 100)")
+httpError(w, r, http.StatusBadRequest, "too many updates (max 100)")
 return
 }
 
@@ -557,7 +589,7 @@ slog.Int("success", successCount),
 slog.Int("failed", failureCount),
 )
 
-writeJSON(w, http.StatusOK, map[string]any{
+writeJSON(w, r, http.StatusOK, map[string]any{
 "results":       response,
 "total":         len(req.Updates),
 "success_count": successCount,
@@ -569,13 +601,13 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 	// Get search query from URL parameter
 	query := r.URL.Query().Get("name")
 	if query == "" {
-		httpError(w, http.StatusBadRequest, "name query parameter is required")
+		httpError(w, r, http.StatusBadRequest, "name query parameter is required")
 		return
 	}
 
 	results := s.fileService.SearchFiles(query)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"query":   query,
 		"results": results,
 		"count":   len(results),
@@ -595,17 +627,17 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
 	} else if path != "" {
 		result, err = s.fileService.GetFileByPath(path)
 	} else {
-		httpError(w, http.StatusBadRequest, "hash or path query parameter is required")
+		httpError(w, r, http.StatusBadRequest, "hash or path query parameter is required")
 		return
 	}
 
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, http.StatusNotFound, err.Error())
+			httpError(w, r, http.StatusNotFound, err.Error())
 		} else if errors.Is(err, storage.ErrInvalidPath) {
-			httpError(w, http.StatusBadRequest, err.Error())
+			httpError(w, r, http.StatusBadRequest, err.Error())
 		} else {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
 		}
 		return
 	}
@@ -627,21 +659,21 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
 	if hash == "" {
-		httpError(w, http.StatusBadRequest, "hash query parameter is required")
+		httpError(w, r, http.StatusBadRequest, "hash query parameter is required")
 		return
 	}
 
 	metadata, err := s.fileService.GetFileMetadata(hash)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, http.StatusNotFound, err.Error())
+			httpError(w, r, http.StatusNotFound, err.Error())
 		} else {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve metadata: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve metadata: %v", err))
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, metadata)
+	writeJSON(w, r, http.StatusOK, metadata)
 }
 
 // handleFileStream streams a file with range request support for video/audio streaming.
@@ -657,17 +689,17 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	} else if path != "" {
 		result, err = s.fileService.GetFileByPath(path)
 	} else {
-		httpError(w, http.StatusBadRequest, "hash or path query parameter is required")
+		httpError(w, r, http.StatusBadRequest, "hash or path query parameter is required")
 		return
 	}
 
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, http.StatusNotFound, err.Error())
+			httpError(w, r, http.StatusNotFound, err.Error())
 		} else if errors.Is(err, storage.ErrInvalidPath) {
-			httpError(w, http.StatusBadRequest, err.Error())
+			httpError(w, r, http.StatusBadRequest, err.Error())
 		} else {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
 		}
 		return
 	}
@@ -691,7 +723,7 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 			// If-Range condition passed, parse the range
 			start, end, parseErr := s.parseRangeHeader(rangeHeader, result.Size)
 			if parseErr != nil {
-				httpError(w, http.StatusRequestedRangeNotSatisfiable, parseErr.Error())
+				httpError(w, r, http.StatusRequestedRangeNotSatisfiable, parseErr.Error())
 				return
 			}
 			rangeStart = &start
@@ -718,7 +750,7 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	// Seek to start position if range request
 	if rangeStart != nil {
 		if _, err := result.Reader.Seek(*rangeStart, io.SeekStart); err != nil {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to seek file: %v", err))
+			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to seek file: %v", err))
 			return
 		}
 	}
@@ -909,16 +941,40 @@ Comment   string           `json:"comment"`
 Metadata  map[string]any   `json:"metadata"`
 }
 
-func httpError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]any{"error": msg})
+// getRequestID extracts the request ID from the context
+func getRequestID(r *http.Request) string {
+	if id := r.Context().Value(middleware.RequestIDKey); id != nil {
+		if str, ok := id.(string); ok {
+			return str
+		}
+	}
+	return ""
 }
 
-func writeJSON(w http.ResponseWriter, code int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+// httpError writes a standardized error response
+func httpError(w http.ResponseWriter, r *http.Request, code int, msg string) {
+	requestID := getRequestID(r)
+	errorCode := respmw.MapHTTPStatusToErrorCode(code)
+	_ = respmw.WriteError(w, code, errorCode, msg, nil, requestID)
+}
+
+// writeJSON writes a standardized success response
+func writeJSON(w http.ResponseWriter, r *http.Request, code int, payload any) {
+	requestID := getRequestID(r)
+	if code >= 400 {
+		// For error codes, use error formatter
+		errorCode := respmw.MapHTTPStatusToErrorCode(code)
+		msg := "An error occurred"
+		if errMap, ok := payload.(map[string]any); ok {
+			if errMsg, ok := errMap["error"].(string); ok {
+				msg = errMsg
+			}
+		}
+		_ = respmw.WriteError(w, code, errorCode, msg, payload, requestID)
+	} else {
+		// For success codes, use success formatter
+		_ = respmw.WriteSuccess(w, payload, requestID)
+	}
 }
 
 func init() {

@@ -5,8 +5,10 @@ RhinoBox is a hackathon-friendly, high-speed Go service that accepts any payload
 ## Features
 
 - **Single ingestion API**: upload media (images, videos, audio, anything) and structured JSON through the same server.
+- **Automatic retry logic**: exponential backoff (3 attempts, 1s→2s→4s) for transient failures in job processing.
 - **On-the-fly media organization**: MIME-aware classifier groups assets (images/videos/audio/other) and keeps related uploads inside deterministic subdirectories. Optional `category` hints keep humans in the loop.
 - **Schema-aware JSON handling**: a Go port of the MammothBox schema analyzer inspects each batch, computes stability metrics, and selects SQL vs. NoSQL storage automatically.
+- **Advanced search**: metadata search + content search inside text files (JSON, XML, code, markdown up to 10MB).
 - **Filesystem-first**: everything lands under `./data`, making demos easy and keeping the footprint portable.
 
 ## Requirements
@@ -27,6 +29,16 @@ The server exposes:
 - `GET /healthz` — basic health probe.
 - `POST /ingest/media` — multipart form upload (`file` parts, optional `category` + `comment`).
 - `POST /ingest/json` — JSON body with either a single `document` or multiple `documents` plus optional metadata.
+- `POST /ingest/async` — async unified ingestion (returns job ID immediately).
+- `POST /ingest/media/async` — async media upload (background processing).
+- `POST /ingest/json/async` — async JSON ingestion (queued processing).
+- `GET /jobs` — list active and recent jobs.
+- `GET /jobs/{job_id}` — check job status and progress.
+- `GET /jobs/{job_id}/result` — get detailed job results.
+- `DELETE /jobs/{job_id}` — cancel a job.
+- `GET /jobs/stats` — queue statistics (pending, processing, completed, workers).
+
+For full API documentation, see [API_REFERENCE.md](../docs/API_REFERENCE.md) and [ASYNC_API.md](../docs/ASYNC_API.md).
 
 ### Media Upload Example
 
@@ -77,11 +89,28 @@ Each log entry captures timestamps, chosen storage strategy, and any optional me
 
 ## Testing
 
-Compilation + basic checks:
+### Unit Tests
 
 ```pwsh
 cd RhinoBox
 go test ./...
 ```
 
-No dedicated unit suite yet—the primary goal is to keep the hackathon demo loop tight. Plug RhinoBox behind the existing frontend when ready, or exercise the endpoints directly with `curl` or Postman.
+### E2E Stress Tests
+
+**Latest Results** (November 16, 2025): ✅ **100% Success Rate - Production Ready**
+
+```pwsh
+cd backend/tests/e2e-results
+.\stress_test_e2e.ps1
+```
+
+**Performance Highlights**:
+
+- 55 files (1.06 GB), 13 file types across 7 test phases
+- Upload: 228.35 MB/s avg, 341.59 MB/s peak (128% above target)
+- Search: 3.45ms avg latency (29x faster than 100ms target)
+- Async jobs: 6/6 completed with zero failures
+- Zero errors across all operations
+
+See [tests/e2e-results/](tests/e2e-results/) for detailed test reports and metrics.

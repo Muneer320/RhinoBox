@@ -88,3 +88,4 @@ func (m *MockFileService) LogDownload(log storage.DownloadLog) error {
 	return nil
 }
 
+

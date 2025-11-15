@@ -61,11 +61,13 @@ type JSONResult struct {
 }
 
 type GenericResult struct {
-	OriginalName string `json:"original_name"`
-	StoredPath   string `json:"stored_path"`
-	FileType     string `json:"file_type"`
-	Size         int64  `json:"size"`
-	Hash         string `json:"hash,omitempty"`
+	OriginalName    string `json:"original_name"`
+	StoredPath      string `json:"stored_path"`
+	FileType        string `json:"file_type"`
+	Size            int64  `json:"size"`
+	Hash            string `json:"hash,omitempty"`
+	Unrecognized    bool   `json:"unrecognized,omitempty"`    // true if format not recognized
+	RequiresRouting bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
@@ -73,7 +75,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
-		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
+		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
 
@@ -85,7 +87,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	var metadata map[string]any
 	if metadataStr != "" {
 		if err := json.Unmarshal([]byte(metadataStr), &metadata); err != nil {
-			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
+			httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid metadata JSON: %v", err))
 			return
 		}
 	}
@@ -140,11 +142,11 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	response.Timing["total_ms"] = time.Since(startTime).Milliseconds()
 
 	if len(response.Errors) > 0 && len(response.Results.Media) == 0 && len(response.Results.JSON) == 0 && len(response.Results.Files) == 0 {
-		httpError(w, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
+		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("all items failed: %v", response.Errors))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, r, http.StatusOK, response)
 }
 
 // routeFile determines content type and routes to appropriate pipeline.
@@ -156,11 +158,20 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 	defer file.Close()
 
 	mimeType := detectMIMEType(header)
+	ext := strings.ToLower(filepath.Ext(header.Filename))
 
 	s.logger.Debug("routing file",
 		slog.String("name", header.Filename),
 		slog.String("mime", mimeType),
 		slog.String("field", fieldName))
+
+	// Check if format is recognized
+	classifier := s.storage.Classifier()
+	rulesMgr := s.storage.RoutingRules()
+	
+	isRecognized := classifier.IsRecognized(mimeType, header.Filename)
+	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(mimeType, ext) != nil
+	isUnrecognized := !isRecognized && !hasCustomRule
 
 	// Route based on MIME type
 	if isMediaType(mimeType) {
@@ -171,7 +182,19 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 		return s.processJSONFile(header, namespace, comment)
 	}
 
-	return s.processGenericFile(header, namespace)
+	// For generic files, check if unrecognized
+	result, err := s.processGenericFile(header, namespace)
+	if err != nil {
+		return result, err
+	}
+
+	// Mark as unrecognized if needed
+	if isUnrecognized {
+		result.Unrecognized = true
+		result.RequiresRouting = true
+	}
+
+	return result, nil
 }
 
 // processMediaFile handles images, videos, audio.
