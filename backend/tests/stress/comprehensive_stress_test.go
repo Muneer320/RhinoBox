@@ -105,6 +105,7 @@ func testHighConcurrencyUploads(t *testing.T, srv *api.Server) StressTestMetrics
 	const totalOps = numWorkers * filesPerWorker
 
 	var latencies []time.Duration
+	var latenciesMu sync.Mutex
 	var successCount, failureCount atomic.Int64
 	var totalBytes atomic.Int64
 	var wg sync.WaitGroup
@@ -125,7 +126,9 @@ func testHighConcurrencyUploads(t *testing.T, srv *api.Server) StressTestMetrics
 				hash, _ := uploadTestFileContent(t, srv, fmt.Sprintf("stress_%d_%d.txt", workerID, j), content)
 				
 				latency := time.Since(opStart)
+				latenciesMu.Lock()
 				latencies = append(latencies, latency)
+				latenciesMu.Unlock()
 				
 				if hash != "" {
 					successCount.Add(1)
