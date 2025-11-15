@@ -390,3 +390,25 @@ func (s *FileService) TransformStoreResultToRecord(result *FileStoreResponse, co
 	return record
 }
 
+// Notes operations
+
+// GetNotes retrieves all notes for a file.
+func (s *FileService) GetNotes(fileID string) ([]storage.Note, error) {
+	return s.storage.GetNotes(fileID)
+}
+
+// AddNote adds a new note to a file.
+func (s *FileService) AddNote(fileID, text, author string) (*storage.Note, error) {
+	return s.storage.AddNote(fileID, text, author)
+}
+
+// UpdateNote updates an existing note.
+func (s *FileService) UpdateNote(fileID, noteID, text string) (*storage.Note, error) {
+	return s.storage.UpdateNote(fileID, noteID, text)
+}
+
+// DeleteNote removes a note.
+func (s *FileService) DeleteNote(fileID, noteID string) error {
+	return s.storage.DeleteNote(fileID, noteID)
+}
+

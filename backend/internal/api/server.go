@@ -88,6 +88,13 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+
+	// Notes endpoints
+	r.Get("/files/{file_id}/notes", s.handleGetNotes)
+	r.Post("/files/{file_id}/notes", s.handleAddNote)
+	r.Patch("/files/{file_id}/notes/{note_id}", s.handleUpdateNote)
+	r.Delete("/files/{file_id}/notes/{note_id}", s.handleDeleteNote)
+
 	r.Get("/statistics", s.handleStatistics)
 	r.Get("/collections", s.handleGetCollections)
 	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
