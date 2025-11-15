@@ -55,6 +55,7 @@ func (s *Server) routes() {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", s.handleHealth)
+	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
 }

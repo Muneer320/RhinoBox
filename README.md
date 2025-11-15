@@ -43,12 +43,24 @@ backend/
 | Method | Path            | Description                                                                                 |
 | ------ | --------------- | ------------------------------------------------------------------------------------------- |
 | GET    | `/healthz`      | Returns `{status:"ok", time:...}` for probes                                                |
+| POST   | `/ingest`       | **Unified endpoint**: handles media, JSON, and generic files in single or mixed batches (see `docs/UNIFIED_INGEST.md`) |
 | POST   | `/ingest/media` | Multipart upload with one or more `file` parts, optional `category` + `comment`             |
 | POST   | `/ingest/json`  | JSON body containing `document` or `documents`, `namespace`, optional `comment`, `metadata` |
 
 ### Sample Requests
 
-**Media**
+**Unified Ingestion (Media + JSON)**
+
+```pwsh
+curl -X POST http://localhost:8090/ingest `
+	-F "files=@photo.jpg" `
+	-F "files=@document.pdf" `
+	-F 'data=[{"order_id":101,"total":42.50}]' `
+	-F "namespace=orders" `
+	-F "comment=mixed batch"
+```
+
+**Media Only**
 
 ```pwsh
 curl -X POST http://localhost:8090/ingest/media `
@@ -58,7 +70,7 @@ curl -X POST http://localhost:8090/ingest/media `
 	-F "comment=demo run"
 ```
 
-**JSON**
+**JSON Only**
 
 ```pwsh
 curl -X POST http://localhost:8090/ingest/json `
