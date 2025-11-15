@@ -250,6 +250,8 @@ function initSidebarNavigation() {
       } else if (target === "files") {
         // Load collections when switching to files page
         await loadCollections();
+      } else if (target === "data") {
+        // Data page doesn't need special loading, but can be added here if needed
       }
 
       showToast(

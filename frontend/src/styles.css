@@ -1464,3 +1464,246 @@ body {
   }
 }
 
+/* ==================== Data Page Styles ==================== */
+
+.data-panel {
+  background: var(--surface);
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: clamp(24px, 3vw, 36px);
+  display: grid;
+  gap: clamp(24px, 3vw, 32px);
+}
+
+.data-title {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 700;
+}
+
+.data-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(24px, 3vw, 32px);
+}
+
+.data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.data-section-header {
+  margin-bottom: 8px;
+}
+
+.data-section-title {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.data-section-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* SQL Table Styles */
+.sql-table-container {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.sql-table thead {
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+}
+
+.sql-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+.sql-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.sql-table tbody tr:hover {
+  background: var(--surface);
+}
+
+.sql-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* NoSQL Map Styles */
+.nosql-map-container {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  min-height: 500px;
+  position: relative;
+  overflow: auto;
+}
+
+.nosql-collection {
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  min-width: 250px;
+  display: inline-block;
+  vertical-align: top;
+  margin-right: 20px;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nosql-collection:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(22, 30, 67, 0.12);
+}
+
+.collection-header {
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.collection-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: lowercase;
+}
+
+.collection-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface-muted);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.field.embedded {
+  background: rgba(145, 164, 255, 0.1);
+  border-left: 3px solid var(--accent);
+}
+
+.field.reference {
+  background: rgba(145, 164, 255, 0.05);
+  border-left: 3px solid var(--accent);
+  border-style: dashed;
+}
+
+.field-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.field-type {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+.field-null {
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+}
+
+.connection-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.connection-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.connection-line.reference {
+  stroke-dasharray: 5, 5;
+  stroke-opacity: 0.6;
+}
+
+.connection-line.embedded {
+  stroke-width: 3;
+  stroke-opacity: 0.8;
+}
+
+/* Responsive Data Page */
+@media (max-width: 1024px) {
+  .data-container {
+    grid-template-columns: 1fr;
+  }
+
+  .nosql-map-container {
+    min-height: 400px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sql-table-container {
+    padding: 12px;
+  }
+
+  .sql-table {
+    font-size: 12px;
+  }
+
+  .sql-table th,
+  .sql-table td {
+    padding: 8px 12px;
+  }
+
+  .nosql-map-container {
+    padding: 16px;
+  }
+
+  .nosql-collection {
+    min-width: 100%;
+    margin-right: 0;
+  }
+}
+

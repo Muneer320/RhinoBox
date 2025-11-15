@@ -135,6 +135,28 @@
             <button
               type="button"
               class="sidebar-button"
+              data-target="data"
+            >
+              <span aria-hidden="true">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"
+                  />
+                </svg>
+              </span>
+              Data
+            </button>
+            <button
+              type="button"
+              class="sidebar-button"
               data-target="statistics"
             >
               <span aria-hidden="true">
@@ -284,6 +306,175 @@
                   style="display: none"
                 >
                   <p>Failed to load collections. Please try again.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Data Page -->
+          <div id="page-data" class="page-content" style="display: none">
+            <section class="data-panel">
+              <h1 class="data-title">Data Management</h1>
+              
+              <div class="data-container">
+                <!-- SQL Data Section -->
+                <div class="data-section sql-section">
+                  <div class="data-section-header">
+                    <h2 class="data-section-title">SQL Data</h2>
+                    <p class="data-section-subtitle">Relational database tables</p>
+                  </div>
+                  <div class="sql-table-container">
+                    <table class="sql-table" id="sql-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Value</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>1</td>
+                          <td>Sample Record</td>
+                          <td>String</td>
+                          <td>Example Data</td>
+                          <td>Active</td>
+                        </tr>
+                        <tr>
+                          <td>2</td>
+                          <td>Another Record</td>
+                          <td>Number</td>
+                          <td>12345</td>
+                          <td>Active</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- NoSQL Data Section -->
+                <div class="data-section nosql-section">
+                  <div class="data-section-header">
+                    <h2 class="data-section-title">NoSQL Data</h2>
+                    <p class="data-section-subtitle">Document-based collections</p>
+                  </div>
+                  <div class="nosql-map-container" id="nosql-map">
+                    <!-- NoSQL schema visualization will be rendered here -->
+                    <div class="nosql-collection" data-collection="cart">
+                      <div class="collection-header">
+                        <h3>cart</h3>
+                      </div>
+                      <div class="collection-fields">
+                        <div class="field">
+                          <span class="field-name">_id</span>
+                          <span class="field-type">objectId</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">date</span>
+                          <span class="field-type">date</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">total_value</span>
+                          <span class="field-type">double</span>
+                        </div>
+                        <div class="field embedded">
+                          <span class="field-name">item{}</span>
+                          <span class="field-type">object</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field reference">
+                          <span class="field-name">customer</span>
+                          <span class="field-type">objectId</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="nosql-collection" data-collection="customer">
+                      <div class="collection-header">
+                        <h3>customer</h3>
+                      </div>
+                      <div class="collection-fields">
+                        <div class="field">
+                          <span class="field-name">_id</span>
+                          <span class="field-type">objectId</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">name</span>
+                          <span class="field-type">string</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">surname</span>
+                          <span class="field-type">string</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field embedded">
+                          <span class="field-name">contact{}</span>
+                          <span class="field-type">object</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="nosql-collection" data-collection="product">
+                      <div class="collection-header">
+                        <h3>product</h3>
+                      </div>
+                      <div class="collection-fields">
+                        <div class="field">
+                          <span class="field-name">_id</span>
+                          <span class="field-type">objectId</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">name</span>
+                          <span class="field-type">string</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">sku</span>
+                          <span class="field-type">string</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field embedded">
+                          <span class="field-name">price{}</span>
+                          <span class="field-type">object</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="nosql-collection" data-collection="coupon">
+                      <div class="collection-header">
+                        <h3>coupon</h3>
+                      </div>
+                      <div class="collection-fields">
+                        <div class="field">
+                          <span class="field-name">_id</span>
+                          <span class="field-type">objectId</span>
+                          <span class="field-null">NN</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">coupon_code</span>
+                          <span class="field-type">string</span>
+                        </div>
+                        <div class="field">
+                          <span class="field-name">discount_percent</span>
+                          <span class="field-type">int</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Connection lines (visual representation) -->
+                    <svg class="connection-lines" width="100%" height="100%">
+                      <line class="connection-line reference" x1="200" y1="150" x2="200" y2="300" stroke-dasharray="5,5" />
+                      <line class="connection-line embedded" x1="100" y1="200" x2="300" y2="200" stroke-width="2" />
+                    </svg>
+                  </div>
                 </div>
               </div>
             </section>
