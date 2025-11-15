@@ -27,9 +27,12 @@ let toast = null;
 function initHomePageFeatures() {
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
+  const quickAddTrigger = document.getElementById("quickAddTrigger");
   const quickAddForm = document.getElementById("quickAddForm");
+  const quickAddClose = document.getElementById("quickAdd-close-button");
+  const quickAddCancel = document.getElementById("quickAdd-cancel");
 
-  if (!dropzone || !fileInput || !quickAddForm) {
+  if (!dropzone || !fileInput) {
     // Elements not found, try again after a short delay
     setTimeout(initHomePageFeatures, 100);
     return;
@@ -92,43 +95,117 @@ function initHomePageFeatures() {
     fileInput.value = "";
   });
 
+  // Setup upload button (New button) - only for file uploads
+  const uploadButton = document.getElementById("uploadButton");
+  if (uploadButton) {
+    uploadButton.addEventListener("click", () => {
+      fileInput.click();
+    });
+  }
+
+  // Setup quick add panel trigger (separate tab button)
+  const quickAddPanel = document.getElementById("quickAdd-panel");
+  const quickAddOverlay = document.getElementById("quickAdd-overlay");
+  
+  if (quickAddTrigger && quickAddPanel) {
+    quickAddTrigger.addEventListener("click", () => {
+      quickAddPanel.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+      const textarea = document.getElementById("quickAdd");
+      if (textarea) {
+        setTimeout(() => textarea.focus(), 100);
+      }
+    });
+
+    // Close panel handlers
+    const closePanel = () => {
+      quickAddPanel.classList.remove("is-open");
+      document.body.style.overflow = "";
+      const textarea = document.getElementById("quickAdd");
+      const typeSelect = document.getElementById("quickAddType");
+      if (textarea) textarea.value = "";
+      if (typeSelect) typeSelect.value = "text";
+    };
+
+    if (quickAddClose) {
+      quickAddClose.addEventListener("click", closePanel);
+    }
+    if (quickAddCancel) {
+      quickAddCancel.addEventListener("click", closePanel);
+    }
+
+    // Close on overlay click
+    if (quickAddOverlay) {
+      quickAddOverlay.addEventListener("click", closePanel);
+    }
+
+    // Close on Escape key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && quickAddPanel.classList.contains("is-open")) {
+        closePanel();
+      }
+    });
+  }
+
   // Setup quick add form
-  quickAddForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = quickAddForm.querySelector("input");
-    const value = input.value.trim();
+  if (quickAddForm) {
+    quickAddForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const textarea = document.getElementById("quickAdd");
+      const typeSelect = document.getElementById("quickAddType");
+      const value = textarea?.value.trim() || "";
+      const selectedType = typeSelect?.value || "text";
 
-    if (!value) {
-      showToast("Provide a link, query, or description first");
-      input.focus();
-      return;
-    }
+      if (!value) {
+        showToast("Provide a link, query, or description first");
+        if (textarea) textarea.focus();
+        return;
+      }
 
-    try {
-      // Try to parse as JSON, otherwise treat as text/description
-      let documents = [];
       try {
-        const parsed = JSON.parse(value);
-        documents = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        // Not JSON, create a simple document
-        documents = [{ content: value, type: "text" }];
-      }
+        let documents = [];
+        
+        // Handle different types
+        if (selectedType === "url") {
+          // Treat as URL
+          documents = [{ content: value, type: "url", url: value }];
+        } else if (selectedType === "json") {
+          // Try to parse as JSON
+          try {
+            const parsed = JSON.parse(value);
+            documents = Array.isArray(parsed) ? parsed : [parsed];
+          } catch {
+            showToast("Invalid JSON format");
+            return;
+          }
+        } else {
+          // Other types (text, python, javascript, etc.)
+          documents = [{ content: value, type: selectedType }];
+        }
 
-      showToast("Processing...");
-      await ingestJSON(documents, "quick-add", "Quick add from form");
-      showToast("Successfully added item");
-      input.value = "";
+        showToast("Processing...");
+        await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
+        showToast("Successfully added item");
+        
+        // Close panel and reset
+        const quickAddPanel = document.getElementById("quickAdd-panel");
+        if (quickAddPanel) {
+          quickAddPanel.classList.remove("is-open");
+          document.body.style.overflow = "";
+        }
+        if (textarea) textarea.value = "";
+        if (typeSelect) typeSelect.value = "text";
 
-      // Reload current collection if viewing one
-      if (currentCollectionType) {
-        loadCollectionFiles(currentCollectionType);
+        // Reload current collection if viewing one
+        if (currentCollectionType) {
+          loadCollectionFiles(currentCollectionType);
+        }
+      } catch (error) {
+        console.error("Quick add error:", error);
+        showToast(`Failed to add item: ${error.message || "Unknown error"}`);
       }
-    } catch (error) {
-      console.error("Quick add error:", error);
-      showToast(`Failed to add item: ${error.message || "Unknown error"}`);
-    }
-  });
+    });
+  }
 }
 
 function applyTheme(theme) {
@@ -136,11 +213,189 @@ function applyTheme(theme) {
   const isDark = theme === "dark";
   if (modeToggle) {
     modeToggle.innerHTML = isDark
-      ? '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364 8.318l-1.591 1.591M21 12h-2.25M7.5 12H5.25m13.5-6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>'
+      ? '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656z" /><path d="M6.343 17.657l-1.414 1.414" /><path d="M6.343 6.343l-1.414 -1.414" /><path d="M17.657 6.343l1.414 -1.414" /><path d="M17.657 17.657l1.414 1.414" /><path d="M4 12h-2" /><path d="M12 4v-2" /><path d="M20 12h2" /><path d="M12 20v2" /></svg>'
       : '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>';
   }
   // Update NoSQL diagram colors when theme changes
   updateNosqlDiagramColors();
+}
+
+// NoSQL Zoom and Pan functionality
+let nosqlZoomPanInitialized = false;
+let nosqlZoom = 1;
+let nosqlPanX = 0;
+let nosqlPanY = 0;
+let isPanning = false;
+let startPanX = 0;
+let startPanY = 0;
+
+function initNosqlZoomPan() {
+  const nosqlSvg = document.getElementById("nosql-svg");
+  const nosqlDiagram = document.getElementById("nosql-diagram");
+  const zoomInBtn = document.getElementById("nosql-zoom-in");
+  const zoomOutBtn = document.getElementById("nosql-zoom-out");
+  const resetBtn = document.getElementById("nosql-reset");
+
+  if (!nosqlSvg || !nosqlDiagram) return;
+  
+  // Reset initialization flag if elements are recreated
+  if (!nosqlSvg.querySelector("g.nosql-transform-group")) {
+    nosqlZoomPanInitialized = false;
+  }
+  
+  if (nosqlZoomPanInitialized) return;
+  nosqlZoomPanInitialized = true;
+
+  // Reset zoom and pan
+  nosqlZoom = 1;
+  nosqlPanX = 0;
+  nosqlPanY = 0;
+  
+  // Initialize transform group and apply initial transform
+  setTimeout(() => {
+    updateNosqlTransform();
+  }, 50);
+
+  // Zoom in button
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener("click", () => {
+      nosqlZoom = Math.min(nosqlZoom * 1.2, 5);
+      updateNosqlTransform();
+    });
+  }
+
+  // Zoom out button
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener("click", () => {
+      nosqlZoom = Math.max(nosqlZoom / 1.2, 0.5);
+      updateNosqlTransform();
+    });
+  }
+
+  // Reset button
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      nosqlZoom = 1;
+      nosqlPanX = 0;
+      nosqlPanY = 0;
+      updateNosqlTransform();
+    });
+  }
+
+  // Mouse wheel zoom
+  nosqlDiagram.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    nosqlZoom = Math.max(0.5, Math.min(5, nosqlZoom * delta));
+    updateNosqlTransform();
+  });
+
+  // Mouse drag pan
+  nosqlDiagram.addEventListener("mousedown", (e) => {
+    if (e.button === 0) {
+      isPanning = true;
+      startPanX = e.clientX - nosqlPanX;
+      startPanY = e.clientY - nosqlPanY;
+      nosqlDiagram.style.cursor = "grabbing";
+    }
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (isPanning) {
+      nosqlPanX = e.clientX - startPanX;
+      nosqlPanY = e.clientY - startPanY;
+      updateNosqlTransform();
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (isPanning) {
+      isPanning = false;
+      if (nosqlDiagram) nosqlDiagram.style.cursor = "grab";
+    }
+  });
+
+  // Touch support for mobile
+  let touchStartDistance = 0;
+  let touchStartZoom = 1;
+  let touchStartPanX = 0;
+  let touchStartPanY = 0;
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  nosqlDiagram.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      isPanning = true;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartPanX = nosqlPanX;
+      touchStartPanY = nosqlPanY;
+    } else if (e.touches.length === 2) {
+      isPanning = false;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchStartDistance = Math.sqrt(dx * dx + dy * dy);
+      touchStartZoom = nosqlZoom;
+    }
+  });
+
+  nosqlDiagram.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isPanning) {
+      nosqlPanX = touchStartPanX + (e.touches[0].clientX - touchStartX);
+      nosqlPanY = touchStartPanY + (e.touches[0].clientY - touchStartY);
+      updateNosqlTransform();
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      nosqlZoom = Math.max(0.5, Math.min(5, touchStartZoom * (distance / touchStartDistance)));
+      updateNosqlTransform();
+    }
+  });
+
+  nosqlDiagram.addEventListener("touchend", () => {
+    isPanning = false;
+  });
+
+  // Set initial cursor
+  nosqlDiagram.style.cursor = "grab";
+}
+
+function updateNosqlTransform() {
+  const nosqlSvg = document.getElementById("nosql-svg");
+  if (!nosqlSvg) return;
+
+  let g = nosqlSvg.querySelector("g.nosql-transform-group");
+  
+  // Create transform group if it doesn't exist
+  if (!g) {
+    g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.classList.add("nosql-transform-group");
+    // Move all children to the transform group (except defs which should stay at root)
+    const children = Array.from(nosqlSvg.childNodes);
+    children.forEach(child => {
+      if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== "defs") {
+        g.appendChild(child);
+      }
+    });
+    // Insert after defs
+    const defs = nosqlSvg.querySelector("defs");
+    if (defs) {
+      nosqlSvg.insertBefore(g, defs.nextSibling);
+    } else {
+      nosqlSvg.appendChild(g);
+    }
+  }
+
+  // Apply transform: translate to center, scale, translate back, then pan
+  const centerX = 600; // viewBox center X (half of 1200)
+  const centerY = 400; // viewBox center Y (half of 800)
+
+  g.setAttribute(
+    "transform",
+    `translate(${centerX + nosqlPanX}, ${centerY + nosqlPanY}) scale(${nosqlZoom}) translate(${-centerX}, ${-centerY})`
+  );
 }
 
 // Update NoSQL diagram SVG colors based on current theme
@@ -1494,6 +1749,8 @@ function initDataTabs() {
         nosqlSection.style.display = "flex";
         // Update diagram colors when switching to NoSQL tab
         setTimeout(updateNosqlDiagramColors, 100);
+        // Initialize zoom and pan when switching to NoSQL tab
+        setTimeout(initNosqlZoomPan, 100);
       }
     });
   });
