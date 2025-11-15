@@ -97,3 +97,14 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
 }
+
+// Delete removes a metadata entry by hash.
+func (idx *MetadataIndex) Delete(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    if _, exists := idx.data[hash]; !exists {
+        return errors.New("metadata entry not found")
+    }
+    delete(idx.data, hash)
+    return idx.persistLocked()
+}
