@@ -120,7 +120,7 @@ function initHomePageFeatures() {
     quickAddTrigger.addEventListener("click", () => {
       quickAddPanel.classList.add("is-open");
       document.body.style.overflow = "hidden";
-      // Initialize code editor if not already initialized
+      // Initialize code editor if not already initialized (has guard inside)
       setTimeout(() => {
         initCodeEditor();
         // Focus the editor

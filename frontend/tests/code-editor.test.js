@@ -2,6 +2,8 @@
  * Unit tests for Monaco Code Editor integration
  */
 
+import { initCodeEditor, getEditorValue, getCurrentLanguage, setEditorValue } from '../src/codeEditor.js';
+
 // Mock Monaco Editor
 global.monaco = {
   editor: {
@@ -67,8 +69,6 @@ describe('Code Editor Module', () => {
   });
 
   test('should initialize code editor', () => {
-    const { initCodeEditor } = require('../src/codeEditor.js');
-    
     expect(() => {
       initCodeEditor();
     }).not.toThrow();
@@ -77,8 +77,6 @@ describe('Code Editor Module', () => {
   });
 
   test('should get editor value', () => {
-    const { getEditorValue } = require('../src/codeEditor.js');
-    
     // Mock editor
     const mockEditor = {
       getValue: jest.fn(() => 'test code'),
@@ -89,15 +87,12 @@ describe('Code Editor Module', () => {
   });
 
   test('should get current language', () => {
-    const { getCurrentLanguage } = require('../src/codeEditor.js');
-    
     expect(typeof getCurrentLanguage).toBe('function');
     // Default should be json
     expect(getCurrentLanguage()).toBe('json');
   });
 
   test('should set editor value', () => {
-    const { setEditorValue } = require('../src/codeEditor.js');
     
     expect(typeof setEditorValue).toBe('function');
     expect(() => {
@@ -223,4 +218,5 @@ describe('Code Editor Modal', () => {
     expect(closeButton).toBeTruthy();
   });
 });
+
 

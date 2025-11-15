@@ -35,8 +35,17 @@ function getMonacoTheme() {
   return theme === 'dark' ? 'vs-dark' : 'vs-light';
 }
 
+// Track initialization state to prevent memory leaks
+let isInitialized = false;
+let themeObserver = null;
+
 // Initialize the compact code editor
 export function initCodeEditor() {
+  // Guard against re-initialization to prevent memory leaks
+  if (isInitialized && codeEditor) {
+    return;
+  }
+
   const editorContainer = document.getElementById('code-editor-container');
   if (!editorContainer) {
     console.warn('Code editor container not found');
@@ -122,20 +131,25 @@ export function initCodeEditor() {
   // Setup keyboard shortcuts
   setupKeyboardShortcuts();
 
-  // Listen for theme changes
-  const observer = new MutationObserver(() => {
-    if (codeEditor) {
-      monaco.editor.setTheme(getMonacoTheme());
-    }
-    if (modalEditor) {
-      monaco.editor.setTheme(getMonacoTheme());
-    }
-  });
+  // Listen for theme changes (only create one observer)
+  if (!themeObserver) {
+    themeObserver = new MutationObserver(() => {
+      if (codeEditor) {
+        monaco.editor.setTheme(getMonacoTheme());
+      }
+      if (modalEditor) {
+        monaco.editor.setTheme(getMonacoTheme());
+      }
+    });
 
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme'],
-  });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+  }
+
+  // Mark as initialized
+  isInitialized = true;
 
   // Setup JSON validation
   if (currentLanguage === 'json') {
@@ -562,5 +576,10 @@ export function disposeEditors() {
     modalEditor.dispose();
     modalEditor = null;
   }
+  if (themeObserver) {
+    themeObserver.disconnect();
+    themeObserver = null;
+  }
+  isInitialized = false;
 }
 
