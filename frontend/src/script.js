@@ -5,6 +5,7 @@ import {
   ingestJSON, 
   getFiles,
   getFile,
+  downloadFile as apiDownloadFile,
   deleteFile, 
   renameFile,
   getNotes,
@@ -13,6 +14,18 @@ import {
   getStatistics,
   getCollectionStats
 } from './api.js'
+
+// Import UI components
+import {
+  createLoadingState,
+  createErrorState,
+  createEmptyState,
+  getErrorType,
+  getUserFriendlyErrorMessage
+} from './ui-components.js'
+
+// Import error boundary
+import { withErrorHandling, createSafeAsyncFunction, ErrorBoundary } from './errorBoundary.js'
 
 const root = document.documentElement
 const THEME_KEY = 'rhinobox-theme'
@@ -123,7 +136,8 @@ function initHomePageFeatures() {
       }
     } catch (error) {
       console.error('Quick add error:', error)
-      showToast(`Failed to add item: ${error.message || 'Unknown error'}`)
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      showToast(`Failed to add item: ${errorMessage}`)
     }
   })
 }
@@ -280,6 +294,17 @@ function initCollectionCards() {
 async function loadAllCollectionStats() {
   const collectionTypes = ['images', 'videos', 'audio', 'documents', 'spreadsheets', 'presentations', 'archives', 'other']
   
+  // Show loading state on all collection cards
+  collectionTypes.forEach(type => {
+    const statsContainer = document.querySelector(`[data-stats="${type}"]`)
+    if (statsContainer) {
+      const fileCountEl = statsContainer.querySelector('[data-stat="file_count"]')
+      const storageUsedEl = statsContainer.querySelector('[data-stat="storage_used"]')
+      if (fileCountEl) fileCountEl.textContent = '...'
+      if (storageUsedEl) storageUsedEl.textContent = '...'
+    }
+  })
+  
   // Load stats for all collections in parallel
   const statsPromises = collectionTypes.map(async (type) => {
     try {
@@ -287,8 +312,12 @@ async function loadAllCollectionStats() {
       updateCollectionCardStats(type, stats)
     } catch (error) {
       console.error(`Error loading stats for ${type}:`, error)
-      // Set error state on the card
-      updateCollectionCardStats(type, { file_count: 0, storage_used: 'Error' })
+      // Set error state on the card with user-friendly message
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      updateCollectionCardStats(type, { 
+        file_count: 0, 
+        storage_used: errorMessage.includes('connect') ? 'Offline' : 'Error' 
+      })
     }
   })
   
@@ -313,18 +342,16 @@ function updateCollectionCardStats(collectionType, stats) {
 }
 
 // Load files for a collection from API
-async function loadCollectionFiles(collectionType) {
+async function loadCollectionFiles(collectionType, retryCount = 0) {
   const gallery = document.getElementById('files-gallery')
-  const loadingState = document.getElementById('gallery-loading')
-  const emptyState = document.getElementById('gallery-empty')
   
   if (!gallery) return
   
   try {
     // Show loading state
     gallery.innerHTML = ''
-    if (loadingState) loadingState.style.display = 'block'
-    if (emptyState) emptyState.style.display = 'none'
+    const loadingComponent = createLoadingState('Loading files...', 'medium')
+    gallery.appendChild(loadingComponent)
     
     // Map collection types to API types
     const apiTypeMap = {
@@ -344,15 +371,25 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType)
     const files = response.files || response || []
     
-    // Hide loading state
-    if (loadingState) loadingState.style.display = 'none'
+    // Clear loading state
+    gallery.innerHTML = ''
     
     if (files.length === 0) {
-      if (emptyState) emptyState.style.display = 'block'
+      const emptyComponent = createEmptyState(
+        'No files found',
+        `This collection doesn't have any files yet. Upload some files to get started!`,
+        'files',
+        {
+          label: 'Upload Files',
+          onClick: () => {
+            const fileInput = document.getElementById('fileInput')
+            if (fileInput) fileInput.click()
+          }
+        }
+      )
+      gallery.appendChild(emptyComponent)
       return
     }
-    
-    if (emptyState) emptyState.style.display = 'none'
     
     // Render files
     files.forEach(file => {
@@ -365,11 +402,20 @@ async function loadCollectionFiles(collectionType) {
     
   } catch (error) {
     console.error('Error loading files:', error)
-    if (loadingState) loadingState.style.display = 'none'
-    if (emptyState) {
-      emptyState.innerHTML = '<p>Error loading files. Please try again.</p>'
-      emptyState.style.display = 'block'
-    }
+    
+    // Clear gallery and show error state
+    gallery.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => loadCollectionFiles(collectionType, retryCount + 1) : null,
+      errorType
+    )
+    gallery.appendChild(errorComponent)
+    
     showToast('Failed to load files')
   }
 }
@@ -380,8 +426,9 @@ function createFileElement(file, collectionType) {
   div.className = 'gallery-item'
   div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`
   div.dataset.fileName = file.name || file.fileName || 'Untitled'
-  div.dataset.filePath = file.path || file.filePath || ''
+  div.dataset.filePath = file.path || file.filePath || file.storedPath || ''
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || ''
+  div.dataset.fileHash = file.hash || ''
   div.dataset.fileDate = file.date || file.uploadedAt || new Date().toISOString()
   div.dataset.fileSize = file.size || file.fileSize || 'Unknown'
   div.dataset.fileType = file.type || file.fileType || 'Unknown'
@@ -543,29 +590,50 @@ function initGalleryMenus() {
       if (action === 'download') {
         e.preventDefault()
         try {
-          await downloadFile(fileId, fileName, fileUrl, filePath)
-          showToast(`Downloading "${fileName}"...`)
+          const fileHash = galleryItem.dataset.fileHash
+          await downloadFile(fileId, fileName, fileHash, filePath)
         } catch (error) {
           console.error('Download error:', error)
-          showToast(`Failed to download: ${error.message || 'Unknown error'}`)
+          const errorMessage = getUserFriendlyErrorMessage(error)
+          showToast(`Failed to download: ${errorMessage}`)
         }
       } else if (action === 'rename') {
         e.preventDefault()
         const newName = prompt('Enter new name:', fileName)
         if (newName && newName.trim() && newName !== fileName) {
+          // Show loading state
+          const originalText = titleElement.textContent
+          titleElement.textContent = 'Renaming...'
+          titleElement.style.opacity = '0.6'
+          
           try {
             await renameFile(fileId, newName.trim())
             titleElement.textContent = newName.trim()
+            titleElement.style.opacity = '1'
             galleryItem.dataset.fileName = newName.trim()
             showToast(`Renamed to "${newName.trim()}"`)
           } catch (error) {
             console.error('Rename error:', error)
-            showToast(`Failed to rename: ${error.message || 'Unknown error'}`)
+            titleElement.textContent = originalText
+            titleElement.style.opacity = '1'
+            const errorMessage = getUserFriendlyErrorMessage(error)
+            showToast(`Failed to rename: ${errorMessage}`)
           }
         }
       } else if (action === 'delete') {
         e.preventDefault()
         if (confirm(`Are you sure you want to delete "${fileName}"?`)) {
+          // Show loading state
+          galleryItem.style.opacity = '0.5'
+          galleryItem.style.pointerEvents = 'none'
+          const loadingIndicator = createLoadingState('Deleting...', 'small')
+          loadingIndicator.style.position = 'absolute'
+          loadingIndicator.style.top = '50%'
+          loadingIndicator.style.left = '50%'
+          loadingIndicator.style.transform = 'translate(-50%, -50%)'
+          loadingIndicator.style.zIndex = '20'
+          galleryItem.appendChild(loadingIndicator)
+          
           try {
             await deleteFile(fileId)
             galleryItem.style.opacity = '0'
@@ -576,7 +644,13 @@ function initGalleryMenus() {
             }, 200)
           } catch (error) {
             console.error('Delete error:', error)
-            showToast(`Failed to delete: ${error.message || 'Unknown error'}`)
+            galleryItem.style.opacity = '1'
+            galleryItem.style.pointerEvents = 'auto'
+            if (loadingIndicator.parentNode) {
+              loadingIndicator.remove()
+            }
+            const errorMessage = getUserFriendlyErrorMessage(error)
+            showToast(`Failed to delete: ${errorMessage}`)
           }
         }
       } else if (action === 'copy-path') {
@@ -672,66 +746,75 @@ function initGhostButton() {
   }
 }
 
-// Download file function
-async function downloadFile(fileId, fileName, fileUrl, filePath) {
+// Download file function with loading state
+async function downloadFile(fileId, fileName, fileHash, filePath, retryCount = 0) {
+  const galleryItem = document.querySelector(`[data-file-id="${fileId}"]`)
+  let loadingIndicator = null
+  
   try {
-    // Try to get file from API first to get download URL
-    let downloadUrl = fileUrl
+    // Show download progress
+    showToast(`Downloading "${fileName}"...`)
     
-    // If no direct URL, try to construct download URL from backend
-    if (!downloadUrl || downloadUrl === '') {
-      // Try to fetch file info from API to get download URL
-      try {
-        const fileInfo = await getFile(fileId)
-        downloadUrl = fileInfo.url || fileInfo.downloadUrl || fileInfo.path || downloadUrl
-      } catch (error) {
-        console.warn('Could not fetch file info, trying direct download:', error)
-        // Construct download URL from backend
-        downloadUrl = `http://localhost:8090/files/${fileId}/download`
+    // Show loading indicator on gallery item if available
+    if (galleryItem) {
+      const menuButton = galleryItem.querySelector('.gallery-menu-button')
+      if (menuButton) {
+        menuButton.disabled = true
+        menuButton.style.opacity = '0.5'
+        loadingIndicator = createLoadingState('', 'small')
+        loadingIndicator.style.position = 'absolute'
+        loadingIndicator.style.top = '12px'
+        loadingIndicator.style.right = '12px'
+        loadingIndicator.style.zIndex = '15'
+        galleryItem.appendChild(loadingIndicator)
       }
     }
     
-    // If still no URL, use the file path or construct from fileId
-    if (!downloadUrl || downloadUrl === '') {
-      downloadUrl = filePath || `http://localhost:8090/files/${fileId}/download`
-    }
+    // Fetch file blob from backend using proper download endpoint
+    const blob = await apiDownloadFile(fileHash, filePath, fileName)
     
-    // Create a temporary anchor element to trigger download
+    // Create blob URL and trigger download
+    const blobUrl = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = downloadUrl
+    link.href = blobUrl
     link.download = fileName || 'download'
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     
-    // If direct link doesn't work, try fetching as blob
-    setTimeout(async () => {
-      try {
-        const response = await fetch(downloadUrl, {
-          method: 'GET',
-          headers: getHeaders(),
-        })
-        
-        if (response.ok) {
-          const blob = await response.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = blobUrl
-          link.download = fileName || 'download'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(blobUrl)
-        }
-      } catch (error) {
-        console.error('Blob download failed:', error)
-      }
+    // Clean up blob URL after a short delay
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl)
     }, 100)
     
+    showToast(`Downloaded "${fileName}"`)
   } catch (error) {
     console.error('Download error:', error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to download "${fileName}": ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return downloadFile(fileId, fileName, fileHash, filePath, retryCount + 1)
+      }
+    }
+    
+    showToast(`Download failed: ${errorMessage}`)
     throw error
+  } finally {
+    // Clean up loading indicator
+    if (loadingIndicator && loadingIndicator.parentNode) {
+      loadingIndicator.remove()
+    }
+    if (galleryItem) {
+      const menuButton = galleryItem.querySelector('.gallery-menu-button')
+      if (menuButton) {
+        menuButton.disabled = false
+        menuButton.style.opacity = '1'
+      }
+    }
   }
 }
 
@@ -756,11 +839,24 @@ function ensureButtonsClickable() {
   })
 }
 
-// Upload files to backend
-async function uploadFiles(files) {
+// Upload files to backend with loading state
+async function uploadFiles(files, retryCount = 0) {
   if (!files || files.length === 0) {
     showToast('No files selected')
     return
+  }
+  
+  // Show loading state in dropzone
+  const dropzone = document.getElementById('dropzone')
+  const originalDropzoneContent = dropzone ? dropzone.innerHTML : null
+  let loadingComponent = null
+  
+  if (dropzone) {
+    dropzone.style.pointerEvents = 'none'
+    dropzone.style.opacity = '0.6'
+    loadingComponent = createLoadingState(`Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`, 'medium')
+    dropzone.innerHTML = ''
+    dropzone.appendChild(loadingComponent)
   }
   
   try {
@@ -786,14 +882,46 @@ async function uploadFiles(files) {
     }
   } catch (error) {
     console.error('Upload error:', error)
-    const errorMessage = error.message || 'Unknown error'
+    const errorMessage = getUserFriendlyErrorMessage(error)
     
-    // Provide more helpful error messages
-    if (errorMessage.includes('Cannot connect to backend') || errorMessage.includes('Failed to fetch')) {
-      showToast('Cannot connect to backend. Is the server running on port 8090?')
-    } else {
-      showToast(`Upload failed: ${errorMessage}`)
+    // Show error state in dropzone
+    if (dropzone) {
+      dropzone.innerHTML = ''
+      const errorType = getErrorType(error)
+      const errorComponent = createErrorState(
+        errorMessage,
+        retryCount < 3 ? () => uploadFiles(files, retryCount + 1) : null,
+        errorType
+      )
+      dropzone.appendChild(errorComponent)
+      
+      // Restore dropzone after 5 seconds
+      setTimeout(() => {
+        if (dropzone && originalDropzoneContent) {
+          dropzone.innerHTML = originalDropzoneContent
+          dropzone.style.pointerEvents = 'auto'
+          dropzone.style.opacity = '1'
+        }
+      }, 5000)
     }
+    
+    // Show error with retry option if retry count is less than 3
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return uploadFiles(files, retryCount + 1)
+      }
+    }
+    
+    showToast(`Upload failed: ${errorMessage}`)
+    return
+  }
+  
+  // Restore dropzone after successful upload
+  if (dropzone && originalDropzoneContent) {
+    dropzone.innerHTML = originalDropzoneContent
+    dropzone.style.pointerEvents = 'auto'
+    dropzone.style.opacity = '1'
   }
 }
 
@@ -1001,7 +1129,7 @@ function getUserInitials() {
 }
 
 // Render comments
-async function renderComments(fileId) {
+async function renderComments(fileId, retryCount = 0) {
   if (!commentsList || !commentsEmpty) return
   
   commentsList.innerHTML = ''
@@ -1009,12 +1137,8 @@ async function renderComments(fileId) {
   commentsList.style.display = 'flex'
   
   // Show loading
-  const loadingDiv = document.createElement('div')
-  loadingDiv.textContent = 'Loading notes...'
-  loadingDiv.style.padding = '20px'
-  loadingDiv.style.textAlign = 'center'
-  loadingDiv.style.color = 'var(--text-secondary)'
-  commentsList.appendChild(loadingDiv)
+  const loadingComponent = createLoadingState('Loading notes...', 'small')
+  commentsList.appendChild(loadingComponent)
   
   try {
     const notes = await getNotesFromAPI(fileId)
@@ -1067,16 +1191,30 @@ async function renderComments(fileId) {
       
       // Attach delete handlers
       commentsList.querySelectorAll('.comment-delete-button').forEach(button => {
-        button.addEventListener('click', (e) => {
-          e.stopPropagation()
-          const commentId = button.dataset.commentId
-          deleteComment(fileId, commentId)
-        })
+        if (!button.hasAttribute('data-handler-attached')) {
+          button.setAttribute('data-handler-attached', 'true')
+          button.addEventListener('click', (e) => {
+            e.stopPropagation()
+            const commentId = button.dataset.commentId
+            deleteComment(fileId, commentId)
+          })
+        }
       })
     }
   } catch (error) {
     console.error('Error rendering notes:', error)
-    commentsList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading notes</div>'
+    
+    commentsList.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => renderComments(fileId, retryCount + 1) : null,
+      errorType
+    )
+    commentsList.appendChild(errorComponent)
   }
 }
 
@@ -1087,37 +1225,105 @@ function escapeHtml(text) {
   return div.innerHTML
 }
 
-// Add a new comment
-async function addComment(fileId, text) {
+// Add a new comment with loading state
+async function addComment(fileId, text, retryCount = 0) {
   if (!text.trim()) {
     showToast('Note cannot be empty')
     return
   }
   
+  // Show loading state
+  const commentSubmit = document.getElementById('comment-submit')
+  const originalSubmitText = commentSubmit ? commentSubmit.textContent : null
+  if (commentSubmit) {
+    commentSubmit.disabled = true
+    commentSubmit.textContent = 'Adding...'
+  }
+  
   try {
     await addNote(fileId, text.trim())
-    commentInput.value = ''
+    if (commentInput) commentInput.value = ''
     await renderComments(fileId)
     showToast('Note added')
   } catch (error) {
     console.error('Error adding note:', error)
-    showToast(`Failed to add note: ${error.message || 'Unknown error'}`)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to add note: ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return addComment(fileId, text, retryCount + 1)
+      }
+    }
+    
+    showToast(`Failed to add note: ${errorMessage}`)
+  } finally {
+    if (commentSubmit && originalSubmitText) {
+      commentSubmit.disabled = false
+      commentSubmit.textContent = originalSubmitText
+    }
   }
 }
 
-// Delete a comment
-async function deleteComment(fileId, commentId) {
+// Delete a comment with loading state
+async function deleteComment(fileId, commentId, retryCount = 0) {
   if (!confirm('Are you sure you want to delete this note?')) {
     return
   }
   
+  // Find and show loading state on comment item
+  const commentItem = document.querySelector(`[data-comment-id="${commentId}"]`)
+  let loadingIndicator = null
+  
+  if (commentItem) {
+    commentItem.style.opacity = '0.5'
+    commentItem.style.pointerEvents = 'none'
+    loadingIndicator = createLoadingState('Deleting...', 'small')
+    loadingIndicator.style.position = 'absolute'
+    loadingIndicator.style.top = '50%'
+    loadingIndicator.style.left = '50%'
+    loadingIndicator.style.transform = 'translate(-50%, -50%)'
+    loadingIndicator.style.zIndex = '10'
+    commentItem.style.position = 'relative'
+    commentItem.appendChild(loadingIndicator)
+  }
+  
   try {
     await deleteNote(fileId, commentId)
+    if (commentItem) {
+      commentItem.style.opacity = '0'
+      setTimeout(() => {
+        if (commentItem.parentNode) {
+          commentItem.remove()
+        }
+      }, 200)
+    }
     await renderComments(fileId)
     showToast('Note deleted')
   } catch (error) {
     console.error('Error deleting note:', error)
-    showToast(`Failed to delete note: ${error.message || 'Unknown error'}`)
+    
+    // Restore comment item
+    if (commentItem) {
+      commentItem.style.opacity = '1'
+      commentItem.style.pointerEvents = 'auto'
+      if (loadingIndicator && loadingIndicator.parentNode) {
+        loadingIndicator.remove()
+      }
+    }
+    
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    // Show error with retry option
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`Failed to delete note: ${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return deleteComment(fileId, commentId, retryCount + 1)
+      }
+    }
+    
+    showToast(`Failed to delete note: ${errorMessage}`)
   }
 }
 
@@ -1150,19 +1356,22 @@ function closeCommentsModal() {
 // Comments modal initialization moved to initCommentsModal()
 
 // Load statistics from API
-async function loadStatistics() {
+async function loadStatistics(retryCount = 0) {
   const statsGrid = document.getElementById('stats-grid')
-  const statsLoading = document.getElementById('stats-loading')
   const chartsContainer = document.getElementById('charts-container')
   
   if (!statsGrid) return
   
   try {
-    if (statsLoading) statsLoading.style.display = 'block'
+    // Show loading state
+    statsGrid.innerHTML = ''
+    const loadingComponent = createLoadingState('Loading statistics...', 'medium')
+    statsGrid.appendChild(loadingComponent)
     
     const stats = await getStatistics()
     
-    if (statsLoading) statsLoading.style.display = 'none'
+    // Clear loading state
+    statsGrid.innerHTML = ''
     
     // Render statistics cards
     const totalFiles = stats.totalFiles || stats.files || 0
@@ -1203,17 +1412,56 @@ async function loadStatistics() {
     `
     
     // Render charts if data available
-    if (chartsContainer && stats.charts) {
-      // Charts rendering can be added here based on backend response
-      chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
+    if (chartsContainer) {
+      if (stats.charts && Array.isArray(stats.charts) && stats.charts.length > 0) {
+        // Charts rendering can be added here based on backend response
+        chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
+      } else {
+        const emptyCharts = createEmptyState(
+          'No chart data',
+          'Chart data will appear here when available.',
+          'generic'
+        )
+        chartsContainer.innerHTML = ''
+        chartsContainer.appendChild(emptyCharts)
+      }
+    }
+    
+    // Show empty state if no statistics available
+    if (totalFiles === 0 && storageUsed === '0 B' && collections === 0) {
+      const emptyStats = createEmptyState(
+        'No statistics available',
+        'Statistics will appear here once you start uploading files.',
+        'generic',
+        {
+          label: 'Upload Files',
+          onClick: () => {
+            showPage('home')
+            const fileInput = document.getElementById('fileInput')
+            if (fileInput) fileInput.click()
+          }
+        }
+      )
+      statsGrid.innerHTML = ''
+      statsGrid.appendChild(emptyStats)
     }
     
   } catch (error) {
     console.error('Error loading statistics:', error)
-    if (statsLoading) statsLoading.style.display = 'none'
-    if (statsGrid) {
-      statsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading statistics</div>'
-    }
+    
+    // Clear and show error state
+    statsGrid.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => loadStatistics(retryCount + 1) : null,
+      errorType
+    )
+    statsGrid.appendChild(errorComponent)
+    
     showToast('Failed to load statistics')
   }
 }
