@@ -57,10 +57,12 @@ r.Use(middleware.Recoverer)
 
 r.Get("/healthz", s.handleHealth)
 r.Post("/ingest", s.handleUnifiedIngest)
-r.Post("/ingest/media", s.handleMediaIngest)
-r.Post("/ingest/json", s.handleJSONIngest)
-r.Patch("/files/rename", s.handleFileRename)
-r.Get("/files/search", s.handleFileSearch)
+	r.Post("/ingest/media", s.handleMediaIngest)
+	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/rename", s.handleFileRename)
+	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
+	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Get("/files/search", s.handleFileSearch)
 }
 
 // Router exposes the HTTP router for testing.
@@ -397,6 +399,127 @@ slog.Bool("updated_stored_file", req.UpdateStoredFile),
 )
 
 writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleMetadataUpdate(w http.ResponseWriter, r *http.Request) {
+fileID := chi.URLParam(r, "file_id")
+if fileID == "" {
+httpError(w, http.StatusBadRequest, "file_id is required")
+return
+}
+
+var req storage.MetadataUpdateRequest
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+return
+}
+
+// Set the hash from URL parameter
+req.Hash = fileID
+
+// Default to merge action if not specified
+if req.Action == "" {
+req.Action = "merge"
+}
+
+result, err := s.storage.UpdateFileMetadata(req)
+if err != nil {
+	switch {
+	case errors.Is(err, storage.ErrMetadataNotFound):
+		httpError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, storage.ErrMetadataTooLarge),
+		errors.Is(err, storage.ErrInvalidMetadataKey),
+		errors.Is(err, storage.ErrProtectedField):
+		httpError(w, http.StatusBadRequest, err.Error())
+	default:
+		// Check if error message contains validation keywords
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "invalid action") ||
+			strings.Contains(errMsg, "metadata is required") ||
+			strings.Contains(errMsg, "fields is required") ||
+			strings.Contains(errMsg, "too large") ||
+			strings.Contains(errMsg, "invalid metadata key") ||
+			strings.Contains(errMsg, "protected") {
+			httpError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("metadata update failed: %v", err))
+		}
+	}
+	return
+}// Add timestamp
+result.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+s.logger.Info("metadata updated",
+slog.String("hash", req.Hash),
+slog.String("action", req.Action),
+slog.Int("field_count", len(result.NewMetadata)),
+)
+
+writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleBatchMetadataUpdate(w http.ResponseWriter, r *http.Request) {
+var req struct {
+Updates []storage.MetadataUpdateRequest `json:"updates"`
+}
+
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+return
+}
+
+if len(req.Updates) == 0 {
+httpError(w, http.StatusBadRequest, "no updates provided")
+return
+}
+
+if len(req.Updates) > 100 {
+httpError(w, http.StatusBadRequest, "too many updates (max 100)")
+return
+}
+
+results, errs := s.storage.BatchUpdateFileMetadata(req.Updates)
+
+// Add timestamps and count successes/failures
+successCount := 0
+failureCount := 0
+timestamp := time.Now().UTC().Format(time.RFC3339)
+
+response := make([]map[string]any, len(results))
+for i := range results {
+if errs[i] != nil {
+response[i] = map[string]any{
+"hash":    req.Updates[i].Hash,
+"success": false,
+"error":   errs[i].Error(),
+}
+failureCount++
+} else {
+results[i].UpdatedAt = timestamp
+response[i] = map[string]any{
+"hash":         results[i].Hash,
+"success":      true,
+"old_metadata": results[i].OldMetadata,
+"new_metadata": results[i].NewMetadata,
+"action":       results[i].Action,
+"updated_at":   results[i].UpdatedAt,
+}
+successCount++
+}
+}
+
+s.logger.Info("batch metadata update",
+slog.Int("total", len(req.Updates)),
+slog.Int("success", successCount),
+slog.Int("failed", failureCount),
+)
+
+writeJSON(w, http.StatusOK, map[string]any{
+"results":       response,
+"total":         len(req.Updates),
+"success_count": successCount,
+"failure_count": failureCount,
+})
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
