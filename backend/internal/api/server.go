@@ -19,13 +19,10 @@ import (
 	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
-<<<<<<< HEAD
 	"github.com/Muneer320/RhinoBox/internal/middleware"
+	errormiddleware "github.com/Muneer320/RhinoBox/internal/middleware"
 	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
-=======
-	errormiddleware "github.com/Muneer320/RhinoBox/internal/middleware"
->>>>>>> origin/main
 	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
@@ -36,16 +33,6 @@ import (
 
 // Server wires everything together.
 type Server struct {
-<<<<<<< HEAD
-	cfg         config.Config
-	logger      *slog.Logger
-	router      chi.Router
-	storage     *storage.Manager
-	fileService service.FileService
-	jobQueue    *queue.JobQueue
-	server      *http.Server
-	rateLimiter *middleware.RateLimiter
-=======
 	cfg          config.Config
 	logger       *slog.Logger
 	router       chi.Router
@@ -54,7 +41,7 @@ type Server struct {
 	jobQueue     *queue.JobQueue
 	server       *http.Server
 	errorHandler *errormiddleware.ErrorHandler
->>>>>>> origin/main
+	rateLimiter  *middleware.RateLimiter
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -80,7 +67,6 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return s, nil
 }
 
-<<<<<<< HEAD
 // setupValidation configures validation middleware
 func (s *Server) setupValidation() *validationmw.Validator {
 	validator := validationmw.NewValidator(s.logger)
@@ -100,16 +86,10 @@ func (s *Server) Stop() {
 	}
 }
 
-=======
->>>>>>> origin/main
 func (s *Server) routes() {
 	r := s.router
 
-	// Handle CORS preflight OPTIONS requests first, before any other middleware
-	r.Use(s.handleCORS)
-
 	// Lightweight middleware for performance
-<<<<<<< HEAD
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 
@@ -126,7 +106,7 @@ func (s *Server) routes() {
 	s.rateLimiter = middleware.NewRateLimiter(s.cfg.Security, s.logger)
 	r.Use(s.rateLimiter.Handler)
 
-	// 4. CORS (before other headers)
+	// 4. CORS (before other headers) - replaces old handleCORS
 	cors := middleware.NewCORSMiddleware(s.cfg.Security, s.logger)
 	r.Use(cors.Handler)
 
@@ -139,21 +119,14 @@ func (s *Server) routes() {
 	responseConfig.EnableCORS = false // Disable CORS here since we have dedicated middleware
 	r.Use(respmw.NewResponseMiddleware(responseConfig).Handler)
 	
-	r.Use(s.customLogger)       // Custom lightweight logger
-	r.Use(chimw.Recoverer)
-	r.Use(chimw.Compress(5)) // gzip level 5 (balance speed/compression)
+	r.Use(s.customLogger)                    // Custom lightweight logger
+	r.Use(s.errorHandler.Handler)            // Centralized error handling with panic recovery
+	r.Use(chimw.Compress(5))                 // gzip level 5 (balance speed/compression)
 
 	// Setup validation as global middleware
 	// Validation will check route context after chi matches routes
 	validator := s.setupValidation()
 	r.Use(validator.Validate)
-=======
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(s.customLogger)                    // Custom lightweight logger
-	r.Use(s.errorHandler.Handler)            // Centralized error handling with panic recovery
-	r.Use(middleware.Compress(5))            // gzip level 5 (balance speed/compression)
->>>>>>> origin/main
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)
@@ -182,24 +155,6 @@ func (s *Server) routes() {
 	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
 }
 
-// handleCORS handles CORS preflight OPTIONS requests and sets CORS headers on all responses
-func (s *Server) handleCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers on all responses
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Max-Age", "3600")
-		
-		// Handle preflight OPTIONS requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
 func (s *Server) customLogger(next http.Handler) http.Handler {
@@ -1120,7 +1075,6 @@ Comment   string           `json:"comment"`
 Metadata  map[string]any   `json:"metadata"`
 }
 
-<<<<<<< HEAD
 // getRequestID extracts the request ID from the context
 func getRequestID(r *http.Request) string {
 	if id := r.Context().Value(chimw.RequestIDKey); id != nil {
@@ -1129,11 +1083,11 @@ func getRequestID(r *http.Request) string {
 		}
 	}
 	return ""
-=======
+}
+
 // handleError processes errors through the centralized error handler
 func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	s.errorHandler.HandleError(w, r, err)
->>>>>>> origin/main
 }
 
 // httpError is kept for backward compatibility but now uses centralized error handling
