@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -40,11 +42,21 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize job queue
+	queueCfg := queue.DefaultConfig()
+	queueCfg.PersistPath = filepath.Join(cfg.DataDir, "jobs")
+	processor := queue.NewMediaProcessor(store)
+	jobQueue, err := queue.New(queueCfg, processor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job queue: %w", err)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
+		jobQueue:    jobQueue,
 	}
 	s.routes()
 	return s, nil
@@ -65,6 +77,20 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Async endpoints
+	r.Post("/ingest/async", s.handleAsyncIngest)
+	r.Post("/ingest/media/async", s.handleMediaIngestAsync)
+	r.Post("/ingest/json/async", s.handleJSONIngestAsync)
+	
+	// Job management
+	r.Get("/jobs", s.handleListJobs)
+	r.Get("/jobs/{job_id}", s.handleJobStatus)
+	r.Get("/jobs/{job_id}/result", s.handleJobResult)
+	r.Delete("/jobs/{job_id}", s.handleCancelJob)
+	r.Get("/jobs/stats", s.handleJobStats)
+	
+	// File operations
 	r.Patch("/files/rename", s.handleFileRename)
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
@@ -102,6 +128,15 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// Stop gracefully stops the server and job queue
+func (s *Server) Stop() {
+	if s.jobQueue != nil {
+		s.logger.Info("stopping job queue...")
+		s.jobQueue.Stop()
+		s.logger.Info("job queue stopped")
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
