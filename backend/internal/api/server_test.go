@@ -14,7 +14,6 @@ import (
 	"log/slog"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
-	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 )
 
 func TestMediaIngestStoresFile(t *testing.T) {
@@ -42,17 +41,26 @@ func TestMediaIngestStoresFile(t *testing.T) {
 	}
 
 	var payload struct {
-		Stored []map[string]any `json:"stored"`
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(payload.Stored) != 1 {
-		t.Fatalf("expected 1 stored item, got %d", len(payload.Stored))
+	if !payload.Success {
+		t.Fatalf("expected success=true")
 	}
-	pathVal, ok := payload.Stored[0]["path"].(string)
+	stored, ok := payload.Data["stored"].([]interface{})
+	if !ok || len(stored) != 1 {
+		t.Fatalf("expected 1 stored item, got %d", len(stored))
+	}
+	storedItem, ok := stored[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("stored item is not a map")
+	}
+	pathVal, ok := storedItem["path"].(string)
 	if !ok || pathVal == "" {
-		t.Fatalf("missing stored path in response: %+v", payload.Stored[0])
+		t.Fatalf("missing stored path in response: %+v", storedItem)
 	}
 	abs := filepath.Join(srv.cfg.DataDir, filepath.FromSlash(pathVal))
 	if _, err := os.Stat(abs); err != nil {
@@ -97,22 +105,29 @@ func TestJSONIngestDecidesSQL(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	var body struct {
-		Decision    jsonschema.Decision `json:"decision"`
-		BatchPath   string              `json:"batch_path"`
-		SchemaPath  string              `json:"schema_path"`
-		DocumentCnt int                 `json:"documents"`
+	var response struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Decision.Engine != "sql" {
-		t.Fatalf("expected sql decision, got %s", body.Decision.Engine)
+	if !response.Success {
+		t.Fatalf("expected success=true")
 	}
-	if body.SchemaPath == "" {
+	decisionMap, ok := response.Data["decision"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decision is not a map")
+	}
+	engine, ok := decisionMap["engine"].(string)
+	if !ok || engine != "sql" {
+		t.Fatalf("expected sql decision, got %s", engine)
+	}
+	schemaPath, ok := response.Data["schema_path"].(string)
+	if !ok || schemaPath == "" {
 		t.Fatalf("expected schema path to be set")
 	}
-	abs := filepath.Join(srv.cfg.DataDir, filepath.FromSlash(body.SchemaPath))
+	abs := filepath.Join(srv.cfg.DataDir, filepath.FromSlash(schemaPath))
 	if _, err := os.Stat(abs); err != nil {
 		t.Fatalf("schema file missing: %v", err)
 	}
@@ -149,18 +164,27 @@ func TestJSONIngestDecidesNoSQL(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	var body struct {
-		Decision   jsonschema.Decision `json:"decision"`
-		SchemaPath string              `json:"schema_path"`
+	var response struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Decision.Engine != "nosql" {
-		t.Fatalf("expected nosql decision, got %s", body.Decision.Engine)
+	if !response.Success {
+		t.Fatalf("expected success=true")
 	}
-	if body.SchemaPath != "" {
-		t.Fatalf("expected no schema path for nosql, got %s", body.SchemaPath)
+	decisionMap, ok := response.Data["decision"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decision is not a map")
+	}
+	engine, ok := decisionMap["engine"].(string)
+	if !ok || engine != "nosql" {
+		t.Fatalf("expected nosql decision, got %s", engine)
+	}
+	schemaPath, ok := response.Data["schema_path"].(string)
+	if ok && schemaPath != "" {
+		t.Fatalf("expected no schema path for nosql, got %s", schemaPath)
 	}
 }
 
@@ -199,17 +223,25 @@ func TestFileDeleteSuccess(t *testing.T) {
 		t.Fatalf("expected 200 for upload, got %d: %s", resp.Code, resp.Body.String())
 	}
 
-	var uploadPayload struct {
-		Stored []map[string]any `json:"stored"`
+	var uploadResponse struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&uploadPayload); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&uploadResponse); err != nil {
 		t.Fatalf("decode upload response: %v", err)
 	}
-	if len(uploadPayload.Stored) != 1 {
-		t.Fatalf("expected 1 stored item, got %d", len(uploadPayload.Stored))
+	if !uploadResponse.Success {
+		t.Fatalf("expected success=true")
 	}
-
-	hash, ok := uploadPayload.Stored[0]["hash"].(string)
+	stored, ok := uploadResponse.Data["stored"].([]interface{})
+	if !ok || len(stored) != 1 {
+		t.Fatalf("expected 1 stored item, got %d", len(stored))
+	}
+	storedItem, ok := stored[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("stored item is not a map")
+	}
+	hash, ok := storedItem["hash"].(string)
 	if !ok || hash == "" {
 		t.Fatalf("missing hash in upload response")
 	}
@@ -223,23 +255,27 @@ func TestFileDeleteSuccess(t *testing.T) {
 		t.Fatalf("expected 200 for delete, got %d: %s", deleteResp.Code, deleteResp.Body.String())
 	}
 
-	var deletePayload struct {
-		Hash         string `json:"hash"`
-		OriginalName string `json:"original_name"`
-		Deleted      bool   `json:"deleted"`
+	var deleteResponse struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(deleteResp.Body).Decode(&deletePayload); err != nil {
+	if err := json.NewDecoder(deleteResp.Body).Decode(&deleteResponse); err != nil {
 		t.Fatalf("decode delete response: %v", err)
 	}
-	if !deletePayload.Deleted {
+	if !deleteResponse.Success {
+		t.Fatalf("expected success=true")
+	}
+	deleted, ok := deleteResponse.Data["deleted"].(bool)
+	if !ok || !deleted {
 		t.Fatalf("expected Deleted=true")
 	}
-	if deletePayload.Hash != hash {
-		t.Fatalf("expected hash %s, got %s", hash, deletePayload.Hash)
+	deleteHash, ok := deleteResponse.Data["hash"].(string)
+	if !ok || deleteHash != hash {
+		t.Fatalf("expected hash %s, got %s", hash, deleteHash)
 	}
 
 	// Verify file is actually deleted
-	storedPath, ok := uploadPayload.Stored[0]["path"].(string)
+	storedPath, ok := storedItem["path"].(string)
 	if !ok {
 		t.Fatalf("missing stored path in upload response")
 	}
@@ -261,13 +297,20 @@ func TestFileDeleteNotFound(t *testing.T) {
 		t.Fatalf("expected 404 for non-existent file, got %d: %s", deleteResp.Code, deleteResp.Body.String())
 	}
 
-	var errorPayload struct {
-		Error string `json:"error"`
+	var errorResponse struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
-	if err := json.NewDecoder(deleteResp.Body).Decode(&errorPayload); err != nil {
+	if err := json.NewDecoder(deleteResp.Body).Decode(&errorResponse); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if errorPayload.Error == "" {
+	if errorResponse.Success {
+		t.Fatalf("expected success=false")
+	}
+	if errorResponse.Error.Message == "" {
 		t.Fatalf("expected error message")
 	}
 }
