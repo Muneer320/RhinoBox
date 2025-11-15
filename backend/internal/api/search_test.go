@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -389,7 +390,7 @@ func TestFileSearch_ByDateRange(t *testing.T) {
 	}{
 		{
 			name:         "search by date range (RFC3339)",
-			query:        "?date_from=" + yesterday.Format(time.RFC3339) + "&date_to=" + tomorrow.Format(time.RFC3339),
+			query:        "?date_from=" + url.QueryEscape(yesterday.Format(time.RFC3339)) + "&date_to=" + url.QueryEscape(tomorrow.Format(time.RFC3339)),
 			expectedMin:  len(files),
 			shouldContain: []string{"file1.txt", "file2.txt", "file3.txt"},
 		},
