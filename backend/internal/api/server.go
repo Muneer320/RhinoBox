@@ -11,11 +11,11 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
-	"github.com/Muneer320/RhinoBox/internal/media"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -27,7 +27,6 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
-	categorizer *media.Categorizer
 	server      *http.Server
 }
 
@@ -43,7 +42,6 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
-		categorizer: media.NewCategorizer(),
 	}
 	s.routes()
 	return s, nil
@@ -57,6 +55,11 @@ func (s *Server) routes() {
 	r.Get("/healthz", s.handleHealth)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+}
+
+// Router exposes the HTTP router for testing.
+func (s *Server) Router() http.Handler {
+	return s.router
 }
 
 // Run starts the HTTP server and blocks until the context is cancelled.
@@ -141,20 +144,41 @@ func (s *Server) storeSingleFile(header *multipart.FileHeader, categoryHint, com
 		mimeType = http.DetectContentType(sniff[:n])
 	}
 
-	mediaType, category := s.categorizer.Classify(mimeType, header.Filename, categoryHint)
-	relPath, err := s.storage.StoreMedia([]string{mediaType, category}, header.Filename, reader)
+	metadata := map[string]string{}
+	if comment != "" {
+		metadata["comment"] = comment
+	}
+
+	result, err := s.storage.StoreFile(storage.StoreRequest{
+		Reader:       reader,
+		Filename:     header.Filename,
+		MimeType:     mimeType,
+		Size:         header.Size,
+		Metadata:     metadata,
+		CategoryHint: categoryHint,
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	mediaType := result.Metadata.Category
+	if idx := strings.Index(mediaType, "/"); idx > 0 {
+		mediaType = mediaType[:idx]
+	}
+
 	record := map[string]any{
-		"path":          relPath,
-		"mime_type":     mimeType,
+		"path":          result.Metadata.StoredPath,
+		"mime_type":     result.Metadata.MimeType,
+		"category":      result.Metadata.Category,
 		"media_type":    mediaType,
-		"category":      category,
 		"comment":       comment,
-		"original_name": header.Filename,
-		"uploaded_at":   time.Now().UTC().Format(time.RFC3339),
+		"original_name": result.Metadata.OriginalName,
+		"uploaded_at":   result.Metadata.UploadedAt.Format(time.RFC3339),
+		"hash":          result.Metadata.Hash,
+		"size":          result.Metadata.Size,
+	}
+	if result.Duplicate {
+		record["duplicate"] = true
 	}
 	return record, nil
 }
