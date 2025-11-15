@@ -302,17 +302,12 @@ func TestMoveFile_AtomicRollback(t *testing.T) {
 	// On some systems (e.g., macOS), read-only files can still be written by the owner,
 	// so this test may not reliably simulate a persistence failure.
 	// If we get an error, that's the expected behavior (rollback worked).
-	// If we don't get an error, the system allowed the write despite read-only, which is acceptable.
-	if err != nil {
-		// Got an error as expected - verify rollback worked
-		// (rest of test continues below)
-	} else {
+	// If we don't get an error, the system allowed the write despite read-only, which means
+	// we can't test rollback on this system - skip the rest of the test.
+	if err == nil {
 		// No error - system allowed write despite read-only (e.g., macOS)
-		// This is acceptable behavior, so we'll just verify the file exists
-		if _, err := os.Stat(sourcePath); err != nil {
-			t.Error("source file should exist")
-		}
-		return
+		// This means we can't reliably test rollback on this system
+		t.Skip("Cannot test rollback on this system - read-only files can still be written by owner")
 	}
 
 	// Verify file was rolled back (should still be in source location)
