@@ -59,6 +59,10 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// File copy endpoints
+	r.Post("/files/{file_id}/copy", s.handleFileCopy)
+	r.Post("/files/copy/batch", s.handleBatchFileCopy)
 }
 
 // Router exposes the HTTP router for testing.
@@ -355,6 +359,166 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleFileCopy handles single file copy operations.
+func (s *Server) handleFileCopy(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id required")
+		return
+	}
+
+	var req fileCopyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	// Convert metadata to map[string]string
+	metadataStr := make(map[string]string)
+	for k, v := range req.Metadata {
+		if str, ok := v.(string); ok {
+			metadataStr[k] = str
+		} else {
+			metadataStr[k] = fmt.Sprintf("%v", v)
+		}
+	}
+
+	copyReq := storage.CopyFileRequest{
+		SourcePath:  fileID,
+		NewName:     req.NewName,
+		NewCategory: req.NewCategory,
+		Metadata:    metadataStr,
+		HardLink:    req.HardLink,
+	}
+
+	result, err := s.storage.CopyFile(copyReq)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("copy failed: %v", err))
+		return
+	}
+
+	// Log the copy operation
+	logRecord := map[string]any{
+		"operation":       "file_copy",
+		"source_path":     result.SourceMetadata.StoredPath,
+		"source_hash":     result.SourceMetadata.Hash,
+		"copy_path":       result.CopyMetadata.StoredPath,
+		"copy_hash":       result.CopyMetadata.Hash,
+		"is_hard_link":    result.IsHardLink,
+		"new_name":        req.NewName,
+		"new_category":    req.NewCategory,
+		"copied_at":       time.Now().UTC().Format(time.RFC3339),
+	}
+	
+	if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "copy_log.ndjson")), []map[string]any{logRecord}); err != nil {
+		s.logger.Warn("failed to append copy log", slog.Any("err", err))
+	}
+
+	response := fileCopyResponse{
+		Success: true,
+		Source: fileMetadataResponse{
+			Hash:         result.SourceMetadata.Hash,
+			OriginalName: result.SourceMetadata.OriginalName,
+			StoredPath:   result.SourceMetadata.StoredPath,
+			Category:     result.SourceMetadata.Category,
+			MimeType:     result.SourceMetadata.MimeType,
+			Size:         result.SourceMetadata.Size,
+			UploadedAt:   result.SourceMetadata.UploadedAt.Format(time.RFC3339),
+		},
+		Copy: fileMetadataResponse{
+			Hash:         result.CopyMetadata.Hash,
+			OriginalName: result.CopyMetadata.OriginalName,
+			StoredPath:   result.CopyMetadata.StoredPath,
+			Category:     result.CopyMetadata.Category,
+			MimeType:     result.CopyMetadata.MimeType,
+			Size:         result.CopyMetadata.Size,
+			UploadedAt:   result.CopyMetadata.UploadedAt.Format(time.RFC3339),
+			IsHardLink:   result.CopyMetadata.IsHardLink,
+			LinkedTo:     result.CopyMetadata.LinkedTo,
+		},
+		IsHardLink: result.IsHardLink,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleBatchFileCopy handles batch copy operations.
+func (s *Server) handleBatchFileCopy(w http.ResponseWriter, r *http.Request) {
+	var req batchFileCopyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Operations) == 0 {
+		httpError(w, http.StatusBadRequest, "no copy operations provided")
+		return
+	}
+
+	results := make([]batchCopyResult, 0, len(req.Operations))
+	successCount := 0
+	
+	for i, op := range req.Operations {
+		// Convert metadata
+		metadataStr := make(map[string]string)
+		for k, v := range op.Metadata {
+			if str, ok := v.(string); ok {
+				metadataStr[k] = str
+			} else {
+				metadataStr[k] = fmt.Sprintf("%v", v)
+			}
+		}
+
+		copyReq := storage.CopyFileRequest{
+			SourcePath:  op.SourcePath,
+			NewName:     op.NewName,
+			NewCategory: op.NewCategory,
+			Metadata:    metadataStr,
+			HardLink:    op.HardLink,
+		}
+
+		result, err := s.storage.CopyFile(copyReq)
+		batchResult := batchCopyResult{
+			Index:      i,
+			SourcePath: op.SourcePath,
+			Success:    err == nil,
+		}
+
+		if err != nil {
+			batchResult.Error = err.Error()
+		} else {
+			batchResult.CopyHash = result.CopyMetadata.Hash
+			batchResult.CopyPath = result.CopyMetadata.StoredPath
+			batchResult.IsHardLink = result.IsHardLink
+			successCount++
+		}
+
+		results = append(results, batchResult)
+	}
+
+	// Log batch operation
+	logRecord := map[string]any{
+		"operation":    "batch_file_copy",
+		"total":        len(req.Operations),
+		"successful":   successCount,
+		"failed":       len(req.Operations) - successCount,
+		"copied_at":    time.Now().UTC().Format(time.RFC3339),
+	}
+	
+	if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "copy_log.ndjson")), []map[string]any{logRecord}); err != nil {
+		s.logger.Warn("failed to append batch copy log", slog.Any("err", err))
+	}
+
+	response := batchFileCopyResponse{
+		Total:      len(req.Operations),
+		Successful: successCount,
+		Failed:     len(req.Operations) - successCount,
+		Results:    results,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
 // Helper structs
 
 type jsonIngestRequest struct {
@@ -363,6 +527,61 @@ type jsonIngestRequest struct {
 	Namespace string           `json:"namespace"`
 	Comment   string           `json:"comment"`
 	Metadata  map[string]any   `json:"metadata"`
+}
+
+type fileCopyRequest struct {
+	NewName     string         `json:"new_name"`
+	NewCategory string         `json:"new_category"`
+	Metadata    map[string]any `json:"metadata"`
+	HardLink    bool           `json:"hard_link"`
+}
+
+type fileCopyResponse struct {
+	Success    bool                   `json:"success"`
+	Source     fileMetadataResponse   `json:"source"`
+	Copy       fileMetadataResponse   `json:"copy"`
+	IsHardLink bool                   `json:"is_hard_link"`
+}
+
+type fileMetadataResponse struct {
+	Hash         string `json:"hash"`
+	OriginalName string `json:"original_name"`
+	StoredPath   string `json:"stored_path"`
+	Category     string `json:"category"`
+	MimeType     string `json:"mime_type"`
+	Size         int64  `json:"size"`
+	UploadedAt   string `json:"uploaded_at"`
+	IsHardLink   bool   `json:"is_hard_link,omitempty"`
+	LinkedTo     string `json:"linked_to,omitempty"`
+}
+
+type batchFileCopyRequest struct {
+	Operations []fileCopyOperation `json:"operations"`
+}
+
+type fileCopyOperation struct {
+	SourcePath  string         `json:"source_path"`
+	NewName     string         `json:"new_name"`
+	NewCategory string         `json:"new_category"`
+	Metadata    map[string]any `json:"metadata"`
+	HardLink    bool           `json:"hard_link"`
+}
+
+type batchFileCopyResponse struct {
+	Total      int               `json:"total"`
+	Successful int               `json:"successful"`
+	Failed     int               `json:"failed"`
+	Results    []batchCopyResult `json:"results"`
+}
+
+type batchCopyResult struct {
+	Index      int    `json:"index"`
+	SourcePath string `json:"source_path"`
+	Success    bool   `json:"success"`
+	CopyHash   string `json:"copy_hash,omitempty"`
+	CopyPath   string `json:"copy_path,omitempty"`
+	IsHardLink bool   `json:"is_hard_link,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func httpError(w http.ResponseWriter, code int, msg string) {

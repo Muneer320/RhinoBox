@@ -19,6 +19,9 @@ type FileMetadata struct {
     Size         int64             `json:"size"`
     UploadedAt   time.Time         `json:"uploaded_at"`
     Metadata     map[string]string `json:"metadata"`
+    RefCount     int               `json:"ref_count,omitempty"`     // Reference count for hard links
+    IsHardLink   bool              `json:"is_hard_link,omitempty"`  // True if this is a hard link reference
+    LinkedTo     string            `json:"linked_to,omitempty"`     // Hash of the original file if hard link
 }
 
 // MetadataIndex persists file metadata to disk and enables duplicate detection.
@@ -96,4 +99,59 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     defer idx.mu.Unlock()
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
+}
+
+// FindByPath searches for a file by its stored path.
+func (idx *MetadataIndex) FindByPath(storedPath string) *FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    for _, meta := range idx.data {
+        if meta.StoredPath == storedPath {
+            clone := meta
+            return &clone
+        }
+    }
+    return nil
+}
+
+// Update updates an existing metadata entry.
+func (idx *MetadataIndex) Update(meta FileMetadata) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    if _, exists := idx.data[meta.Hash]; !exists {
+        return errors.New("metadata not found")
+    }
+    idx.data[meta.Hash] = meta
+    return idx.persistLocked()
+}
+
+// IncrementRefCount increases the reference count for a file.
+func (idx *MetadataIndex) IncrementRefCount(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    meta, ok := idx.data[hash]
+    if !ok {
+        return errors.New("file not found")
+    }
+    meta.RefCount++
+    idx.data[hash] = meta
+    return idx.persistLocked()
+}
+
+// DecrementRefCount decreases the reference count for a file.
+func (idx *MetadataIndex) DecrementRefCount(hash string) (int, error) {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    meta, ok := idx.data[hash]
+    if !ok {
+        return 0, errors.New("file not found")
+    }
+    if meta.RefCount > 0 {
+        meta.RefCount--
+    }
+    idx.data[hash] = meta
+    if err := idx.persistLocked(); err != nil {
+        return meta.RefCount, err
+    }
+    return meta.RefCount, nil
 }

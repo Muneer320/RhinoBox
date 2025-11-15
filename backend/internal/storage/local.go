@@ -245,6 +245,266 @@ func (m *Manager) NextJSONBatchPath(engine, namespace string) string {
 	return filepath.ToSlash(filepath.Join("json", engine, slug, fmt.Sprintf("batch_%s.ndjson", ts)))
 }
 
+// CopyFileRequest captures parameters for file copying operations.
+type CopyFileRequest struct {
+	SourcePath   string            // Path to source file (can be hash or stored path)
+	NewName      string            // New filename for the copy
+	NewCategory  string            // Optional: new category for the copy
+	Metadata     map[string]string // Optional: metadata for the copy
+	HardLink     bool              // If true, create hard link instead of full copy
+}
+
+// CopyFileResult surfaces the outcome of a copy operation.
+type CopyFileResult struct {
+	SourceMetadata FileMetadata
+	CopyMetadata   FileMetadata
+	IsHardLink     bool
+}
+
+// CopyFile creates a copy of an existing file with new metadata.
+func (m *Manager) CopyFile(req CopyFileRequest) (*CopyFileResult, error) {
+	if req.SourcePath == "" {
+		return nil, errors.New("source path required")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Find source file by hash or path
+	var sourceMeta *FileMetadata
+	sourceMeta = m.index.FindByHash(req.SourcePath)
+	if sourceMeta == nil {
+		sourceMeta = m.index.FindByPath(req.SourcePath)
+	}
+	if sourceMeta == nil {
+		return nil, fmt.Errorf("source file not found: %s", req.SourcePath)
+	}
+
+	// Handle hard link creation
+	if req.HardLink {
+		return m.createHardLinkLocked(sourceMeta, req)
+	}
+
+	// Handle full copy
+	return m.createFullCopyLocked(sourceMeta, req)
+}
+
+// createHardLinkLocked creates a hard link reference to the same physical file.
+func (m *Manager) createHardLinkLocked(sourceMeta *FileMetadata, req CopyFileRequest) (*CopyFileResult, error) {
+	// Determine the original file hash (if source is already a hard link)
+	originalHash := sourceMeta.Hash
+	if sourceMeta.IsHardLink && sourceMeta.LinkedTo != "" {
+		originalHash = sourceMeta.LinkedTo
+	}
+
+	// Get original file metadata
+	originalMeta := m.index.FindByHash(originalHash)
+	if originalMeta == nil {
+		return nil, errors.New("original file not found")
+	}
+
+	// Generate new filename
+	newName := req.NewName
+	if newName == "" {
+		newName = sourceMeta.OriginalName
+	}
+
+	// Determine category
+	newCategory := req.NewCategory
+	if newCategory == "" {
+		newCategory = sourceMeta.Category
+	}
+
+	// Classify and determine storage path
+	components := strings.Split(newCategory, "/")
+	if req.NewCategory == "" {
+		components = m.classifier.Classify(sourceMeta.MimeType, newName, "")
+	}
+
+	// Generate new metadata entry with unique hash (for indexing)
+	newHash := fmt.Sprintf("%s_ref_%s", originalHash[:12], uuid.NewString()[:8])
+	
+	// Copy metadata
+	metaCopy := make(map[string]string)
+	if len(sourceMeta.Metadata) > 0 {
+		for k, v := range sourceMeta.Metadata {
+			metaCopy[k] = v
+		}
+	}
+	if len(req.Metadata) > 0 {
+		for k, v := range req.Metadata {
+			metaCopy[k] = v
+		}
+	}
+
+	// The stored path for hard link points to the same file
+	newMetadata := FileMetadata{
+		Hash:         newHash,
+		OriginalName: newName,
+		StoredPath:   originalMeta.StoredPath, // Same physical file
+		Category:     strings.Join(components, "/"),
+		MimeType:     sourceMeta.MimeType,
+		Size:         sourceMeta.Size,
+		UploadedAt:   time.Now().UTC(),
+		Metadata:     metaCopy,
+		IsHardLink:   true,
+		LinkedTo:     originalHash,
+		RefCount:     0,
+	}
+
+	// Increment reference count on original file
+	if err := m.index.IncrementRefCount(originalHash); err != nil {
+		return nil, err
+	}
+
+	// Add new metadata entry
+	if err := m.index.Add(newMetadata); err != nil {
+		return nil, err
+	}
+
+	return &CopyFileResult{
+		SourceMetadata: *sourceMeta,
+		CopyMetadata:   newMetadata,
+		IsHardLink:     true,
+	}, nil
+}
+
+// createFullCopyLocked creates a physical copy of the file.
+func (m *Manager) createFullCopyLocked(sourceMeta *FileMetadata, req CopyFileRequest) (*CopyFileResult, error) {
+	// Open source file
+	sourceFullPath := filepath.Join(m.root, filepath.FromSlash(sourceMeta.StoredPath))
+	sourceFile, err := os.Open(sourceFullPath)
+	if err != nil {
+		return nil, fmt.Errorf("open source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	// Get file info
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat source file: %w", err)
+	}
+
+	// Generate new filename
+	newName := req.NewName
+	if newName == "" {
+		newName = sourceMeta.OriginalName
+	}
+
+	// Determine category
+	newCategory := req.NewCategory
+	if newCategory == "" {
+		newCategory = sourceMeta.Category
+	}
+
+	// Classify and build target directory
+	components := strings.Split(newCategory, "/")
+	if req.NewCategory == "" {
+		components = m.classifier.Classify(sourceMeta.MimeType, newName, "")
+	}
+	
+	fullDir := filepath.Join(append([]string{m.storageRoot}, components...)...)
+	if err := os.MkdirAll(fullDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	// Compute hash of new copy (should be same as original for identical content)
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, sourceFile); err != nil {
+		return nil, err
+	}
+	checksum := hex.EncodeToString(hasher.Sum(nil))
+
+	// Reset file pointer for actual copy
+	if _, err := sourceFile.Seek(0, 0); err != nil {
+		return nil, err
+	}
+
+	// Create target file
+	base := strings.TrimSuffix(newName, filepath.Ext(newName))
+	if base == "" {
+		base = "file"
+	}
+	base = sanitize(base)
+	ext := strings.ToLower(filepath.Ext(newName))
+	filename := fmt.Sprintf("%s_%s%s", checksum[:12], base, ext)
+	finalPath := filepath.Join(fullDir, filename)
+
+	// Copy file content
+	targetFile, err := os.Create(finalPath)
+	if err != nil {
+		return nil, err
+	}
+	defer targetFile.Close()
+
+	if _, err := io.Copy(targetFile, sourceFile); err != nil {
+		_ = os.Remove(finalPath)
+		return nil, err
+	}
+
+	// Build relative path
+	rel, err := filepath.Rel(m.root, finalPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy metadata
+	metaCopy := make(map[string]string)
+	if len(sourceMeta.Metadata) > 0 {
+		for k, v := range sourceMeta.Metadata {
+			metaCopy[k] = v
+		}
+	}
+	if len(req.Metadata) > 0 {
+		for k, v := range req.Metadata {
+			metaCopy[k] = v
+		}
+	}
+
+	// Create new metadata
+	newMetadata := FileMetadata{
+		Hash:         checksum,
+		OriginalName: newName,
+		StoredPath:   filepath.ToSlash(rel),
+		Category:     strings.Join(components, "/"),
+		MimeType:     sourceMeta.MimeType,
+		Size:         info.Size(),
+		UploadedAt:   time.Now().UTC(),
+		Metadata:     metaCopy,
+		IsHardLink:   false,
+		RefCount:     0,
+	}
+
+	// Check if this hash already exists (deduplication)
+	if existing := m.index.FindByHash(checksum); existing != nil {
+		// Remove the newly created file since it's a duplicate
+		_ = os.Remove(finalPath)
+		
+		// For copy operations, we want to create a new metadata entry
+		// even if the content is the same, so generate a unique hash
+		newMetadata.Hash = fmt.Sprintf("%s_copy_%s", checksum[:12], uuid.NewString()[:8])
+		newMetadata.StoredPath = existing.StoredPath
+		newMetadata.IsHardLink = true
+		newMetadata.LinkedTo = checksum
+		
+		// Increment reference count on the original
+		if err := m.index.IncrementRefCount(checksum); err != nil {
+			return nil, err
+		}
+	}
+
+	// Add new metadata entry
+	if err := m.index.Add(newMetadata); err != nil {
+		return nil, err
+	}
+
+	return &CopyFileResult{
+		SourceMetadata: *sourceMeta,
+		CopyMetadata:   newMetadata,
+		IsHardLink:     newMetadata.IsHardLink,
+	}, nil
+}
+
 var invalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 func sanitize(input string) string {
