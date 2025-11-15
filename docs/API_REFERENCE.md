@@ -14,12 +14,16 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
 ## Endpoints Overview
 
-| Method | Endpoint        | Purpose                                        |
-| ------ | --------------- | ---------------------------------------------- |
-| GET    | `/healthz`      | Health check probe                             |
-| POST   | `/ingest`       | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media` | Media-specific ingestion                       |
-| POST   | `/ingest/json`  | JSON-specific ingestion                        |
+| Method | Endpoint             | Purpose                                        |
+| ------ | -------------------- | ---------------------------------------------- |
+| GET    | `/healthz`           | Health check probe                             |
+| POST   | `/ingest`            | **Unified ingestion** - handles all data types |
+| POST   | `/ingest/media`      | Media-specific ingestion                       |
+| POST   | `/ingest/json`       | JSON-specific ingestion                        |
+| GET    | `/files`             | **List/search files** with filters & pagination|
+| GET    | `/files/browse`      | **Browse directory** structure                 |
+| GET    | `/files/categories`  | **List categories** with statistics            |
+| GET    | `/files/stats`       | **Storage statistics** and metrics             |
 
 ---
 
@@ -191,6 +195,285 @@ Invoke-RestMethod -Uri http://localhost:8090/ingest -Method Post -Form $form
 {
   "error": "all items failed: [file1: error, file2: error]"
 }
+```
+
+---
+
+## GET `/files`
+
+**List and filter stored files** with pagination, sorting, and powerful query options.
+
+### Query Parameters
+
+| Parameter         | Type   | Default | Description                                       |
+| ----------------- | ------ | ------- | ------------------------------------------------- |
+| `page`            | int    | `1`     | Page number for pagination                        |
+| `limit`           | int    | `50`    | Results per page (max 100)                        |
+| `category`        | string | -       | Filter by category path (e.g., `images/jpg`)      |
+| `mime_type`       | string | -       | Filter by MIME type (e.g., `image/jpeg`)          |
+| `min_size`        | int64  | -       | Minimum file size in bytes                        |
+| `max_size`        | int64  | -       | Maximum file size in bytes                        |
+| `uploaded_after`  | string | -       | Filter files uploaded after date (RFC3339)        |
+| `uploaded_before` | string | -       | Filter files uploaded before date (RFC3339)       |
+| `search`          | string | -       | Search in filename and category                   |
+| `sort`            | string | `date`  | Sort by: `name`, `date`, `size`, `category`       |
+| `order`           | string | `desc`  | Sort order: `asc`, `desc`                         |
+
+### Response Schema
+
+```json
+{
+  "files": [
+    {
+      "hash": "abc123def456...",
+      "original_name": "photo.jpg",
+      "stored_path": "storage/images/jpg/abc123_photo.jpg",
+      "category": "images/jpg",
+      "mime_type": "image/jpeg",
+      "size": 1048576,
+      "uploaded_at": "2024-01-15T10:30:00Z",
+      "metadata": {
+        "comment": "vacation photo"
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 2180,
+    "total_pages": 44,
+    "has_next": true,
+    "has_prev": false
+  }
+}
+```
+
+### Examples
+
+#### List All Files
+
+```bash
+curl "http://localhost:8090/files?page=1&limit=50"
+```
+
+#### Filter by Category
+
+```bash
+curl "http://localhost:8090/files?category=documents/pdf"
+```
+
+#### Search by Name
+
+```bash
+curl "http://localhost:8090/files?search=report"
+```
+
+#### Filter by Size Range
+
+```bash
+# Files between 1MB and 10MB
+curl "http://localhost:8090/files?min_size=1048576&max_size=10485760"
+```
+
+#### Filter by Date Range
+
+```bash
+curl "http://localhost:8090/files?uploaded_after=2024-01-01T00:00:00Z&uploaded_before=2024-12-31T23:59:59Z"
+```
+
+#### Sort by Size (Largest First)
+
+```bash
+curl "http://localhost:8090/files?sort=size&order=desc&limit=10"
+```
+
+#### Combined Filters
+
+```bash
+curl "http://localhost:8090/files?category=images/jpg&min_size=100000&sort=date&order=desc"
+```
+
+#### PowerShell
+
+```powershell
+$params = @{
+    page = 1
+    limit = 50
+    category = "images/jpg"
+    sort = "size"
+    order = "desc"
+}
+$query = ($params.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "&"
+Invoke-RestMethod "http://localhost:8090/files?$query"
+```
+
+---
+
+## GET `/files/browse`
+
+**Browse directory structure** with file counts and navigation breadcrumbs.
+
+### Query Parameters
+
+| Parameter | Type   | Required | Description                             |
+| --------- | ------ | -------- | --------------------------------------- |
+| `path`    | string | No       | Directory path to browse (default: `storage`) |
+
+### Response Schema
+
+```json
+{
+  "path": "storage/images",
+  "breadcrumbs": [
+    {"name": "storage", "path": "storage"},
+    {"name": "images", "path": "storage/images"}
+  ],
+  "directories": [
+    {
+      "name": "jpg",
+      "path": "storage/images/jpg",
+      "file_count": 1234
+    },
+    {
+      "name": "png",
+      "path": "storage/images/png",
+      "file_count": 567
+    }
+  ],
+  "files": [
+    {
+      "name": "thumbnail.jpg",
+      "path": "storage/images/thumbnail.jpg",
+      "size": 2048,
+      "modified": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+### Examples
+
+#### Browse Root Storage
+
+```bash
+curl "http://localhost:8090/files/browse"
+```
+
+#### Browse Specific Directory
+
+```bash
+curl "http://localhost:8090/files/browse?path=storage/images"
+```
+
+#### Browse Category
+
+```bash
+curl "http://localhost:8090/files/browse?path=storage/documents/pdf"
+```
+
+#### PowerShell
+
+```powershell
+Invoke-RestMethod "http://localhost:8090/files/browse?path=storage/videos"
+```
+
+### Security
+
+- Path traversal attacks are prevented (e.g., `../etc` is rejected)
+- Only paths within the data directory are accessible
+- Returns 400 for invalid paths
+- Returns 404 for non-existent paths
+
+---
+
+## GET `/files/categories`
+
+**List all file categories** with file counts and total sizes.
+
+### Response Schema
+
+```json
+{
+  "categories": [
+    {
+      "path": "images/jpg",
+      "count": 1234,
+      "size": 5368709120
+    },
+    {
+      "path": "videos/mp4",
+      "count": 56,
+      "size": 15368709120
+    },
+    {
+      "path": "documents/pdf",
+      "count": 890,
+      "size": 2368709120
+    }
+  ]
+}
+```
+
+### Examples
+
+#### Get All Categories
+
+```bash
+curl "http://localhost:8090/files/categories"
+```
+
+#### PowerShell
+
+```powershell
+$categories = Invoke-RestMethod "http://localhost:8090/files/categories"
+$categories.categories | Sort-Object -Property size -Descending | Format-Table
+```
+
+---
+
+## GET `/files/stats`
+
+**Storage statistics** including total files, size, recent uploads, and breakdowns by category and file type.
+
+### Response Schema
+
+```json
+{
+  "total_files": 2180,
+  "total_size": 23106127360,
+  "categories": {
+    "images/jpg": {"count": 1234, "size": 5368709120},
+    "videos/mp4": {"count": 56, "size": 15368709120},
+    "documents/pdf": {"count": 890, "size": 2368709120}
+  },
+  "file_types": {
+    "image/jpeg": 1234,
+    "video/mp4": 56,
+    "application/pdf": 890
+  },
+  "recent_uploads": {
+    "last_24h": 45,
+    "last_7d": 320,
+    "last_30d": 1240
+  }
+}
+```
+
+### Examples
+
+#### Get Storage Statistics
+
+```bash
+curl "http://localhost:8090/files/stats"
+```
+
+#### PowerShell with Formatting
+
+```powershell
+$stats = Invoke-RestMethod "http://localhost:8090/files/stats"
+Write-Host "Total Files: $($stats.total_files)"
+Write-Host "Total Size: $([Math]::Round($stats.total_size / 1GB, 2)) GB"
+Write-Host "Recent Uploads (24h): $($stats.recent_uploads.last_24h)"
 ```
 
 ---
