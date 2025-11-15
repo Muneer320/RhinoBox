@@ -109,9 +109,8 @@ func matchesFilters(meta FileMetadata, filters SearchFilters) bool {
 		}
 	}
 	if !filters.DateTo.IsZero() {
-		// Add 24 hours to DateTo to include the entire day
-		dateToEnd := filters.DateTo.Add(24 * time.Hour)
-		if meta.UploadedAt.After(dateToEnd) {
+		// DateTo is already normalized by the API layer (end of day for YYYY-MM-DD, exact for RFC3339)
+		if meta.UploadedAt.After(filters.DateTo) {
 			return false
 		}
 	}

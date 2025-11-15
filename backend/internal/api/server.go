@@ -606,10 +606,11 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 
 	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
 		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			// RFC3339 format: use exact timestamp
 			filters.DateTo = dateTo
 		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
-			// Support date-only format (end of day)
-			filters.DateTo = dateTo
+			// YYYY-MM-DD format: extend to end of day (23:59:59.999...)
+			filters.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
 		} else {
 			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_to format: %v (use RFC3339 or YYYY-MM-DD)", err))
 			return

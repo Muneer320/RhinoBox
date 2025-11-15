@@ -439,6 +439,99 @@ func TestFileSearch_ByDateRange(t *testing.T) {
 	}
 }
 
+func TestFileSearch_ByMimeTypeQueryParam(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Upload JPEG and PNG files with proper content
+	jpegContent := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46} // JPEG header
+	pngContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A} // PNG header
+
+	files := []struct {
+		name    string
+		content []byte
+		mime    string
+	}{
+		{"photo1.jpg", jpegContent, "image/jpeg"},
+		{"photo2.jpg", jpegContent, "image/jpeg"},
+		{"image1.png", pngContent, "image/png"},
+		{"image2.png", pngContent, "image/png"},
+	}
+
+	for _, f := range files {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		fileWriter, err := writer.CreateFormFile("file", f.name)
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		fileWriter.Write(f.content)
+		writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp := httptest.NewRecorder()
+		srv.router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("upload failed: %d: %s", resp.Code, resp.Body.String())
+		}
+
+	}
+
+	// Small delay to ensure indexing
+	time.Sleep(50 * time.Millisecond)
+
+	// Test search by mime_type=image/jpeg
+	t.Run("search by mime_type=image/jpeg", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/files/search?mime_type=image/jpeg", nil)
+		resp := httptest.NewRecorder()
+		srv.router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+		}
+
+		var payload struct {
+			Results []storage.FileMetadata `json:"results"`
+			Count   int                    `json:"count"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+
+		// Should only contain JPEG files, not PNG files
+		if payload.Count < 2 {
+			t.Errorf("expected at least 2 JPEG results, got %d", payload.Count)
+		}
+
+		// Verify all results are JPEG
+		for _, r := range payload.Results {
+			if !strings.EqualFold(r.MimeType, "image/jpeg") {
+				t.Errorf("expected only JPEG files, found %q with MIME type %q", r.OriginalName, r.MimeType)
+			}
+		}
+
+		// Verify JPEG files are present
+		jpegFound := false
+		for _, r := range payload.Results {
+			if strings.Contains(r.OriginalName, ".jpg") {
+				jpegFound = true
+				break
+			}
+		}
+		if !jpegFound {
+			t.Error("expected to find JPEG files in results")
+		}
+
+		// Verify PNG files are NOT present
+		for _, r := range payload.Results {
+			if strings.Contains(r.OriginalName, ".png") {
+				t.Errorf("expected no PNG files, found %q", r.OriginalName)
+			}
+		}
+	})
+}
+
 func TestFileSearch_CombinedFilters(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -494,7 +587,7 @@ func TestFileSearch_CombinedFilters(t *testing.T) {
 		},
 		{
 			name:         "extension and MIME type",
-			query:        "?extension=pdf",
+			query:        "?extension=pdf&mime_type=application/pdf",
 			expectedCount: 2,
 			shouldContain: []string{"report_2024.pdf", "report_2023.pdf"},
 		},
