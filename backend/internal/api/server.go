@@ -66,6 +66,7 @@ func (s *Server) routes() {
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
+	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Get("/files/search", s.handleFileSearch)
 }
 
@@ -400,6 +401,37 @@ slog.Bool("updated_stored_file", req.UpdateStoredFile),
 )
 
 writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	req := storage.DeleteRequest{
+		Hash: fileID,
+	}
+
+	result, err := s.storage.DeleteFile(req)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		default:
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("delete failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("file deleted",
+		slog.String("hash", req.Hash),
+		slog.String("original_name", result.OriginalName),
+		slog.String("stored_path", result.StoredPath),
+	)
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {

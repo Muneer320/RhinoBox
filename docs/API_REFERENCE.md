@@ -14,12 +14,15 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
 ## Endpoints Overview
 
-| Method | Endpoint        | Purpose                                        |
-| ------ | --------------- | ---------------------------------------------- |
-| GET    | `/healthz`      | Health check probe                             |
-| POST   | `/ingest`       | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media` | Media-specific ingestion                       |
-| POST   | `/ingest/json`  | JSON-specific ingestion                        |
+| Method | Endpoint                | Purpose                                        |
+| ------ | ----------------------- | ---------------------------------------------- |
+| GET    | `/healthz`              | Health check probe                             |
+| POST   | `/ingest`               | **Unified ingestion** - handles all data types |
+| POST   | `/ingest/media`         | Media-specific ingestion                       |
+| POST   | `/ingest/json`          | JSON-specific ingestion                        |
+| PATCH  | `/files/rename`         | Rename a file                                  |
+| DELETE | `/files/{file_id}`      | Delete a file                                  |
+| GET    | `/files/search`         | Search files by name                           |
 
 ---
 
@@ -454,6 +457,114 @@ All ingestions logged to: `data/json/ingest_log.ndjson`
 
 ---
 
+## DELETE `/files/{file_id}`
+
+**File deletion endpoint** - permanently removes a file and its metadata from the system.
+
+### URL Parameters
+
+| Parameter | Type   | Required | Description                    |
+| --------- | ------ | -------- | ------------------------------ |
+| `file_id` | string | Yes      | SHA-256 hash of the file (64 hex characters) |
+
+### Response Schema
+
+**Success** (HTTP 200):
+
+```json
+{
+  "hash": "a1b2c3d4e5f6...",
+  "original_name": "photo.jpg",
+  "stored_path": "storage/images/jpg/category/a1b2c3d4e5f6_photo.jpg",
+  "deleted": true,
+  "deleted_at": "2025-11-15T10:30:00Z",
+  "message": "deleted file photo.jpg"
+}
+```
+
+### Behavior
+
+- **Physical file deletion**: Removes the file from the filesystem
+- **Metadata removal**: Removes the file entry from the metadata index
+- **Audit logging**: Logs the deletion operation to `metadata/delete_log.ndjson`
+- **Idempotent handling**: If the physical file is missing but metadata exists, deletion still succeeds (metadata-only cleanup)
+
+### Error Responses
+
+**File not found** (HTTP 404):
+
+```json
+{
+  "error": "file not found: hash <hash>"
+}
+```
+
+**Missing file_id** (HTTP 400):
+
+```json
+{
+  "error": "file_id is required"
+}
+```
+
+**Internal server error** (HTTP 500):
+
+```json
+{
+  "error": "delete failed: <error message>"
+}
+```
+
+### Examples
+
+#### Delete a File
+
+```bash
+curl -X DELETE http://localhost:8090/files/a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890
+```
+
+#### PowerShell
+
+```powershell
+$hash = "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
+Invoke-RestMethod -Uri "http://localhost:8090/files/$hash" -Method Delete
+```
+
+#### Python
+
+```python
+import requests
+
+hash_value = "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
+response = requests.delete(f"http://localhost:8090/files/{hash_value}")
+print(response.json())
+```
+
+### Deletion Audit Log
+
+All deletions are logged to `data/metadata/delete_log.ndjson` in newline-delimited JSON format:
+
+```json
+{
+  "hash": "a1b2c3d4e5f6...",
+  "original_name": "photo.jpg",
+  "stored_path": "storage/images/jpg/category/a1b2c3d4e5f6_photo.jpg",
+  "category": "images/jpg",
+  "mime_type": "image/jpeg",
+  "size": 2048576,
+  "deleted_at": "2025-11-15T10:30:00Z"
+}
+```
+
+### Notes
+
+- Deletion is **permanent** and cannot be undone
+- The file hash is returned from the upload/ingest endpoints
+- If a file was manually deleted from the filesystem, the API will still remove the metadata entry
+- Deletion operations are logged for audit purposes
+
+---
+
 ## Configuration
 
 Environment variables:
@@ -493,6 +604,10 @@ data/
 │   │   └── <namespace>/
 │   │       └── batch_<timestamp>.ndjson
 │   └── ingest_log.ndjson
+├── metadata/
+│   ├── files.json          # File metadata index
+│   ├── delete_log.ndjson   # Deletion audit log
+│   └── rename_log.ndjson   # Rename audit log
 └── files/
     └── <namespace>/
         └── <filename>_<uuid><ext>
