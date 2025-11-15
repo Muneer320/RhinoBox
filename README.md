@@ -6,13 +6,14 @@
 
 - **Unified Ingest Endpoint**: Single `/ingest` endpoint handles images, videos, audio, JSON, and generic files
 - **Asynchronous Job Queue**: Background batch processing with 1000+ concurrent jobs, 0 client blocking
+- **Automatic Retry Logic**: Exponential backoff retry (3 attempts) for transient failures with intelligent error classification
 - **High-Performance Databases**: PostgreSQL (100K+/sec) + MongoDB (200K+/sec) with optimized connection pooling
 - **Intelligent JSON Routing**: Automatically decides between SQL (relational) vs NoSQL (document) storage based on schema analysis
 - **Multi-Level Caching**: LRU + Bloom filters + BadgerDB for 3.6M ops/sec with 100% hit rate
 - **Content Deduplication**: SHA-256 based deduplication saves storage and processing time
 - **Smart Media Classification**: MIME-based categorization with content-based deduplication
-- **Advanced Search**: Full-text search across filenames with fuzzy matching and filtering
-- **File Management**: List, search, download, stream, delete, and update file metadata
+- **Advanced Search**: Metadata search + content search inside text files (JSON, XML, code, markdown, etc.)
+- **File Management**: List, search, download, stream, delete, copy, move, and update file metadata
 - **Parallel Processing**: Optimized concurrent file handling with worker pools
 - **Production Ready**: HTTP/2, graceful shutdown, structured logging, health checks
 
@@ -31,7 +32,9 @@ backend/
       mongodb.go                 # MongoDB with BulkWrite (200K+/sec)
     queue/                       # Asynchronous job processing
       queue.go                   # Job queue with 10 workers
-      processor.go               # Media processor for jobs
+      processor.go               # Media processor with retry logic
+    retry/                       # Automatic retry with exponential backoff
+      retry.go                   # Retry logic (3 attempts, 1s→2s→4s)
     cache/                       # Multi-level caching system
       cache.go                   # LRU + Bloom + BadgerDB
       dedup.go                   # Content-addressed deduplication
@@ -45,7 +48,7 @@ backend/
       cached_analyzer.go         # Cache-aware analyzer
     storage/                     # File persistence layer
       local.go                   # Filesystem operations
-      search.go                  # Full-text search with fuzzy matching
+      search.go                  # Metadata + content search (10MB max)
       listing.go                 # File listing with pagination
       delete.go                  # File deletion with validation
     config/                      # Configuration management
@@ -119,11 +122,18 @@ docker run -p 8090:8090 -v ./data:/data rhinobox
 | GET    | `/jobs/{job_id}/result`     | Get detailed job results                       |
 | DELETE | `/jobs/{job_id}`            | Cancel a job (if not completed)                |
 | GET    | `/jobs/stats`               | Queue statistics (pending, processing, etc.)   |
-| GET    | `/files/search`             | Search files by name with fuzzy matching       |
-| GET    | `/files/list`               | List files with pagination and filtering       |
+| GET    | `/files/search`             | Search by metadata + content (text files)      |
+| GET    | `/files`                    | List files with pagination and filtering       |
+| GET    | `/files/browse`             | Browse directory structure                     |
+| GET    | `/files/categories`         | Get all file categories                        |
+| GET    | `/files/stats`              | Get storage statistics                         |
 | GET    | `/files/download`           | Download file by hash or path                  |
 | GET    | `/files/stream`             | Stream file with range request support         |
 | GET    | `/files/metadata`           | Get file metadata without downloading          |
+| POST   | `/files/{file_id}/copy`     | Copy a file                                    |
+| POST   | `/files/copy/batch`         | Batch copy files                               |
+| PATCH  | `/files/{file_id}/move`     | Move file to different category                |
+| PATCH  | `/files/batch/move`         | Batch move files                               |
 | DELETE | `/files/{file_id}`          | Delete file by ID                              |
 | PATCH  | `/files/{file_id}/metadata` | Update file metadata                           |
 | PATCH  | `/files/rename`             | Rename a file                                  |
@@ -184,6 +194,23 @@ curl "http://localhost:8090/files/list?page=1&page_size=50"
 
 # List with filtering and sorting
 curl "http://localhost:8090/files/list?category=videos&sort_by=size&sort_order=desc"
+```
+
+### Search Files
+
+```bash
+# Search by filename
+curl "http://localhost:8090/files/search?name=vacation"
+
+# Search by file type
+curl "http://localhost:8090/files/search?type=image&extension=jpg"
+
+# Content search in text files (NEW!)
+curl "http://localhost:8090/files/search?content=TODO"
+curl "http://localhost:8090/files/search?extension=json&content=database"
+
+# Combined search with date range
+curl "http://localhost:8090/files/search?category=docs&content=architecture&date_from=2025-11-01"
 ```
 
 ### Download & Stream
@@ -458,8 +485,16 @@ RhinoBox solves the **universal storage problem** - accepting any data type thro
 ✅ **Async Processing**: Background job queue with progress tracking  
 ✅ **File Management**: Search, list, download, delete, update  
 ✅ **Production Ready**: Docker Compose, health checks, logging  
-✅ **Comprehensive Testing**: Unit tests + integration tests  
+✅ **Comprehensive Testing**: Unit tests + integration tests + **E2E stress tests**  
 ✅ **Complete Documentation**: 2950+ lines covering all aspects
+
+**E2E Stress Test Results** (Nov 16, 2025):
+
+- 55 files (1.06 GB), 13 file types, 7 test phases - **100% success rate**
+- Upload: 228 MB/s avg, 341 MB/s peak (128% above target)
+- Search: 3.45ms avg latency (29x faster than target)
+- Async jobs: 6/6 completed with zero failures
+- See [backend/tests/e2e-results/](backend/tests/e2e-results/) for full results
 
 **Zero Missing Features**: All hackathon requirements met with production-grade implementation.
 

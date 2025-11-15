@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"bufio"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -8,13 +10,14 @@ import (
 
 // SearchFilters contains all possible search filter criteria.
 type SearchFilters struct {
-	Name       string    // Partial match on original filename (case-insensitive)
-	Extension  string    // Exact match on file extension (case-insensitive, with or without dot)
-	Type       string    // Match on MIME type or category (supports partial match)
-	DateFrom   time.Time // Files uploaded on or after this date
-	DateTo     time.Time // Files uploaded on or before this date
-	Category   string    // Match on category path (supports partial match)
-	MimeType   string    // Exact match on MIME type
+	Name          string    // Partial match on original filename (case-insensitive)
+	Extension     string    // Exact match on file extension (case-insensitive, with or without dot)
+	Type          string    // Match on MIME type or category (supports partial match)
+	DateFrom      time.Time // Files uploaded on or after this date
+	DateTo        time.Time // Files uploaded on or before this date
+	Category      string    // Match on category path (supports partial match)
+	MimeType      string    // Exact match on MIME type
+	ContentSearch string    // Search inside text files (case-insensitive, only for text MIME types)
 }
 
 // SearchFiles performs a filtered search across all file metadata.
@@ -116,4 +119,86 @@ func matchesFilters(meta FileMetadata, filters SearchFilters) bool {
 	}
 
 	return true
+}
+
+// isTextMimeType checks if the MIME type is searchable text.
+func isTextMimeType(mimeType string) bool {
+	textTypes := []string{
+		"text/",
+		"application/json",
+		"application/xml",
+		"application/javascript",
+		"application/typescript",
+		"application/x-sh",
+		"application/x-python",
+	}
+	
+	lowerMime := strings.ToLower(mimeType)
+	for _, prefix := range textTypes {
+		if strings.HasPrefix(lowerMime, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// SearchFilesWithContent performs search including content search for text files.
+func (m *Manager) SearchFilesWithContent(filters SearchFilters) []FileMetadata {
+	// First get results matching metadata filters
+	metadataResults := m.SearchFiles(filters)
+	
+	// If no content search, return metadata results
+	if filters.ContentSearch == "" {
+		return metadataResults
+	}
+	
+	// Filter results by content search
+	contentResults := make([]FileMetadata, 0)
+	searchLower := strings.ToLower(filters.ContentSearch)
+	
+	for _, meta := range metadataResults {
+		// Only search content in text files
+		if !isTextMimeType(meta.MimeType) {
+			continue
+		}
+		
+		// Build full path
+		fullPath := filepath.Join(m.root, meta.StoredPath)
+		
+		// Search file content
+		if searchFileContent(fullPath, searchLower) {
+			contentResults = append(contentResults, meta)
+		}
+	}
+	
+	return contentResults
+}
+
+// searchFileContent searches for a string in a file (case-insensitive).
+// Returns true if the search string is found.
+func searchFileContent(filePath, searchLower string) bool {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	
+	// Limit file size for content search (max 10 MB)
+	const maxSize = 10 * 1024 * 1024
+	fileInfo, err := file.Stat()
+	if err != nil || fileInfo.Size() > maxSize {
+		return false
+	}
+	
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 1MB max line size
+	
+	for scanner.Scan() {
+		line := strings.ToLower(scanner.Text())
+		if strings.Contains(line, searchLower) {
+			return true
+		}
+	}
+	
+	return false
 }

@@ -12,13 +12,14 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
+	"github.com/Muneer320/RhinoBox/internal/database"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,7 +32,12 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
+	
+	// Database connections (optional - may be nil if not configured)
+	postgres    *database.PostgresDB
+	mongodb     *database.MongoDB
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -41,21 +47,77 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize job queue
+	queueCfg := queue.DefaultConfig()
+	queueCfg.PersistPath = filepath.Join(cfg.DataDir, "jobs")
+	processor := queue.NewMediaProcessor(store)
+	jobQueue, err := queue.New(queueCfg, processor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job queue: %w", err)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
+		jobQueue:    jobQueue,
 	}
+	
+	// Initialize database connections if configured
+	ctx := context.Background()
+	if cfg.PostgresURL != "" {
+		logger.Info("connecting to PostgreSQL", "url", maskPassword(cfg.PostgresURL))
+		pg, err := database.NewPostgresDB(ctx, cfg.PostgresURL)
+		if err != nil {
+			return nil, fmt.Errorf("postgres connection failed: %w", err)
+		}
+		s.postgres = pg
+		logger.Info("PostgreSQL connected", "max_conns", pg.Stats().MaxConns())
+	} else {
+		logger.Info("PostgreSQL not configured (using NDJSON only)")
+	}
+	
+	if cfg.MongoURL != "" {
+		logger.Info("connecting to MongoDB", "url", maskPassword(cfg.MongoURL))
+		mg, err := database.NewMongoDB(ctx, cfg.MongoURL)
+		if err != nil {
+			return nil, fmt.Errorf("mongodb connection failed: %w", err)
+		}
+		s.mongodb = mg
+		logger.Info("MongoDB connected")
+	} else {
+		logger.Info("MongoDB not configured (using NDJSON only)")
+	}
+	
 	s.routes()
 	return s, nil
 }
 
+// maskPassword hides password in connection strings for logging
+func maskPassword(connStr string) string {
+	if strings.Contains(connStr, "@") {
+		parts := strings.Split(connStr, "@")
+		if len(parts) == 2 {
+			// Find the password portion (after :// and before @)
+			beforeAt := parts[0]
+			if strings.Contains(beforeAt, "://") {
+				schemeParts := strings.Split(beforeAt, "://")
+				if len(schemeParts) == 2 {
+					userPass := schemeParts[1]
+					if strings.Contains(userPass, ":") {
+						userParts := strings.Split(userPass, ":")
+						return schemeParts[0] + "://" + userParts[0] + ":****@" + parts[1]
+					}
+				}
+			}
+		}
+	}
+	return connStr
+}
+
 func (s *Server) routes() {
 	r := s.router
-
-	// CORS middleware for frontend access
-	r.Use(s.corsMiddleware)
 
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
@@ -69,22 +131,43 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Async endpoints
+	r.Post("/ingest/async", s.handleAsyncIngest)
+	r.Post("/ingest/media/async", s.handleMediaIngestAsync)
+	r.Post("/ingest/json/async", s.handleJSONIngestAsync)
+	
+	// Job management
+	r.Get("/jobs", s.handleListJobs)
+	r.Get("/jobs/{job_id}", s.handleJobStatus)
+	r.Get("/jobs/{job_id}/result", s.handleJobResult)
+	r.Delete("/jobs/{job_id}", s.handleCancelJob)
+	r.Get("/jobs/stats", s.handleJobStats)
+	
+	// File operations
 	r.Patch("/files/rename", s.handleFileRename)
+	r.Patch("/files/{file_id}/move", s.handleFileMove)
+	r.Patch("/files/batch/move", s.handleBatchFileMove)
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Post("/files/{file_id}/copy", s.handleFileCopy)
+	r.Post("/files/copy/batch", s.handleBatchFileCopy)
 	r.Get("/files/search", s.handleFileSearch)
+	r.Get("/files", s.handleFileList)
+	r.Get("/files/browse", s.handleBrowseDirectory)
+	r.Get("/files/categories", s.handleGetCategories)
+	r.Get("/files/stats", s.handleGetStorageStats)
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
-	r.Get("/files/type/{type}", s.handleGetFilesByType)
-
+	
 	// Routing rules endpoints
 	r.Post("/routing-rules/suggest", s.handleSuggestRoutingRule)
 	r.Get("/routing-rules", s.handleGetRoutingRules)
 	r.Put("/routing-rules", s.handleUpdateRoutingRule)
 	r.Delete("/routing-rules", s.handleDeleteRoutingRule)
-
+	
 	// Duplicate management endpoints
 	r.Post("/files/duplicates/scan", s.handleDuplicateScan)
 	r.Get("/files/duplicates", s.handleGetDuplicates)
@@ -98,36 +181,6 @@ func (s *Server) routes() {
 	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
 	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
 	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
-
-	// Collections endpoints
-	r.Get("/collections", s.handleGetCollections)
-	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
-}
-
-// corsMiddleware handles CORS headers for frontend access
-func (s *Server) corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-
-		// Allow requests from localhost (development) - allow all for simplicity
-		if origin == "" {
-			origin = "*"
-		}
-
-		// Set CORS headers - must be set before any response is written
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
-
-		// Handle preflight OPTIONS requests
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -153,6 +206,59 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// GetStorage exposes the storage manager for testing.
+func (s *Server) GetStorage() *storage.Manager {
+	return s.storage
+}
+
+// Stop gracefully stops the server and job queue
+func (s *Server) Stop() {
+	if s.jobQueue != nil {
+		s.logger.Info("stopping job queue...")
+		s.jobQueue.Stop()
+		s.logger.Info("job queue stopped")
+	}
+	
+	// Close database connections
+	if s.postgres != nil {
+		s.logger.Info("closing PostgreSQL connection...")
+		s.postgres.Close()
+		s.logger.Info("PostgreSQL closed")
+	}
+	
+	if s.mongodb != nil {
+		s.logger.Info("closing MongoDB connection...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.mongodb.Close(ctx); err != nil {
+			s.logger.Error("MongoDB close error", "error", err)
+		} else {
+			s.logger.Info("MongoDB closed")
+		}
+	}
+}
+
+// createTableAndInsert creates a PostgreSQL table from the decision schema and inserts documents
+func (s *Server) createTableAndInsert(ctx context.Context, table string, columns map[string]jsonschema.ColumnDef, docs []map[string]any) error {
+	// Convert ColumnDef to SQL types map
+	schema := make(map[string]string)
+	for colName, colDef := range columns {
+		schema[colName] = colDef.Type
+	}
+	
+	// Create table if not exists
+	if err := s.postgres.CreateTableFromSchema(ctx, table, schema); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
+	
+	// Batch insert documents
+	if err := s.postgres.BatchInsertJSON(ctx, table, docs); err != nil {
+		return fmt.Errorf("batch insert: %w", err)
+	}
+	
+	return nil
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -375,6 +481,27 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	analysis = jsonschema.IncorporateCommentHints(analysis, req.Comment)
 	decision := jsonschema.DecideStorage(req.Namespace, docs, summary, analysis)
 
+	// Write to actual database if configured
+	ctx := r.Context()
+	if decision.Engine == "sql" && s.postgres != nil {
+		// Create table from schema and insert documents
+		if err := s.createTableAndInsert(ctx, decision.Table, decision.Columns, docs); err != nil {
+			s.logger.Error("postgres insert failed", "error", err, "table", decision.Table)
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("postgres insert failed: %v", err))
+			return
+		}
+		s.logger.Info("postgres insert successful", "table", decision.Table, "documents", len(docs))
+	} else if decision.Engine == "nosql" && s.mongodb != nil {
+		// Insert documents into MongoDB collection
+		if err := s.mongodb.BulkInsert(ctx, "rhinobox", req.Namespace, docs); err != nil {
+			s.logger.Error("mongodb insert failed", "error", err, "collection", req.Namespace)
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("mongodb insert failed: %v", err))
+			return
+		}
+		s.logger.Info("mongodb insert successful", "collection", req.Namespace, "documents", len(docs))
+	}
+
+	// Also save to NDJSON as backup/audit trail
 	batchRel := s.storage.NextJSONBatchPath(decision.Engine, req.Namespace)
 	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
 		httpError(w, http.StatusInternalServerError, fmt.Sprintf("store batch: %v", err))
@@ -618,20 +745,114 @@ writeJSON(w, http.StatusOK, map[string]any{
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
-	// Get search query from URL parameter
-	query := r.URL.Query().Get("name")
-	if query == "" {
-		httpError(w, http.StatusBadRequest, "name query parameter is required")
+	// Parse query parameters
+	filters := storage.SearchFilters{}
+
+	// Name filter (optional, partial match)
+	if name := r.URL.Query().Get("name"); name != "" {
+		filters.Name = name
+	}
+
+	// Extension filter (optional, exact match)
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		filters.Extension = ext
+	}
+
+	// Type filter (optional, matches MIME type or category)
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		filters.Type = typ
+	}
+
+	// Category filter (optional, partial match)
+	if category := r.URL.Query().Get("category"); category != "" {
+		filters.Category = category
+	}
+
+	// MIME type filter (optional, exact match)
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		filters.MimeType = mimeType
+	}
+
+	// Content search filter (optional, searches inside text files)
+	if content := r.URL.Query().Get("content"); content != "" {
+		filters.ContentSearch = content
+	}
+
+	// Date range filters (optional)
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			filters.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			// Support date-only format (start of day)
+			filters.DateFrom = dateFrom
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_from format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			// RFC3339 format: use exact timestamp
+			filters.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			// YYYY-MM-DD format: extend to end of day (23:59:59.999...)
+			filters.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_to format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	// At least one filter must be provided
+	if filters.Name == "" && filters.Extension == "" && filters.Type == "" &&
+		filters.Category == "" && filters.MimeType == "" && filters.ContentSearch == "" &&
+		filters.DateFrom.IsZero() && filters.DateTo.IsZero() {
+		httpError(w, http.StatusBadRequest, "at least one filter parameter is required (name, extension, type, category, mime_type, content, date_from, date_to)")
 		return
 	}
 
-	results := s.storage.FindByOriginalName(query)
+	// Use content search if content filter is provided
+	var results []storage.FileMetadata
+	if filters.ContentSearch != "" {
+		results = s.storage.SearchFilesWithContent(filters)
+	} else {
+		results = s.storage.SearchFiles(filters)
+	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"query":   query,
+	// Build response with filter summary
+	response := map[string]any{
+		"filters": map[string]any{},
 		"results": results,
 		"count":   len(results),
-	})
+	}
+
+	if filters.Name != "" {
+		response["filters"].(map[string]any)["name"] = filters.Name
+	}
+	if filters.Extension != "" {
+		response["filters"].(map[string]any)["extension"] = filters.Extension
+	}
+	if filters.Type != "" {
+		response["filters"].(map[string]any)["type"] = filters.Type
+	}
+	if filters.Category != "" {
+		response["filters"].(map[string]any)["category"] = filters.Category
+	}
+	if filters.MimeType != "" {
+		response["filters"].(map[string]any)["mime_type"] = filters.MimeType
+	}
+	if filters.ContentSearch != "" {
+		response["filters"].(map[string]any)["content"] = filters.ContentSearch
+	}
+	if !filters.DateFrom.IsZero() {
+		response["filters"].(map[string]any)["date_from"] = filters.DateFrom.Format(time.RFC3339)
+	}
+	if !filters.DateTo.IsZero() {
+		response["filters"].(map[string]any)["date_to"] = filters.DateTo.Format(time.RFC3339)
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleFileDownload downloads a file by hash or path.
@@ -928,6 +1149,130 @@ func (s *Server) setFileHeaders(w http.ResponseWriter, r *http.Request, result *
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 }
 
+// handleFileList handles GET /files - list files with pagination, filtering, and sorting.
+func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
+	options := storage.ListOptions{}
+
+	// Parse pagination
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if page, err := parseInt(pageStr, 1); err == nil {
+			options.Page = page
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := parseInt(limitStr, 50); err == nil {
+			options.Limit = limit
+		}
+	}
+
+	// Parse sorting
+	if sortBy := r.URL.Query().Get("sort"); sortBy != "" {
+		options.SortBy = sortBy
+	}
+	if order := r.URL.Query().Get("order"); order != "" {
+		options.Order = order
+	}
+
+	// Parse filters
+	if category := r.URL.Query().Get("category"); category != "" {
+		options.Category = category
+	}
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		options.Type = typ
+	}
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		options.MimeType = mimeType
+	}
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		options.Extension = ext
+	}
+	if name := r.URL.Query().Get("name"); name != "" {
+		options.Name = name
+	}
+
+	// Parse date filters
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		}
+	}
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			options.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			options.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		}
+	}
+
+	result, err := s.storage.ListFiles(options)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list files: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBrowseDirectory handles GET /files/browse - browse directory structure.
+func (s *Server) handleBrowseDirectory(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "storage"
+	}
+
+	result, err := s.storage.BrowseDirectory(path)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, "directory not found")
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("failed to browse directory: %v", err))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleGetCategories handles GET /files/categories - list all categories with counts.
+func (s *Server) handleGetCategories(w http.ResponseWriter, r *http.Request) {
+	categories, err := s.storage.GetCategories()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get categories: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"categories": categories,
+		"count":      len(categories),
+	})
+}
+
+// handleGetStorageStats handles GET /files/stats - get storage statistics.
+func (s *Server) handleGetStorageStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.storage.GetStorageStats()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get storage stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// parseInt parses an integer string with a default value.
+func parseInt(s string, defaultValue int) (int, error) {
+	if s == "" {
+		return defaultValue, nil
+	}
+	var val int
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		return defaultValue, err
+	}
+	return val, nil
+}
+
 // logDownload logs a download event for analytics.
 func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResult, rangeStart, rangeEnd *int64) error {
 	ip := r.RemoteAddr
@@ -951,113 +1296,240 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	return s.storage.LogDownload(log)
 }
 
-// handleGetFilesByType retrieves files filtered by collection type with pagination.
-func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
-	collectionType := chi.URLParam(r, "type")
-	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "type parameter is required")
+// handleFileMove handles PATCH /files/{file_id}/move - move a single file to a new category.
+func (s *Server) handleFileMove(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
-	// Parse pagination parameters
-	page := 1
-	limit := 50
-	category := ""
-
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
-			page = parsed
-		}
+	var req storage.MoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
 	}
 
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			limit = parsed
-		}
+	// Set the hash from URL parameter
+	req.Hash = fileID
+
+	// Validate required fields
+	if req.NewCategory == "" {
+		httpError(w, http.StatusBadRequest, "new_category is required")
+		return
 	}
 
-	if cat := r.URL.Query().Get("category"); cat != "" {
-		category = cat
-	}
-
-	// Call storage layer
-	req := storage.GetFilesByTypeRequest{
-		Type:     collectionType,
-		Page:     page,
-		Limit:    limit,
-		Category: category,
-	}
-
-	result, err := s.storage.GetFilesByType(req)
+	result, err := s.storage.MoveFile(req)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve files: %v", err))
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrInvalidCategory):
+			httpError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, storage.ErrCategoryConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrMoveFailed):
+			httpError(w, http.StatusInternalServerError, err.Error())
+		default:
+			// Check if error message contains validation keywords
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "hash is required") ||
+				strings.Contains(errMsg, "new_category is required") ||
+				strings.Contains(errMsg, "invalid category") ||
+				strings.Contains(errMsg, "path traversal") ||
+				strings.Contains(errMsg, "control characters") {
+				httpError(w, http.StatusBadRequest, err.Error())
+			} else {
+				httpError(w, http.StatusInternalServerError, fmt.Sprintf("move failed: %v", err))
+			}
+		}
 		return
 	}
 
-	// Transform FileMetadata to API response format
-	files := make([]map[string]any, 0, len(result.Files))
-	for _, file := range result.Files {
-		// Extract dimensions from metadata if available
-		dimensions := ""
-		if dims, ok := file.Metadata["dimensions"]; ok {
-			dimensions = dims
-		}
+	s.logger.Info("file moved",
+		slog.String("hash", req.Hash),
+		slog.String("old_category", result.OldCategory),
+		slog.String("new_category", result.NewCategory),
+		slog.String("reason", req.Reason),
+	)
 
-		fileResponse := map[string]any{
-			"id":         file.Hash,
-			"name":       file.OriginalName,
-			"path":       file.StoredPath,
-			"size":       file.Size,
-			"type":       file.MimeType,
-			"date":       file.UploadedAt.Format(time.RFC3339),
-			"dimensions": dimensions,
-			"category":   file.Category,
-			"hash":       file.Hash,
-		}
-
-		// Add download URL
-		fileResponse["url"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
-		fileResponse["downloadUrl"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
-
-		files = append(files, fileResponse)
-	}
-
-	response := map[string]any{
-		"files":       files,
-		"total":       result.Total,
-		"page":        result.Page,
-		"limit":       result.Limit,
-		"total_pages": result.TotalPages,
-		"type":        collectionType,
-	}
-
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, result)
 }
 
-// handleGetCollections returns all available collection types with metadata.
-func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
-	collections := s.storage.GetCollections()
+// handleFileCopy handles POST /files/{file_id}/copy - copy a single file.
+func (s *Server) handleFileCopy(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req struct {
+		NewName     string            `json:"new_name,omitempty"`
+		NewCategory string            `json:"new_category,omitempty"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
+		HardLink    bool              `json:"hard_link,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	copyReq := storage.CopyRequest{
+		Hash:        fileID,
+		NewName:     req.NewName,
+		NewCategory: req.NewCategory,
+		Metadata:    req.Metadata,
+		HardLink:    req.HardLink,
+	}
+
+	result, err := s.storage.CopyFile(copyReq)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrCopyConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrInvalidFilename):
+			httpError(w, http.StatusBadRequest, err.Error())
+		default:
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("copy failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("file copied",
+		slog.String("original_hash", result.OriginalHash),
+		slog.String("new_hash", result.NewHash),
+		slog.String("original_name", result.OriginalMeta.OriginalName),
+		slog.String("new_name", result.NewMeta.OriginalName),
+		slog.Bool("hard_link", result.HardLink),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileMove handles PATCH /files/batch/move - move multiple files to new categories.
+func (s *Server) handleBatchFileMove(w http.ResponseWriter, r *http.Request) {
+	var req storage.BatchMoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Files) == 0 {
+		httpError(w, http.StatusBadRequest, "no files provided")
+		return
+	}
+
+	if len(req.Files) > 100 {
+		httpError(w, http.StatusBadRequest, "too many files (max 100)")
+		return
+	}
+
+	result, err := s.storage.BatchMoveFile(req)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "no files provided") ||
+			strings.Contains(errMsg, "batch move limited") {
+			httpError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("batch move failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("batch file move",
+		slog.Int("total", result.Total),
+		slog.Int("success", result.SuccessCount),
+		slog.Int("failed", result.FailureCount),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileCopy handles POST /files/copy/batch - copy multiple files.
+func (s *Server) handleBatchFileCopy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Copies []storage.CopyRequest `json:"copies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Copies) == 0 {
+		httpError(w, http.StatusBadRequest, "no copies provided")
+		return
+	}
+
+	if len(req.Copies) > 100 {
+		httpError(w, http.StatusBadRequest, "too many copies (max 100)")
+		return
+	}
+
+	results := make([]map[string]any, len(req.Copies))
+	successCount := 0
+	failureCount := 0
+
+	for i, copyReq := range req.Copies {
+		result, err := s.storage.CopyFile(copyReq)
+		if err != nil {
+			results[i] = map[string]any{
+				"hash":    copyReq.Hash,
+				"success": false,
+				"error":   err.Error(),
+			}
+			failureCount++
+		} else {
+			results[i] = map[string]any{
+				"original_hash": result.OriginalHash,
+				"new_hash":      result.NewHash,
+				"original_meta": result.OriginalMeta,
+				"new_meta":      result.NewMeta,
+				"hard_link":     result.HardLink,
+				"success":       true,
+			}
+			successCount++
+		}
+	}
+
+	s.logger.Info("batch file copy",
+		slog.Int("total", len(req.Copies)),
+		slog.Int("success", successCount),
+		slog.Int("failed", failureCount),
+	)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"collections": collections,
-		"count":       len(collections),
+		"results":       results,
+		"total":         len(req.Copies),
+		"success_count": successCount,
+		"failure_count": failureCount,
 	})
 }
 
-// handleGetCollectionStats returns statistics for a specific collection type.
-func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
-	collectionType := chi.URLParam(r, "type")
-	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "collection type is required")
-		return
-	}
+// Helper structs
 
-	stats, err := s.storage.GetCollectionStats(collectionType)
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
-		return
-	}
+type jsonIngestRequest struct {
+Document  map[string]any   `json:"document"`
+Documents []map[string]any `json:"documents"`
+Namespace string           `json:"namespace"`
+Comment   string           `json:"comment"`
+Metadata  map[string]any   `json:"metadata"`
+}
 
-	writeJSON(w, http.StatusOK, stats)
+func httpError(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, map[string]any{"error": msg})
+}
+
+func writeJSON(w http.ResponseWriter, code int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(payload)
 }
 
 // handleSuggestRoutingRule allows users to suggest routing for unrecognized file formats.
@@ -1218,52 +1690,6 @@ func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request)
 		"mime_type": req.MimeType,
 		"extension": req.Extension,
 	})
-}
-
-// sanitizePathSegment removes dangerous characters from path segments.
-func sanitizePathSegment(segment string) string {
-	// Remove leading/trailing whitespace
-	segment = strings.TrimSpace(segment)
-	if segment == "" {
-		return ""
-	}
-
-	// Remove path traversal attempts
-	segment = strings.ReplaceAll(segment, "..", "")
-	segment = strings.ReplaceAll(segment, "/", "")
-	segment = strings.ReplaceAll(segment, "\\", "")
-
-	// Remove control characters and other dangerous chars
-	var result strings.Builder
-	for _, r := range segment {
-		if r > 31 && r != 127 && r != '<' && r != '>' && r != '|' && r != ':' && r != '"' && r != '?' && r != '*' {
-			result.WriteRune(r)
-		}
-	}
-
-	return result.String()
-}
-
-// Helper structs
-
-type jsonIngestRequest struct {
-Document  map[string]any   `json:"document"`
-Documents []map[string]any `json:"documents"`
-Namespace string           `json:"namespace"`
-Comment   string           `json:"comment"`
-Metadata  map[string]any   `json:"metadata"`
-}
-
-func httpError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]any{"error": msg})
-}
-
-func writeJSON(w http.ResponseWriter, code int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
 }
 
 func init() {

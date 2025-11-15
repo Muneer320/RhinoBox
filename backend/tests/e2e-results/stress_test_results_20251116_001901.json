@@ -1,0 +1,158 @@
+{
+  "StartTime": "2025-11-16T00:18:56.3747638+05:30",
+  "Phases": [
+    {
+      "Status": "PASSED",
+      "ServerStatus": "ok",
+      "Duration": 0.0036788,
+      "Phase": "Health Check"
+    },
+    {
+      "TotalFiles": 55.0,
+      "SuccessRate": 100.0,
+      "Duration": 4.5063944,
+      "Batches": [
+        {
+          "ThroughputMBps": 26.49,
+          "Status": "SUCCESS",
+          "Files": 5,
+          "Duration": 0.023759,
+          "SizeMB": 0.63,
+          "Batch": 1
+        },
+        {
+          "ThroughputMBps": 212.4,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.8985092,
+          "SizeMB": 190.85,
+          "Batch": 2
+        },
+        {
+          "ThroughputMBps": 217.88,
+          "Status": "SUCCESS",
+          "Files": 5,
+          "Duration": 0.3562974,
+          "SizeMB": 77.63,
+          "Batch": 3
+        },
+        {
+          "ThroughputMBps": 341.59,
+          "Status": "SUCCESS",
+          "Files": 4,
+          "Duration": 0.2782403,
+          "SizeMB": 95.04,
+          "Batch": 4
+        },
+        {
+          "ThroughputMBps": 287.11,
+          "Status": "SUCCESS",
+          "Files": 3,
+          "Duration": 0.1991244,
+          "SizeMB": 57.17,
+          "Batch": 5
+        },
+        {
+          "ThroughputMBps": 290.27,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.3077885,
+          "SizeMB": 89.34,
+          "Batch": 6
+        },
+        {
+          "ThroughputMBps": 265.57,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.112996,
+          "SizeMB": 30.01,
+          "Batch": 7
+        },
+        {
+          "ThroughputMBps": 218.04,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.6888283,
+          "SizeMB": 150.19,
+          "Batch": 8
+        },
+        {
+          "ThroughputMBps": 270.64,
+          "Status": "SUCCESS",
+          "Files": 7,
+          "Duration": 0.3360509,
+          "SizeMB": 90.95,
+          "Batch": 9
+        },
+        {
+          "ThroughputMBps": 229.56,
+          "Status": "SUCCESS",
+          "Files": 2,
+          "Duration": 0.3486591,
+          "SizeMB": 80.04,
+          "Batch": 10
+        },
+        {
+          "ThroughputMBps": 175.95,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.233729,
+          "SizeMB": 41.13,
+          "Batch": 11
+        },
+        {
+          "ThroughputMBps": 241.83,
+          "Status": "SUCCESS",
+          "Files": 1,
+          "Duration": 0.4537479,
+          "SizeMB": 109.73,
+          "Batch": 12
+        },
+        {
+          "ThroughputMBps": 191.28,
+          "Status": "SUCCESS",
+          "Files": 23,
+          "Duration": 0.2460062,
+          "SizeMB": 47.06,
+          "Batch": 13
+        }
+      ],
+      "Phase": "Batch Media Upload"
+    },
+    {
+      "SuccessRate": 100.0,
+      "Duration": 0.0186737,
+      "Tests": [
+        {
+          "Status": "SUCCESS",
+          "Results": 1,
+          "Duration": 3.0478,
+          "Test": "Search by name"
+        },
+        {
+          "Status": "SUCCESS",
+          "Results": 9,
+          "Duration": 2.8621,
+          "Test": "Search by extension"
+        },
+        {
+          "Status": "SUCCESS",
+          "Results": 14,
+          "Duration": 3.2429,
+          "Test": "Search by type"
+        }
+      ],
+      "Phase": "Search Tests"
+    }
+  ],
+  "TotalDuration": 4.6421843,
+  "EndTime": "2025-11-16T00:19:01.0169481+05:30",
+  "ServerUrl": "http://localhost:8090",
+  "TestDir": "C:\\Users\\munee\\Downloads",
+  "Summary": {
+    "SearchSuccessRate": 100.0,
+    "UploadSuccessRate": 100.0,
+    "TotalFiles": 55.0,
+    "TotalDuration": 4.6421843
+  }
+}
