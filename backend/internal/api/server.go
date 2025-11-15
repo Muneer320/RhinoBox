@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -40,11 +42,21 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize job queue
+	queueCfg := queue.DefaultConfig()
+	queueCfg.PersistPath = filepath.Join(cfg.DataDir, "jobs")
+	processor := queue.NewMediaProcessor(store)
+	jobQueue, err := queue.New(queueCfg, processor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job queue: %w", err)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
 		router:      chi.NewRouter(),
 		storage:     store,
+		jobQueue:    jobQueue,
 	}
 	s.routes()
 	return s, nil
@@ -65,11 +77,31 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Async endpoints
+	r.Post("/ingest/async", s.handleAsyncIngest)
+	r.Post("/ingest/media/async", s.handleMediaIngestAsync)
+	r.Post("/ingest/json/async", s.handleJSONIngestAsync)
+	
+	// Job management
+	r.Get("/jobs", s.handleListJobs)
+	r.Get("/jobs/{job_id}", s.handleJobStatus)
+	r.Get("/jobs/{job_id}/result", s.handleJobResult)
+	r.Delete("/jobs/{job_id}", s.handleCancelJob)
+	r.Get("/jobs/stats", s.handleJobStats)
+	
+	// File operations
 	r.Patch("/files/rename", s.handleFileRename)
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Post("/files/{file_id}/copy", s.handleFileCopy)
+	r.Post("/files/copy/batch", s.handleBatchFileCopy)
 	r.Get("/files/search", s.handleFileSearch)
+	r.Get("/files", s.handleFileList)
+	r.Get("/files/browse", s.handleBrowseDirectory)
+	r.Get("/files/categories", s.handleGetCategories)
+	r.Get("/files/stats", s.handleGetStorageStats)
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
@@ -105,6 +137,15 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// Stop gracefully stops the server and job queue
+func (s *Server) Stop() {
+	if s.jobQueue != nil {
+		s.logger.Info("stopping job queue...")
+		s.jobQueue.Stop()
+		s.logger.Info("job queue stopped")
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -570,20 +611,100 @@ writeJSON(w, http.StatusOK, map[string]any{
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
-	// Get search query from URL parameter
-	query := r.URL.Query().Get("name")
-	if query == "" {
-		httpError(w, http.StatusBadRequest, "name query parameter is required")
+	// Parse query parameters
+	filters := storage.SearchFilters{}
+
+	// Name filter (optional, partial match)
+	if name := r.URL.Query().Get("name"); name != "" {
+		filters.Name = name
+	}
+
+	// Extension filter (optional, exact match)
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		filters.Extension = ext
+	}
+
+	// Type filter (optional, matches MIME type or category)
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		filters.Type = typ
+	}
+
+	// Category filter (optional, partial match)
+	if category := r.URL.Query().Get("category"); category != "" {
+		filters.Category = category
+	}
+
+	// MIME type filter (optional, exact match)
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		filters.MimeType = mimeType
+	}
+
+	// Date range filters (optional)
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			filters.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			// Support date-only format (start of day)
+			filters.DateFrom = dateFrom
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_from format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			// RFC3339 format: use exact timestamp
+			filters.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			// YYYY-MM-DD format: extend to end of day (23:59:59.999...)
+			filters.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_to format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	// At least one filter must be provided
+	if filters.Name == "" && filters.Extension == "" && filters.Type == "" &&
+		filters.Category == "" && filters.MimeType == "" &&
+		filters.DateFrom.IsZero() && filters.DateTo.IsZero() {
+		httpError(w, http.StatusBadRequest, "at least one filter parameter is required (name, extension, type, category, mime_type, date_from, date_to)")
 		return
 	}
 
-	results := s.storage.FindByOriginalName(query)
+	results := s.storage.SearchFiles(filters)
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"query":   query,
+	// Build response with filter summary
+	response := map[string]any{
+		"filters": map[string]any{},
 		"results": results,
 		"count":   len(results),
-	})
+	}
+
+	if filters.Name != "" {
+		response["filters"].(map[string]any)["name"] = filters.Name
+	}
+	if filters.Extension != "" {
+		response["filters"].(map[string]any)["extension"] = filters.Extension
+	}
+	if filters.Type != "" {
+		response["filters"].(map[string]any)["type"] = filters.Type
+	}
+	if filters.Category != "" {
+		response["filters"].(map[string]any)["category"] = filters.Category
+	}
+	if filters.MimeType != "" {
+		response["filters"].(map[string]any)["mime_type"] = filters.MimeType
+	}
+	if !filters.DateFrom.IsZero() {
+		response["filters"].(map[string]any)["date_from"] = filters.DateFrom.Format(time.RFC3339)
+	}
+	if !filters.DateTo.IsZero() {
+		response["filters"].(map[string]any)["date_to"] = filters.DateTo.Format(time.RFC3339)
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleFileDownload downloads a file by hash or path.
@@ -880,6 +1001,130 @@ func (s *Server) setFileHeaders(w http.ResponseWriter, r *http.Request, result *
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 }
 
+// handleFileList handles GET /files - list files with pagination, filtering, and sorting.
+func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
+	options := storage.ListOptions{}
+
+	// Parse pagination
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if page, err := parseInt(pageStr, 1); err == nil {
+			options.Page = page
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := parseInt(limitStr, 50); err == nil {
+			options.Limit = limit
+		}
+	}
+
+	// Parse sorting
+	if sortBy := r.URL.Query().Get("sort"); sortBy != "" {
+		options.SortBy = sortBy
+	}
+	if order := r.URL.Query().Get("order"); order != "" {
+		options.Order = order
+	}
+
+	// Parse filters
+	if category := r.URL.Query().Get("category"); category != "" {
+		options.Category = category
+	}
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		options.Type = typ
+	}
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		options.MimeType = mimeType
+	}
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		options.Extension = ext
+	}
+	if name := r.URL.Query().Get("name"); name != "" {
+		options.Name = name
+	}
+
+	// Parse date filters
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			options.DateFrom = dateFrom
+		}
+	}
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			options.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			options.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		}
+	}
+
+	result, err := s.storage.ListFiles(options)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list files: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBrowseDirectory handles GET /files/browse - browse directory structure.
+func (s *Server) handleBrowseDirectory(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "storage"
+	}
+
+	result, err := s.storage.BrowseDirectory(path)
+	if err != nil {
+		if errors.Is(err, storage.ErrFileNotFound) {
+			httpError(w, http.StatusNotFound, "directory not found")
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("failed to browse directory: %v", err))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleGetCategories handles GET /files/categories - list all categories with counts.
+func (s *Server) handleGetCategories(w http.ResponseWriter, r *http.Request) {
+	categories, err := s.storage.GetCategories()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get categories: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"categories": categories,
+		"count":      len(categories),
+	})
+}
+
+// handleGetStorageStats handles GET /files/stats - get storage statistics.
+func (s *Server) handleGetStorageStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.storage.GetStorageStats()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get storage stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// parseInt parses an integer string with a default value.
+func parseInt(s string, defaultValue int) (int, error) {
+	if s == "" {
+		return defaultValue, nil
+	}
+	var val int
+	_, err := fmt.Sscanf(s, "%d", &val)
+	if err != nil {
+		return defaultValue, err
+	}
+	return val, nil
+}
+
 // logDownload logs a download event for analytics.
 func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResult, rangeStart, rangeEnd *int64) error {
 	ip := r.RemoteAddr
@@ -901,6 +1146,121 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleFileCopy handles POST /files/{file_id}/copy - copy a single file.
+func (s *Server) handleFileCopy(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req struct {
+		NewName     string            `json:"new_name,omitempty"`
+		NewCategory string            `json:"new_category,omitempty"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
+		HardLink    bool              `json:"hard_link,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	copyReq := storage.CopyRequest{
+		Hash:        fileID,
+		NewName:     req.NewName,
+		NewCategory: req.NewCategory,
+		Metadata:    req.Metadata,
+		HardLink:    req.HardLink,
+	}
+
+	result, err := s.storage.CopyFile(copyReq)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrCopyConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrInvalidFilename):
+			httpError(w, http.StatusBadRequest, err.Error())
+		default:
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("copy failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("file copied",
+		slog.String("original_hash", result.OriginalHash),
+		slog.String("new_hash", result.NewHash),
+		slog.String("original_name", result.OriginalMeta.OriginalName),
+		slog.String("new_name", result.NewMeta.OriginalName),
+		slog.Bool("hard_link", result.HardLink),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileCopy handles POST /files/copy/batch - copy multiple files.
+func (s *Server) handleBatchFileCopy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Copies []storage.CopyRequest `json:"copies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Copies) == 0 {
+		httpError(w, http.StatusBadRequest, "no copies provided")
+		return
+	}
+
+	if len(req.Copies) > 100 {
+		httpError(w, http.StatusBadRequest, "too many copies (max 100)")
+		return
+	}
+
+	results := make([]map[string]any, len(req.Copies))
+	successCount := 0
+	failureCount := 0
+
+	for i, copyReq := range req.Copies {
+		result, err := s.storage.CopyFile(copyReq)
+		if err != nil {
+			results[i] = map[string]any{
+				"hash":    copyReq.Hash,
+				"success": false,
+				"error":   err.Error(),
+			}
+			failureCount++
+		} else {
+			results[i] = map[string]any{
+				"original_hash": result.OriginalHash,
+				"new_hash":      result.NewHash,
+				"original_meta": result.OriginalMeta,
+				"new_meta":      result.NewMeta,
+				"hard_link":     result.HardLink,
+				"success":       true,
+			}
+			successCount++
+		}
+	}
+
+	s.logger.Info("batch file copy",
+		slog.Int("total", len(req.Copies)),
+		slog.Int("success", successCount),
+		slog.Int("failed", failureCount),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results":       results,
+		"total":         len(req.Copies),
+		"success_count": successCount,
+		"failure_count": failureCount,
+	})
 }
 
 // Helper structs

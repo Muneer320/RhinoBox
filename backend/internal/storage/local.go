@@ -20,13 +20,14 @@ import (
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
 type Manager struct {
-	root         string
-	storageRoot  string
-	classifier   *Classifier
-	index        *MetadataIndex
-	versionIndex *VersionIndex
-	hashIndex    *cache.HashIndex
-	mu           sync.Mutex
+	root           string
+	storageRoot    string
+	classifier     *Classifier
+	index          *MetadataIndex
+	versionIndex   *VersionIndex
+	hashIndex      *cache.HashIndex
+	referenceIndex *ReferenceIndex
+	mu             sync.Mutex
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.
@@ -83,12 +84,13 @@ func NewManager(root string) (*Manager, error) {
 	hashIndex := cache.NewHashIndex(cacheInstance)
 
 	return &Manager{
-		root:         root,
-		storageRoot:  storageRoot,
-		classifier:   classifier,
-		index:        index,
-		versionIndex: versionIndex,
-		hashIndex:    hashIndex,
+		root:           root,
+		storageRoot:    storageRoot,
+		classifier:     classifier,
+		index:          index,
+		versionIndex:   versionIndex,
+		hashIndex:      hashIndex,
+		referenceIndex: nil, // Lazily initialized when needed
 	}, nil
 }
 
