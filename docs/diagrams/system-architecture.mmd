@@ -1,0 +1,99 @@
+```mermaid
+flowchart TB
+    subgraph Client["Client Applications"]
+        CLI[CLI Tools]
+        WEB[Web Interface]
+        API_CLIENT[API Clients]
+    end
+    
+    subgraph Gateway["API Gateway Layer"]
+        ROUTER[Chi Router]
+        MW[Middleware Stack]
+        AUTH[Auth Future]
+    end
+    
+    subgraph Intelligence["Intelligence Layer"]
+        MIME[MIME Detector]
+        JSON_ANALYZER[JSON Analyzer]
+        DECISION[Decision Engine]
+        DEDUP[Dedup Engine]
+    end
+    
+    subgraph Processing["Processing & Orchestration"]
+        SYNC[Sync Handler]
+        ASYNC[Async Queue]
+        WORKERS[Worker Pool x10]
+    end
+    
+    subgraph Storage["Storage Layer"]
+        FS[Filesystem<br/>Type-Based Org]
+        PG[(PostgreSQL<br/>100K+/sec)]
+        MG[(MongoDB<br/>200K+/sec)]
+        CACHE[(BadgerDB<br/>L3 Cache)]
+    end
+    
+    subgraph Caching["Multi-Level Cache"]
+        L1[L1: LRU<br/>231.5ns]
+        L2[L2: Bloom<br/>500ns]
+        L3[L3: BadgerDB<br/>15µs]
+    end
+    
+    CLI --> ROUTER
+    WEB --> ROUTER
+    API_CLIENT --> ROUTER
+    
+    ROUTER --> MW
+    MW --> AUTH
+    AUTH --> MIME
+    AUTH --> JSON_ANALYZER
+    
+    MIME --> DECISION
+    JSON_ANALYZER --> DECISION
+    DECISION --> DEDUP
+    
+    DEDUP --> SYNC
+    DEDUP --> ASYNC
+    
+    SYNC --> FS
+    SYNC --> PG
+    SYNC --> MG
+    
+    ASYNC --> WORKERS
+    WORKERS --> FS
+    WORKERS --> PG
+    WORKERS --> MG
+    
+    DEDUP -.-> L1
+    L1 -.-> L2
+    L2 -.-> L3
+    L3 -.-> CACHE
+    
+    style Client fill:#e1f5ff
+    style Gateway fill:#fff3cd
+    style Intelligence fill:#d4edda
+    style Processing fill:#f8d7da
+    style Storage fill:#d1ecf1
+    style Caching fill:#e2e3e5
+```
+
+# System Architecture Diagram
+
+This diagram shows the complete RhinoBox architecture with all major components and their interactions.
+
+## Layers
+
+1. **Client Applications**: Multiple client types (CLI, Web, API clients)
+2. **API Gateway**: Chi router with middleware stack for routing and processing
+3. **Intelligence Layer**: MIME detection, JSON analysis, decision engine, deduplication
+4. **Processing & Orchestration**: Synchronous and asynchronous processing with worker pools
+5. **Storage Layer**: Filesystem, PostgreSQL, MongoDB, and persistent cache
+6. **Multi-Level Cache**: LRU → Bloom Filter → BadgerDB for ultra-fast lookups
+
+## Key Performance Metrics
+
+- **PostgreSQL**: 100K+ inserts/sec using COPY protocol
+- **MongoDB**: 200K+ inserts/sec using BulkWrite
+- **Cache L1**: 231.5ns average latency
+- **Cache L2**: 500ns with <0.01% false positives
+- **Cache L3**: 15µs with persistence
+- **Worker Pool**: 10 concurrent workers, 1677 jobs/sec throughput
