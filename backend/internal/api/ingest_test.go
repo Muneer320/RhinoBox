@@ -373,9 +373,9 @@ func TestFileTypeOverrideAuto(t *testing.T) {
 	}
 
 	media := response.Results.Media[0]
-	// With auto, override should be empty or "auto"
-	if media.UserOverrideType != "" && media.UserOverrideType != "auto" {
-		t.Errorf("expected user_override_type to be empty or 'auto', got %s", media.UserOverrideType)
+	// With auto, override should be empty string (not "auto")
+	if media.UserOverrideType != "" {
+		t.Errorf("expected user_override_type to be empty string for auto mode, got %s", media.UserOverrideType)
 	}
 }
 

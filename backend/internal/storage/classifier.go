@@ -158,6 +158,7 @@ func (c *Classifier) ClassifyWithRules(mimeType, filename, hint string, rulesMgr
         "code":     "code",
     }
     if category, ok := validOverrides[hint]; ok {
+        // Return category path directly for overrides (no subdirectory needed)
         return []string{category}
     }
     

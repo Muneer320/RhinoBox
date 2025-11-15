@@ -238,9 +238,11 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detecte
 	if comment != "" {
 		metadata["comment"] = comment
 	}
+	// Always track detection for debugging/auditing
+	metadata["detected_mime_type"] = detectedMimeType
+	// Override only when explicitly set
 	if overrideType != "" && overrideType != "auto" {
 		metadata["user_override_type"] = overrideType
-		metadata["detected_mime_type"] = detectedMimeType
 	}
 
 	// Use override category hint if override is specified
@@ -256,11 +258,6 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detecte
 		Size:         header.Size,
 		Metadata:     metadata,
 		CategoryHint: categoryHint,
-	}
-
-	// If override is specified, use it as category hint to force storage path
-	if overrideType != "" && overrideType != "auto" {
-		req.CategoryHint = overrideType
 	}
 
 	result, err := s.fileService.StoreFile(req)
@@ -279,13 +276,19 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detecte
 		}
 	}
 
+	// Only include UserOverrideType if it's not "auto"
+	userOverrideType := ""
+	if overrideType != "" && overrideType != "auto" {
+		userOverrideType = overrideType
+	}
+
 	return MediaResult{
 		OriginalName:     header.Filename,
 		StoredPath:       result.StoredPath,
 		Category:         result.Category,
 		MimeType:         result.MimeType,
 		DetectedMimeType: detectedMimeType,
-		UserOverrideType: overrideType,
+		UserOverrideType: userOverrideType,
 		ActualCategory:   actualCategory,
 		Size:             result.Size,
 		Hash:             result.Hash,
@@ -319,12 +322,18 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace, det
 		return GenericResult{}, err
 	}
 
+	// Only include UserOverrideType if it's not "auto"
+	userOverrideType := ""
+	if overrideType != "" && overrideType != "auto" {
+		userOverrideType = overrideType
+	}
+
 	return GenericResult{
 		OriginalName:     header.Filename,
 		StoredPath:       relPath,
 		FileType:         detectedMimeType,
 		DetectedMimeType: detectedMimeType,
-		UserOverrideType: overrideType,
+		UserOverrideType: userOverrideType,
 		ActualCategory:   actualCategory,
 		Size:             header.Size,
 	}, nil

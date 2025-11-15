@@ -257,7 +257,14 @@ function initFileTypeSelector() {
       }
 
       e.preventDefault();
-      buttons[nextIndex].click();
+      // Update state without toast for keyboard navigation
+      buttons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-checked", "false");
+      });
+      buttons[nextIndex].classList.add("active");
+      buttons[nextIndex].setAttribute("aria-checked", "true");
+      selectedFileType = buttons[nextIndex].dataset.type;
       buttons[nextIndex].focus();
     });
   }
@@ -1649,34 +1656,35 @@ async function uploadFiles(files) {
     // Use unified endpoint with file type override
     const result = await ingestFiles(files, namespace, "", fileType);
 
-    // Show override info if used
+    // Show consolidated success message
+    let overrideCount = 0;
+    let totalCount = 0;
     if (result && result.results && result.results.media) {
-      result.results.media.forEach((media) => {
-        if (media.user_override_type) {
-          showToast(
-            `✅ ${media.original_name} uploaded as ${media.user_override_type} (detected: ${media.detected_mime_type || media.mime_type})`,
-            "success"
-          );
-        } else {
-          showToast(`✅ ${media.original_name} uploaded successfully`, "success");
-        }
-      });
+      totalCount += result.results.media.length;
+      overrideCount += result.results.media.filter(
+        (m) => m.user_override_type && m.user_override_type !== ""
+      ).length;
     } else if (result && result.results && result.results.files) {
-      result.results.files.forEach((file) => {
-        if (file.user_override_type) {
-          showToast(
-            `✅ ${file.original_name} uploaded as ${file.user_override_type}`,
-            "success"
-          );
-        } else {
-          showToast(`✅ ${file.original_name} uploaded successfully`, "success");
-        }
-      });
+      totalCount += result.results.files.length;
+      overrideCount += result.results.files.filter(
+        (f) => f.user_override_type && f.user_override_type !== ""
+      ).length;
+    }
+
+    if (totalCount > 0) {
+      const msg =
+        overrideCount > 0
+          ? `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded (${
+              overrideCount
+            } with override)`
+          : `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded successfully`;
+      showToast(msg, "success");
     } else {
       showToast(
         `Successfully uploaded ${files.length} file${
           files.length > 1 ? "s" : ""
-        }`
+        }`,
+        "success"
       );
     }
 
