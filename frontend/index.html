@@ -384,7 +384,7 @@
                     <table class="sql-table">
                       <thead>
                         <tr>
-                          <th>Table Name</th>
+                          <th>Contents</th>
                           <th>Rows</th>
                           <th>Size</th>
                           <th>Last Updated</th>
@@ -431,261 +431,11 @@
                   <h2>NoSQL Databases</h2>
                 </div>
                 <div class="nosql-container">
-                  <div class="nosql-controls">
-                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-in" aria-label="Zoom in">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                    </button>
-                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-out" aria-label="Zoom out">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
-                      </svg>
-                    </button>
-                    <button type="button" class="nosql-zoom-btn" id="nosql-reset" aria-label="Reset zoom">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.25 18.75h4.992v-.001M2.25 18.75l4.992-4.992M21.75 5.25l-4.992 4.992" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div class="nosql-diagram" id="nosql-diagram">
-                    <!-- Schema diagram will be rendered here -->
-                    <svg class="nosql-svg" id="nosql-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-                      <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                          <polygon points="0 0, 10 3, 0 6" />
-                        </marker>
-                      </defs>
-                      <!-- Background -->
-                      <rect width="1200" height="800" fill="transparent" />
-                      
-                      <!-- Collection: cart -->
-                      <g class="collection-box" transform="translate(50, 50)">
-                        <rect x="0" y="0" width="200" height="180" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">cart</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">date (date NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">total_value (double)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">item {} (object NN)</text>
-                        <text x="10" y="135" fill="var(--text-primary)" font-size="12">customer (objectId NN)</text>
-                        <text x="10" y="155" fill="var(--text-primary)" font-size="12">coupon_code (string)</text>
-                      </g>
-
-                      <!-- Collection: product -->
-                      <g class="collection-box" transform="translate(700, 50)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">product</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">sku (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">price {} (object)</text>
-                      </g>
-
-                      <!-- Collection: customer -->
-                      <g class="collection-box" transform="translate(50, 400)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">customer</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">surname (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">contact {} (object)</text>
-                      </g>
-
-                      <!-- Embedded: item {} -->
-                      <g class="embedded-box" transform="translate(350, 150)">
-                        <rect x="0" y="0" width="180" height="120" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">item {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">product_id (objectId)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">name (string)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">qty (int)</text>
-                        <text x="10" y="105" fill="var(--text-primary)" font-size="11">price (double)</text>
-                      </g>
-
-                      <!-- Embedded: price {} -->
-                      <g class="embedded-box" transform="translate(950, 150)">
-                        <rect x="0" y="0" width="180" height="100" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">price {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">list_price (double)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">valid_from (date)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">valid_to (date)</text>
-                      </g>
-
-                      <!-- Embedded: contact {} -->
-                      <g class="embedded-box" transform="translate(350, 500)">
-                        <rect x="0" y="0" width="180" height="80" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">contact {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">address {} (object)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">phones {} (object)</text>
-                      </g>
-
-                      <!-- Relationship lines -->
-                      <line x1="250" y1="140" x2="350" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="230" x2="350" y2="210" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="900" y1="140" x2="950" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="540" x2="350" y2="500" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="530" y1="200" x2="700" y2="120" stroke="var(--accent)" stroke-width="2" />
-                      <line x1="250" y1="400" x2="250" y2="400" stroke="var(--accent)" stroke-width="2" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <!-- Data Page -->
-          <div id="page-data" class="page-content" style="display: none">
-            <section class="data-panel">
-              <div class="data-header">
-                <h1 class="data-title">Data Management</h1>
-                <div class="data-tabs">
-                  <button type="button" class="data-tab is-active" data-tab="sql">SQL</button>
-                  <button type="button" class="data-tab" data-tab="nosql">NoSQL</button>
-                </div>
-              </div>
-
-              <!-- SQL Section -->
-              <div id="data-sql" class="data-section" style="display: flex;">
-                <div class="data-section-header">
-                  <h2>SQL Databases</h2>
-                  <p class="data-section-subtitle">Relational data in tabular format</p>
-                </div>
-                <div class="sql-container">
-                  <div class="sql-table-wrapper">
-                    <table class="sql-table">
-                      <thead>
-                        <tr>
-                          <th>Table Name</th>
-                          <th>Rows</th>
-                          <th>Size</th>
-                          <th>Last Updated</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody id="sql-tables-body">
-                        <tr>
-                          <td>users</td>
-                          <td>1,234</td>
-                          <td>2.5 MB</td>
-                          <td>2024-01-15</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>orders</td>
-                          <td>5,678</td>
-                          <td>8.2 MB</td>
-                          <td>2024-01-15</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>products</td>
-                          <td>890</td>
-                          <td>1.1 MB</td>
-                          <td>2024-01-14</td>
-                          <td>
-                            <button type="button" class="ghost-button small">View</button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <!-- NoSQL Section -->
-              <div id="data-nosql" class="data-section" style="display: none;">
-                <div class="data-section-header">
-                  <h2>NoSQL Databases</h2>
-                  <p class="data-section-subtitle">Document-based data with schema visualization</p>
-                </div>
-                <div class="nosql-container">
-                  <div class="nosql-diagram" id="nosql-diagram">
-                    <!-- Schema diagram will be rendered here -->
-                    <svg class="nosql-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-                      <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                          <polygon points="0 0, 10 3, 0 6" />
-                        </marker>
-                      </defs>
-                      <!-- Background -->
-                      <rect width="1200" height="800" fill="transparent" />
-                      
-                      <!-- Collection: cart -->
-                      <g class="collection-box" transform="translate(50, 50)">
-                        <rect x="0" y="0" width="200" height="180" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">cart</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">date (date NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">total_value (double)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">item {} (object NN)</text>
-                        <text x="10" y="135" fill="var(--text-primary)" font-size="12">customer (objectId NN)</text>
-                        <text x="10" y="155" fill="var(--text-primary)" font-size="12">coupon_code (string)</text>
-                      </g>
-
-                      <!-- Collection: product -->
-                      <g class="collection-box" transform="translate(700, 50)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">product</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">sku (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">price {} (object)</text>
-                      </g>
-
-                      <!-- Collection: customer -->
-                      <g class="collection-box" transform="translate(50, 400)">
-                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
-                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
-                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">customer</text>
-                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
-                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
-                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">surname (string NN)</text>
-                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">contact {} (object)</text>
-                      </g>
-
-                      <!-- Embedded: item {} -->
-                      <g class="embedded-box" transform="translate(350, 150)">
-                        <rect x="0" y="0" width="180" height="120" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">item {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">product_id (objectId)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">name (string)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">qty (int)</text>
-                        <text x="10" y="105" fill="var(--text-primary)" font-size="11">price (double)</text>
-                      </g>
-
-                      <!-- Embedded: price {} -->
-                      <g class="embedded-box" transform="translate(950, 150)">
-                        <rect x="0" y="0" width="180" height="100" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">price {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">list_price (double)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">valid_from (date)</text>
-                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">valid_to (date)</text>
-                      </g>
-
-                      <!-- Embedded: contact {} -->
-                      <g class="embedded-box" transform="translate(350, 500)">
-                        <rect x="0" y="0" width="180" height="80" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
-                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">contact {}</text>
-                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">address {} (object)</text>
-                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">phones {} (object)</text>
-                      </g>
-
-                      <!-- Relationship lines -->
-                      <line x1="250" y1="140" x2="350" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="230" x2="350" y2="210" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="900" y1="140" x2="950" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="250" y1="540" x2="350" y2="500" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
-                      <line x1="530" y1="200" x2="700" y2="120" stroke="var(--accent)" stroke-width="2" />
-                      <line x1="250" y1="400" x2="250" y2="400" stroke="var(--accent)" stroke-width="2" />
-                    </svg>
+                  <div class="nosql-tiles-grid" id="nosql-tiles-grid">
+                    <!-- NoSQL database tiles will be dynamically loaded here -->
+                    <div id="nosql-empty" class="nosql-empty-state" style="display: none;">
+                      <p>No NoSQL databases available. Upload JSON data to create collections.</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -935,7 +685,7 @@
             <h2 id="quickAdd-panel-title" class="quick-add-panel-title">
               Add New Item
             </h2>
-            <p class="quick-add-subtitle">Paste link, query, or data snippet</p>
+            <p class="quick-add-subtitle">Add code, JSON, or text content to codefiles</p>
           </div>
           <button
             type="button"
@@ -982,7 +732,7 @@
               <textarea
                 id="quickAdd"
                 class="quick-add-textarea"
-                placeholder="Paste link, query, or data snippet..."
+                placeholder="Enter your code, JSON, or text content here..."
                 rows="12"
                 aria-label="Content input"
               ></textarea>
@@ -1000,6 +750,7 @@
       </div>
     </div>
 
+<<<<<<< HEAD
     <!-- User Menu Dropdown (conditionally shown) -->
     <div id="user-menu" class="dropdown-menu hidden">
       <button id="login-btn" class="menu-item hidden">
@@ -1082,6 +833,29 @@
               <li>🎨 Dark mode support</li>
             </ul>
           </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- NoSQL Database Full-Screen Modal -->
+    <div id="nosql-modal" class="nosql-modal" style="display: none;">
+      <div class="nosql-modal-overlay" id="nosql-modal-overlay"></div>
+      <div class="nosql-modal-content">
+        <div class="nosql-modal-header">
+          <h2 id="nosql-modal-title" class="nosql-modal-title">NoSQL Database</h2>
+          <button type="button" class="nosql-modal-close" id="nosql-modal-close" aria-label="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="nosql-modal-body">
+          <div class="nosql-modal-info" id="nosql-modal-info">
+            <!-- Database info will be dynamically loaded -->
+          </div>
+          <div class="nosql-modal-data" id="nosql-modal-data">
+            <!-- Database data will be dynamically loaded -->
+          </div>
         </div>
       </div>
     </div>
