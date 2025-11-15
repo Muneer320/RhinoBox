@@ -773,6 +773,11 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 		filters.MimeType = mimeType
 	}
 
+	// Content search filter (optional, searches inside text files)
+	if content := r.URL.Query().Get("content"); content != "" {
+		filters.ContentSearch = content
+	}
+
 	// Date range filters (optional)
 	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
 		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
@@ -801,13 +806,19 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 
 	// At least one filter must be provided
 	if filters.Name == "" && filters.Extension == "" && filters.Type == "" &&
-		filters.Category == "" && filters.MimeType == "" &&
+		filters.Category == "" && filters.MimeType == "" && filters.ContentSearch == "" &&
 		filters.DateFrom.IsZero() && filters.DateTo.IsZero() {
-		httpError(w, http.StatusBadRequest, "at least one filter parameter is required (name, extension, type, category, mime_type, date_from, date_to)")
+		httpError(w, http.StatusBadRequest, "at least one filter parameter is required (name, extension, type, category, mime_type, content, date_from, date_to)")
 		return
 	}
 
-	results := s.storage.SearchFiles(filters)
+	// Use content search if content filter is provided
+	var results []storage.FileMetadata
+	if filters.ContentSearch != "" {
+		results = s.storage.SearchFilesWithContent(filters)
+	} else {
+		results = s.storage.SearchFiles(filters)
+	}
 
 	// Build response with filter summary
 	response := map[string]any{
@@ -830,6 +841,9 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if filters.MimeType != "" {
 		response["filters"].(map[string]any)["mime_type"] = filters.MimeType
+	}
+	if filters.ContentSearch != "" {
+		response["filters"].(map[string]any)["content"] = filters.ContentSearch
 	}
 	if !filters.DateFrom.IsZero() {
 		response["filters"].(map[string]any)["date_from"] = filters.DateFrom.Format(time.RFC3339)
