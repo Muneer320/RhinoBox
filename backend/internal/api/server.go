@@ -119,6 +119,9 @@ func maskPassword(connStr string) string {
 func (s *Server) routes() {
 	r := s.router
 
+	// CORS middleware for frontend access
+	r.Use(s.corsMiddleware)
+
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -161,6 +164,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/files/{type}", s.handleGetFilesByType)
 	
 	// Routing rules endpoints
 	r.Post("/routing-rules/suggest", s.handleSuggestRoutingRule)
@@ -181,6 +185,36 @@ func (s *Server) routes() {
 	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
 	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
 	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
+	
+	// Collections endpoints
+	r.Get("/collections", s.handleGetCollections)
+	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
+}
+
+// corsMiddleware handles CORS headers for frontend access
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		
+		// Allow requests from localhost (development) - allow all for simplicity
+		if origin == "" {
+			origin = "*"
+		}
+		
+		// Set CORS headers - must be set before any response is written
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
+		
+		// Handle preflight OPTIONS requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -1280,6 +1314,76 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetFilesByType returns all files for a specific collection type.
+func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
+	fileType := chi.URLParam(r, "type")
+	if fileType == "" {
+		httpError(w, http.StatusBadRequest, "file type is required")
+		return
+	}
+
+	files, err := s.storage.GetFilesByType(fileType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get files: %v", err))
+		return
+	}
+
+	// Convert FileMetadata to response format
+	fileList := make([]map[string]any, 0, len(files))
+	for _, file := range files {
+		fileList = append(fileList, map[string]any{
+			"id":          file.Hash,
+			"fileId":      file.Hash,
+			"name":        file.OriginalName,
+			"fileName":    file.OriginalName,
+			"path":        file.StoredPath,
+			"filePath":    file.StoredPath,
+			"url":         fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl": fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"date":        file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":  file.UploadedAt.Format(time.RFC3339),
+			"size":        file.Size,
+			"fileSize":    file.Size,
+			"type":        file.MimeType,
+			"fileType":    file.MimeType,
+			"category":    file.Category,
+			"hash":        file.Hash,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files": fileList,
+		"count": len(fileList),
+		"type":  fileType,
+	})
+}
+
+// handleGetCollections returns all available collection types with metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections := s.storage.GetCollections()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collections": collections,
+		"count":       len(collections),
+	})
+}
+
+// handleGetCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "collection type is required")
+		return
+	}
+
+	stats, err := s.storage.GetCollectionStats(collectionType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // handleFileMove handles PATCH /files/{file_id}/move - move a single file to a new category.
