@@ -246,6 +246,7 @@ body {
   grid-template-columns: minmax(200px, 240px) 1fr;
   gap: clamp(18px, 3vw, 28px);
   width: 100%;
+  align-items: start;
 }
 
 .sidebar {
@@ -259,6 +260,11 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
+  align-self: stretch;
+  height: calc(100vh - clamp(18px, 3vw, 36px) * 2 - clamp(16px, 2vw, 24px) - 20px);
+  max-height: calc(100vh - clamp(18px, 3vw, 36px) * 2 - clamp(16px, 2vw, 24px) - 20px);
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .sidebar-title {
@@ -271,6 +277,7 @@ body {
 .sidebar-buttons {
   display: grid;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .sidebar-button {
@@ -2683,12 +2690,14 @@ body {
   font-weight: 600;
   margin-bottom: 0.75rem;
   color: var(--text-primary);
+  text-align: center;
 }
 
 .type-buttons {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .type-btn {
@@ -3048,6 +3057,7 @@ body {
   margin-top: 0.75rem;
   font-size: 0.875rem;
   color: var(--text-secondary);
+  text-align: center;
 }
 
 /* Mobile responsiveness for file type selector */
