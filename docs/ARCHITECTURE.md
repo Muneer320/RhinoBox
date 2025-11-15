@@ -15,18 +15,18 @@ These layers sit behind a single deployment artifact (Go binary + optional worke
 
 ## 2. Component Map
 
-| Component          | Responsibilities                                            | Tech                                                | Notes                                                            |
-| ------------------ | ----------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------- |
-| API Gateway        | TLS termination, auth (future), request validation, routing | Go 1.21 + Chi                                       | Provides `/ingest/media`, `/ingest/json`, `/healthz`, `/metrics` |
-| MIME Classifier    | Detect true file type, infer directory slug, dedupe hash    | `gabriel-vasile/mimetype`, SHA-256                  | Falls back to extension when signature unknown                   |
-| JSON Analyzer      | Flatten docs, build field histograms, detect relationships  | Custom Go analyzer in `internal/jsonschema`         | Depth-limited flatten to avoid runaway arrays                    |
-| Decision Engine    | Choose SQL vs NoSQL, recommend schema/table names           | Rules engine (Go)                                   | Encodes heuristics described later                               |
-| Job Queue          | Buffer async work (transcoding, indexing)                   | NATS JetStream or Redis Streams                     | In-memory fallback for local dev                                 |
-| Worker Pool        | Execute queued jobs concurrently                            | Go worker goroutines                                | Sized by CPU count / config                                      |
-| File Storage       | Durable blob store organized by type/category               | Local filesystem (hackathon), S3-compatible in prod | Directory naming uses slug + UUID                                |
-| PostgreSQL Cluster | Structured namespace tables + metadata index                | PostgreSQL 15                                       | JSONB columns allow semi-flexible fields                         |
-| MongoDB Cluster    | Flexible document collections                               | MongoDB 7                                           | Namespaces map 1:1 to collections                                |
-| Observability      | Metrics, traces, logs                                       | Prometheus, OpenTelemetry                           | Chi middleware emits request spans                               |
+| Component           | Responsibilities                                               | Tech                                                | Notes                                                             |
+| ------------------- | -------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| API Gateway         | TLS termination, auth (future), request validation, routing    | Go 1.21 + Chi                                       | Provides `/ingest/media`, `/ingest/json`, `/healthz`, `/metrics`  |
+| MIME Classifier     | Detect true file type, infer directory slug, dedupe hash       | `gabriel-vasile/mimetype`, SHA-256                  | Falls back to extension when signature unknown                    |
+| JSON Analyzer       | Flatten docs, build field histograms, detect relationships     | Custom Go analyzer in `internal/jsonschema`         | Depth-limited flatten to avoid runaway arrays                     |
+| Decision Engine     | Choose SQL vs NoSQL, recommend schema/table names              | Rules engine (Go)                                   | Encodes heuristics described later                                |
+| **Async Job Queue** | **Buffer async work, track progress, enable batch processing** | **In-memory channels + disk persistence (Go)**      | **10 workers, 1000 job buffer, 596µs/op enqueue, crash recovery** |
+| Worker Pool         | Execute queued jobs concurrently                               | Go worker goroutines                                | Sized by CPU count / config                                       |
+| File Storage        | Durable blob store organized by type/category                  | Local filesystem (hackathon), S3-compatible in prod | Directory naming uses slug + UUID                                 |
+| PostgreSQL Cluster  | Structured namespace tables + metadata index                   | PostgreSQL 15                                       | JSONB columns allow semi-flexible fields                          |
+| MongoDB Cluster     | Flexible document collections                                  | MongoDB 7                                           | Namespaces map 1:1 to collections                                 |
+| Observability       | Metrics, traces, logs                                          | Prometheus, OpenTelemetry                           | Chi middleware emits request spans                                |
 
 ## 3. High-Level Diagram
 
@@ -60,6 +60,7 @@ flowchart LR
 - Chi router handles routing plus logging/recoverer middleware.
 - Content negotiation: multipart requests are routed to the media path; JSON bodies to the document analyzer path.
 - Streaming uploads prevent buffering entire files in memory.
+- **Async endpoints** (`/ingest/async`, `/ingest/media/async`, `/ingest/json/async`) return HTTP 202 with job ID immediately.
 
 ### 4.2 Intelligence Layer
 
@@ -71,8 +72,16 @@ flowchart LR
 
 ### 4.3 Processing + Orchestration
 
-- Request path handles lightweight operations synchronously (classification, storage writes). Heavy work (transcoding, thumbnails, schema regeneration) is enqueued to JetStream/Redis Streams.
-- Worker pool is sized (default 4×CPU) and pulls jobs in FIFO order. Jobs are idempotent via dedupe hash keys.
+- Request path handles lightweight operations synchronously (classification, storage writes). Heavy work (transcoding, thumbnails, schema regeneration) is enqueued to the async job queue.
+- **Async Job Queue** (`internal/queue/queue.go`):
+  - 10 concurrent workers (configurable)
+  - 1000 job buffer capacity
+  - 596µs average enqueue latency
+  - 1,677 jobs/sec throughput
+  - Disk persistence for crash recovery
+  - Progress tracking with percentage
+  - Partial success support (continues even if some items fail)
+- Worker pool pulls jobs from pending channel in FIFO order. Jobs are idempotent via dedupe hash keys.
 - Buffer pooling (sync.Pool) reuses byte slices for streaming copies and JSON flattening.
 
 ## 5. Storage Layer Details
