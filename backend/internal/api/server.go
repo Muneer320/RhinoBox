@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -41,10 +43,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		router:      chi.NewRouter(),
-		storage:     store,
+		cfg:      cfg,
+		logger:   logger,
+		router:   chi.NewRouter(),
+		storage:  store,
+		jobQueue: nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
@@ -73,6 +76,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/collections", s.handleGetCollections)
 	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
 }
 
@@ -895,6 +899,15 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetCollections returns all available collection types with metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections := s.storage.GetCollections()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collections": collections,
+		"count":       len(collections),
+	})
 }
 
 // handleCollectionStats returns statistics for a specific collection type.
