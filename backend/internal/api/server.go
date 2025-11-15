@@ -73,7 +73,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
-	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
+	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -897,44 +897,18 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	return s.storage.LogDownload(log)
 }
 
-// handleCollectionStats returns statistics for a specific collection type.
-func (s *Server) handleCollectionStats(w http.ResponseWriter, r *http.Request) {
-	collectionType := chi.URLParam(r, "collection_type")
+// handleGetCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
 	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "collection_type is required")
+		httpError(w, http.StatusBadRequest, "collection type is required")
 		return
 	}
 
-	// Get all files for this collection type
-	files := s.storage.FindByCategoryPrefix(collectionType)
-
-	// Calculate statistics
-	fileCount := len(files)
-	var totalSize int64
-	var lastUpdated time.Time
-
-	for _, file := range files {
-		totalSize += file.Size
-		if file.UploadedAt.After(lastUpdated) {
-			lastUpdated = file.UploadedAt
-		}
-	}
-
-	// Format storage size
-	storageUsed := formatBytes(totalSize)
-
-	// Build response
-	stats := map[string]any{
-		"collection_type": collectionType,
-		"file_count":      fileCount,
-		"storage_used":    storageUsed,
-		"storage_bytes":   totalSize,
-		"last_updated":    lastUpdated.Format(time.RFC3339),
-	}
-
-	// If no files, set last_updated to null
-	if fileCount == 0 {
-		stats["last_updated"] = nil
+	stats, err := s.storage.GetCollectionStats(collectionType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		return
 	}
 
 	writeJSON(w, http.StatusOK, stats)
