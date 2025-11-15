@@ -6,9 +6,9 @@ services:
     image: postgres:16-alpine
     container_name: rhinobox-postgres
     environment:
-      POSTGRES_USER: rhinobox
-      POSTGRES_PASSWORD: rhinobox_dev
-      POSTGRES_DB: rhinobox
+      POSTGRES_USER: ${POSTGRES_USER:-rhinobox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+      POSTGRES_DB: ${POSTGRES_DB:-rhinobox}
       # Performance tuning
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
     ports:
@@ -61,9 +61,9 @@ services:
     image: mongo:7
     container_name: rhinobox-mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: rhinobox
-      MONGO_INITDB_ROOT_PASSWORD: rhinobox_dev
-      MONGO_INITDB_DATABASE: rhinobox
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-rhinobox}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme_in_production}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-rhinobox}
     ports:
       - "27017:27017"
     volumes:
@@ -95,8 +95,8 @@ services:
       RHINOBOX_ADDR: ":8090"
       RHINOBOX_DATA_DIR: "/data"
       RHINOBOX_MAX_UPLOAD_MB: "512"
-      RHINOBOX_POSTGRES_URL: "postgres://rhinobox:rhinobox_dev@postgres:5432/rhinobox?sslmode=disable"
-      RHINOBOX_MONGO_URL: "mongodb://rhinobox:rhinobox_dev@mongodb:27017"
+      RHINOBOX_POSTGRES_URL: "postgres://${POSTGRES_USER:-rhinobox}:${POSTGRES_PASSWORD:-changeme_in_production}@postgres:5432/${POSTGRES_DB:-rhinobox}?sslmode=disable"
+      RHINOBOX_MONGO_URL: "mongodb://${MONGO_USER:-rhinobox}:${MONGO_PASSWORD:-changeme_in_production}@mongodb:27017"
       RHINOBOX_DB_MAX_CONNS: "100"
     ports:
       - "8090:8090"
