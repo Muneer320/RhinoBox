@@ -309,6 +309,167 @@ func TestFileDeleteMissingFileID(t *testing.T) {
 	}
 }
 
+func TestGetCollections(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/collections", nil)
+	resp := httptest.NewRecorder()
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		Collections []struct {
+			Type        string `json:"type"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"collections"`
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if payload.Count == 0 {
+		t.Fatalf("expected at least one collection, got %d", payload.Count)
+	}
+
+	if len(payload.Collections) != payload.Count {
+		t.Fatalf("collections count mismatch: %d != %d", len(payload.Collections), payload.Count)
+	}
+
+	// Verify expected collection types exist
+	expectedTypes := map[string]bool{
+		"images":       false,
+		"videos":       false,
+		"audio":        false,
+		"documents":    false,
+		"spreadsheets": false,
+		"presentations": false,
+		"archives":     false,
+		"other":        false,
+	}
+
+	for _, collection := range payload.Collections {
+		if _, exists := expectedTypes[collection.Type]; exists {
+			expectedTypes[collection.Type] = true
+		}
+		if collection.Name == "" {
+			t.Errorf("collection %s has empty name", collection.Type)
+		}
+		if collection.Description == "" {
+			t.Errorf("collection %s has empty description", collection.Type)
+		}
+	}
+
+	for typeName, found := range expectedTypes {
+		if !found {
+			t.Errorf("expected collection type %s not found", typeName)
+		}
+	}
+}
+
+func TestGetCollectionStats(t *testing.T) {
+	srv := newTestServer(t)
+
+	// First, upload some files to create data
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	fileWriter, err := writer.CreateFormFile("file", "test.jpg")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	fileWriter.Write([]byte("fake image data"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for upload, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	// Now test collection stats
+	statsReq := httptest.NewRequest(http.MethodGet, "/collections/images/stats", nil)
+	statsResp := httptest.NewRecorder()
+	srv.router.ServeHTTP(statsResp, statsReq)
+
+	if statsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", statsResp.Code, statsResp.Body.String())
+	}
+
+	var statsPayload struct {
+		Type                string `json:"type"`
+		FileCount           int    `json:"file_count"`
+		StorageUsed         int64  `json:"storage_used"`
+		StorageUsedFormatted string `json:"storage_used_formatted"`
+	}
+	if err := json.NewDecoder(statsResp.Body).Decode(&statsPayload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if statsPayload.Type != "images" {
+		t.Errorf("expected type 'images', got %s", statsPayload.Type)
+	}
+	if statsPayload.FileCount < 1 {
+		t.Errorf("expected at least 1 file, got %d", statsPayload.FileCount)
+	}
+	if statsPayload.StorageUsed <= 0 {
+		t.Errorf("expected storage used > 0, got %d", statsPayload.StorageUsed)
+	}
+	if statsPayload.StorageUsedFormatted == "" {
+		t.Errorf("expected formatted storage, got empty string")
+	}
+}
+
+func TestGetCollectionStatsEmptyCollection(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Test stats for a collection with no files
+	statsReq := httptest.NewRequest(http.MethodGet, "/collections/videos/stats", nil)
+	statsResp := httptest.NewRecorder()
+	srv.router.ServeHTTP(statsResp, statsReq)
+
+	if statsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", statsResp.Code, statsResp.Body.String())
+	}
+
+	var statsPayload struct {
+		Type                string `json:"type"`
+		FileCount           int    `json:"file_count"`
+		StorageUsed         int64  `json:"storage_used"`
+		StorageUsedFormatted string `json:"storage_used_formatted"`
+	}
+	if err := json.NewDecoder(statsResp.Body).Decode(&statsPayload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if statsPayload.FileCount != 0 {
+		t.Errorf("expected 0 files for empty collection, got %d", statsPayload.FileCount)
+	}
+	if statsPayload.StorageUsed != 0 {
+		t.Errorf("expected 0 storage for empty collection, got %d", statsPayload.StorageUsed)
+	}
+}
+
+func TestGetCollectionStatsInvalidType(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Test with invalid collection type (should still work, just return 0 stats)
+	statsReq := httptest.NewRequest(http.MethodGet, "/collections/invalid_type/stats", nil)
+	statsResp := httptest.NewRecorder()
+	srv.router.ServeHTTP(statsResp, statsReq)
+
+	// Should return 200 with 0 stats
+	if statsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", statsResp.Code, statsResp.Body.String())
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	cfg := config.Config{

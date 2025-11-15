@@ -138,4 +138,3 @@ Or use the provided test script:
 ```bash
 cd backend && ./test_file_by_id.sh
 ```
-

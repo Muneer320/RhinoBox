@@ -590,6 +590,29 @@ body {
   font-size: 14px;
 }
 
+.collection-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.collection-stats .stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.collection-stats .stat-item svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

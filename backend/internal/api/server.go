@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,6 +54,9 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 func (s *Server) routes() {
 	r := s.router
 
+	// CORS middleware for frontend access
+	r.Use(s.corsMiddleware)
+
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -73,7 +77,61 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/files/type/{type}", s.handleGetFilesByType)
+
+	// Routing rules endpoints
+	r.Post("/routing-rules/suggest", s.handleSuggestRoutingRule)
+	r.Get("/routing-rules", s.handleGetRoutingRules)
+	r.Put("/routing-rules", s.handleUpdateRoutingRule)
+	r.Delete("/routing-rules", s.handleDeleteRoutingRule)
+
+	// Duplicate management endpoints
+	r.Post("/files/duplicates/scan", s.handleDuplicateScan)
+	r.Get("/files/duplicates", s.handleGetDuplicates)
+	r.Post("/files/duplicates/verify", s.handleVerifyDuplicates)
+	r.Post("/files/duplicates/merge", s.handleMergeDuplicates)
+	r.Get("/files/duplicates/statistics", s.handleDuplicateStatistics)
+
+	// Version endpoints (must come before /files/{file_id} to avoid route conflicts)
+	r.Post("/files/{file_id}/versions", s.handleCreateVersion)
+	r.Get("/files/{file_id}/versions", s.handleListVersions)
+	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
+	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
+	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
+
+	// Get single file by ID (must come after more specific routes)
 	r.Get("/files/{file_id}", s.handleGetFileByID)
+
+	// Collections endpoints
+	r.Get("/collections", s.handleGetCollections)
+	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
+}
+
+// corsMiddleware handles CORS headers for frontend access
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		// Allow requests from localhost (development) - allow all for simplicity
+		if origin == "" {
+			origin = "*"
+		}
+
+		// Set CORS headers - must be set before any response is written
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
+
+		// Handle preflight OPTIONS requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+>>>>>>> origin/main
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -948,6 +1006,299 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetFilesByType retrieves files filtered by collection type with pagination.
+func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "type parameter is required")
+		return
+	}
+
+	// Parse pagination parameters
+	page := 1
+	limit := 50
+	category := ""
+
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	if cat := r.URL.Query().Get("category"); cat != "" {
+		category = cat
+	}
+
+	// Call storage layer
+	req := storage.GetFilesByTypeRequest{
+		Type:     collectionType,
+		Page:     page,
+		Limit:    limit,
+		Category: category,
+	}
+
+	result, err := s.storage.GetFilesByType(req)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve files: %v", err))
+		return
+	}
+
+	// Transform FileMetadata to API response format
+	files := make([]map[string]any, 0, len(result.Files))
+	for _, file := range result.Files {
+		// Extract dimensions from metadata if available
+		dimensions := ""
+		if dims, ok := file.Metadata["dimensions"]; ok {
+			dimensions = dims
+		}
+
+		fileResponse := map[string]any{
+			"id":         file.Hash,
+			"name":       file.OriginalName,
+			"path":       file.StoredPath,
+			"size":       file.Size,
+			"type":       file.MimeType,
+			"date":       file.UploadedAt.Format(time.RFC3339),
+			"dimensions": dimensions,
+			"category":   file.Category,
+			"hash":       file.Hash,
+		}
+
+		// Add download URL
+		fileResponse["url"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
+		fileResponse["downloadUrl"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
+
+		files = append(files, fileResponse)
+	}
+
+	response := map[string]any{
+		"files":       files,
+		"total":       result.Total,
+		"page":        result.Page,
+		"limit":       result.Limit,
+		"total_pages": result.TotalPages,
+		"type":        collectionType,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleGetCollections returns all available collection types with metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections := s.storage.GetCollections()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collections": collections,
+		"count":       len(collections),
+	})
+}
+
+// handleGetCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "collection type is required")
+		return
+	}
+
+	stats, err := s.storage.GetCollectionStats(collectionType)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collection stats: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleSuggestRoutingRule allows users to suggest routing for unrecognized file formats.
+func (s *Server) handleSuggestRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType    string   `json:"mime_type"`
+		Extension   string   `json:"extension"`
+		Destination []string `json:"destination"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Destination) == 0 {
+		httpError(w, http.StatusBadRequest, "destination is required")
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	// Sanitize destination paths
+	sanitizedDest := make([]string, 0, len(req.Destination))
+	for _, part := range req.Destination {
+		sanitized := sanitizePathSegment(part)
+		if sanitized != "" {
+			sanitizedDest = append(sanitizedDest, sanitized)
+		}
+	}
+
+	if len(sanitizedDest) == 0 {
+		httpError(w, http.StatusBadRequest, "destination must contain at least one valid path segment")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.AddRule(req.MimeType, req.Extension, sanitizedDest); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add routing rule: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule added",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+		slog.Any("destination", sanitizedDest),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":     "routing rule added successfully",
+		"mime_type":   req.MimeType,
+		"extension":   req.Extension,
+		"destination": sanitizedDest,
+	})
+}
+
+// handleGetRoutingRules returns all custom routing rules.
+func (s *Server) handleGetRoutingRules(w http.ResponseWriter, r *http.Request) {
+	rulesMgr := s.storage.RoutingRules()
+	rules := rulesMgr.GetAllRules()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules": rules,
+		"count": len(rules),
+	})
+}
+
+// handleUpdateRoutingRule updates an existing routing rule.
+func (s *Server) handleUpdateRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType    string   `json:"mime_type"`
+		Extension   string   `json:"extension"`
+		Destination []string `json:"destination"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Destination) == 0 {
+		httpError(w, http.StatusBadRequest, "destination is required")
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	// Sanitize destination paths
+	sanitizedDest := make([]string, 0, len(req.Destination))
+	for _, part := range req.Destination {
+		sanitized := sanitizePathSegment(part)
+		if sanitized != "" {
+			sanitizedDest = append(sanitizedDest, sanitized)
+		}
+	}
+
+	if len(sanitizedDest) == 0 {
+		httpError(w, http.StatusBadRequest, "destination must contain at least one valid path segment")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.AddRule(req.MimeType, req.Extension, sanitizedDest); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update routing rule: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule updated",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+		slog.Any("destination", sanitizedDest),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":     "routing rule updated successfully",
+		"mime_type":   req.MimeType,
+		"extension":   req.Extension,
+		"destination": sanitizedDest,
+	})
+}
+
+// handleDeleteRoutingRule deletes a routing rule.
+func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MimeType  string `json:"mime_type"`
+		Extension string `json:"extension"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if req.MimeType == "" && req.Extension == "" {
+		httpError(w, http.StatusBadRequest, "mime_type or extension is required")
+		return
+	}
+
+	rulesMgr := s.storage.RoutingRules()
+	if err := rulesMgr.DeleteRule(req.MimeType, req.Extension); err != nil {
+		httpError(w, http.StatusNotFound, fmt.Sprintf("routing rule not found: %v", err))
+		return
+	}
+
+	s.logger.Info("routing rule deleted",
+		slog.String("mime_type", req.MimeType),
+		slog.String("extension", req.Extension),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message":   "routing rule deleted successfully",
+		"mime_type": req.MimeType,
+		"extension": req.Extension,
+	})
+}
+
+// sanitizePathSegment removes dangerous characters from path segments.
+func sanitizePathSegment(segment string) string {
+	// Remove leading/trailing whitespace
+	segment = strings.TrimSpace(segment)
+	if segment == "" {
+		return ""
+	}
+
+	// Remove path traversal attempts
+	segment = strings.ReplaceAll(segment, "..", "")
+	segment = strings.ReplaceAll(segment, "/", "")
+	segment = strings.ReplaceAll(segment, "\\", "")
+
+	// Remove control characters and other dangerous chars
+	var result strings.Builder
+	for _, r := range segment {
+		if r > 31 && r != 127 && r != '<' && r != '>' && r != '|' && r != ':' && r != '"' && r != '?' && r != '*' {
+			result.WriteRune(r)
+		}
+	}
+
+	return result.String()
 }
 
 // Helper structs
