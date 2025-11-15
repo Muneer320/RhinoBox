@@ -12,13 +12,13 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,6 +31,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -42,10 +43,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		router:      chi.NewRouter(),
-		storage:     store,
+		cfg:      cfg,
+		logger:   logger,
+		router:   chi.NewRouter(),
+		storage:  store,
+		jobQueue: nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
@@ -53,9 +55,6 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 func (s *Server) routes() {
 	r := s.router
-
-	// CORS middleware for frontend access
-	r.Use(s.corsMiddleware)
 
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
@@ -77,60 +76,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
-	r.Get("/files/type/{type}", s.handleGetFilesByType)
-
-	// Routing rules endpoints
-	r.Post("/routing-rules/suggest", s.handleSuggestRoutingRule)
-	r.Get("/routing-rules", s.handleGetRoutingRules)
-	r.Put("/routing-rules", s.handleUpdateRoutingRule)
-	r.Delete("/routing-rules", s.handleDeleteRoutingRule)
-
-	// Duplicate management endpoints
-	r.Post("/files/duplicates/scan", s.handleDuplicateScan)
-	r.Get("/files/duplicates", s.handleGetDuplicates)
-	r.Post("/files/duplicates/verify", s.handleVerifyDuplicates)
-	r.Post("/files/duplicates/merge", s.handleMergeDuplicates)
-	r.Get("/files/duplicates/statistics", s.handleDuplicateStatistics)
-
-	// Version endpoints (must come before /files/{file_id} to avoid route conflicts)
-	r.Post("/files/{file_id}/versions", s.handleCreateVersion)
-	r.Get("/files/{file_id}/versions", s.handleListVersions)
-	r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
-	r.Post("/files/{file_id}/revert", s.handleRevertVersion)
-	r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
-
-	// Get single file by ID (must come after more specific routes)
-	r.Get("/files/{file_id}", s.handleGetFileByID)
-
-	// Collections endpoints
 	r.Get("/collections", s.handleGetCollections)
-	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
-}
-
-// corsMiddleware handles CORS headers for frontend access
-func (s *Server) corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-
-		// Allow requests from localhost (development) - allow all for simplicity
-		if origin == "" {
-			origin = "*"
-		}
-
-		// Set CORS headers - must be set before any response is written
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
-
-		// Handle preflight OPTIONS requests
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -699,59 +645,6 @@ func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, metadata)
 }
 
-// handleGetFileByID retrieves a single file by ID and returns complete file information.
-func (s *Server) handleGetFileByID(w http.ResponseWriter, r *http.Request) {
-	fileID := chi.URLParam(r, "file_id")
-	if fileID == "" {
-		httpError(w, http.StatusBadRequest, "file_id is required")
-		return
-	}
-
-	// Get file metadata
-	metadata, err := s.storage.GetFileMetadata(fileID)
-	if err != nil {
-		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, http.StatusNotFound, err.Error())
-		} else {
-			httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve file: %v", err))
-		}
-		return
-	}
-
-	// Construct response with complete file information
-	response := map[string]any{
-		"hash":          metadata.Hash,
-		"original_name": metadata.OriginalName,
-		"stored_path":   metadata.StoredPath,
-		"category":      metadata.Category,
-		"mime_type":     metadata.MimeType,
-		"size":          metadata.Size,
-		"uploaded_at":   metadata.UploadedAt.Format(time.RFC3339),
-		"metadata":      metadata.Metadata,
-		// Construct download and stream URLs
-		"download_url": fmt.Sprintf("/files/download?hash=%s", metadata.Hash),
-		"stream_url":   fmt.Sprintf("/files/stream?hash=%s", metadata.Hash),
-		"url":          fmt.Sprintf("/files/download?hash=%s", metadata.Hash), // For backward compatibility
-	}
-
-	// Extract media type from category if available
-	if idx := strings.Index(metadata.Category, "/"); idx > 0 {
-		response["media_type"] = metadata.Category[:idx]
-	} else {
-		response["media_type"] = metadata.Category
-	}
-
-	// Check if dimensions are stored in metadata
-	if width, ok := metadata.Metadata["width"]; ok {
-		response["width"] = width
-	}
-	if height, ok := metadata.Metadata["height"]; ok {
-		response["height"] = height
-	}
-
-	writeJSON(w, http.StatusOK, response)
-}
-
 // handleFileStream streams a file with range request support for video/audio streaming.
 func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("hash")
@@ -1005,89 +898,6 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
-}
-
-// handleGetFilesByType retrieves files filtered by collection type with pagination.
-func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
-	collectionType := chi.URLParam(r, "type")
-	if collectionType == "" {
-		httpError(w, http.StatusBadRequest, "type parameter is required")
-		return
-	}
-
-	// Parse pagination parameters
-	page := 1
-	limit := 50
-	category := ""
-
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
-			page = parsed
-		}
-	}
-
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-
-	if cat := r.URL.Query().Get("category"); cat != "" {
-		category = cat
-	}
-
-	// Call storage layer
-	req := storage.GetFilesByTypeRequest{
-		Type:     collectionType,
-		Page:     page,
-		Limit:    limit,
-		Category: category,
-	}
-
-	result, err := s.storage.GetFilesByType(req)
-	if err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to retrieve files: %v", err))
-		return
-	}
-
-	// Transform FileMetadata to API response format
-	files := make([]map[string]any, 0, len(result.Files))
-	for _, file := range result.Files {
-		// Extract dimensions from metadata if available
-		dimensions := ""
-		if dims, ok := file.Metadata["dimensions"]; ok {
-			dimensions = dims
-		}
-
-		fileResponse := map[string]any{
-			"id":         file.Hash,
-			"name":       file.OriginalName,
-			"path":       file.StoredPath,
-			"size":       file.Size,
-			"type":       file.MimeType,
-			"date":       file.UploadedAt.Format(time.RFC3339),
-			"dimensions": dimensions,
-			"category":   file.Category,
-			"hash":       file.Hash,
-		}
-
-		// Add download URL
-		fileResponse["url"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
-		fileResponse["downloadUrl"] = fmt.Sprintf("/files/download?hash=%s", file.Hash)
-
-		files = append(files, fileResponse)
-	}
-
-	response := map[string]any{
-		"files":       files,
-		"total":       result.Total,
-		"page":        result.Page,
-		"limit":       result.Limit,
-		"total_pages": result.TotalPages,
-		"type":        collectionType,
-	}
-
-	writeJSON(w, http.StatusOK, response)
 }
 
 // handleGetCollections returns all available collection types with metadata.
