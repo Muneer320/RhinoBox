@@ -275,7 +275,7 @@ func TestEdgeCaseNilReader(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	_, err := mgr.StoreFile(storage.StoreRequest{
+	_, err = mgr.StoreFile(storage.StoreRequest{
 		Reader:   nil,
 		Filename: "nil_reader.txt",
 		MimeType: "text/plain",
