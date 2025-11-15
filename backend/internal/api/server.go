@@ -53,6 +53,13 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return s, nil
 }
 
+// Stop gracefully stops the server and cleans up resources.
+func (s *Server) Stop() {
+	if s.jobQueue != nil {
+		s.jobQueue.Shutdown()
+	}
+}
+
 func (s *Server) routes() {
 	r := s.router
 
