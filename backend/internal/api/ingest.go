@@ -69,8 +69,6 @@ type GenericResult struct {
 	Unrecognized    bool   `json:"unrecognized,omitempty"`    // true if format not recognized
 	RequiresRouting bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
 }
-	RequiresRouting   bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
-}
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
 func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
