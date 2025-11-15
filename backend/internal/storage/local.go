@@ -26,6 +26,7 @@ type Manager struct {
 	index       *MetadataIndex
 	hashIndex   *cache.HashIndex
 	mu          sync.Mutex
+	scanState   scanState
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.

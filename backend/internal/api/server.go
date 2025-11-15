@@ -73,6 +73,13 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	
+	// Duplicate management endpoints
+	r.Post("/files/duplicates/scan", s.handleDuplicateScan)
+	r.Get("/files/duplicates", s.handleGetDuplicates)
+	r.Post("/files/duplicates/verify", s.handleVerifyDuplicates)
+	r.Post("/files/duplicates/merge", s.handleMergeDuplicates)
+	r.Get("/files/duplicates/statistics", s.handleDuplicateStatistics)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -98,6 +105,11 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 // Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
+}
+
+// GetStorage exposes the storage manager for testing.
+func (s *Server) GetStorage() *storage.Manager {
+	return s.storage
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
