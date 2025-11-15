@@ -31,6 +31,7 @@ const THEME_KEY = "rhinobox-theme";
 let currentCollectionType = null;
 let modeToggle = null;
 let toast = null;
+let selectedFileType = "auto";
 
 // Detect touch device
 function isTouchDevice() {
@@ -123,6 +124,9 @@ function initHomePageFeatures() {
   const quickAddForm = document.getElementById("quickAddForm");
   const quickAddClose = document.getElementById("quickAdd-close-button");
   const quickAddCancel = document.getElementById("quickAdd-cancel");
+
+  // Initialize file type selector
+  initFileTypeSelector();
 
   if (!dropzone || !fileInput) {
     // Elements not found, try again after a short delay
@@ -309,6 +313,75 @@ function initHomePageFeatures() {
         showToast(`Failed to add item: ${error.message || "Unknown error"}`);
       }
     });
+  }
+}
+
+// Initialize file type selector
+function initFileTypeSelector() {
+  const buttons = document.querySelectorAll(".type-btn");
+
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // Remove active from all
+      buttons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-checked", "false");
+      });
+
+      // Set active
+      btn.classList.add("active");
+      btn.setAttribute("aria-checked", "true");
+      selectedFileType = btn.dataset.type;
+
+      // Visual feedback
+      showToast(`File type: ${selectedFileType}`, "info", 2000);
+    });
+  });
+
+  // Keyboard navigation
+  const container = document.querySelector(".type-buttons");
+  if (container) {
+    container.addEventListener("keydown", (e) => {
+      const buttons = Array.from(container.querySelectorAll(".type-btn"));
+      const currentIndex = buttons.findIndex((b) =>
+        b.classList.contains("active")
+      );
+
+      let nextIndex = currentIndex;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        nextIndex = (currentIndex + 1) % buttons.length;
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        buttons[currentIndex].click();
+        return;
+      } else {
+        return;
+      }
+
+      e.preventDefault();
+      // Update state without toast for keyboard navigation
+      buttons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-checked", "false");
+      });
+      buttons[nextIndex].classList.add("active");
+      buttons[nextIndex].setAttribute("aria-checked", "true");
+      selectedFileType = buttons[nextIndex].dataset.type;
+      buttons[nextIndex].focus();
+    });
+  }
+}
+
+function getSelectedFileType() {
+  return selectedFileType;
+}
+
+function resetFileTypeSelector() {
+  const autoBtn = document.querySelector('.type-btn[data-type="auto"]');
+  if (autoBtn) {
+    autoBtn.click();
   }
 }
 
@@ -1681,29 +1754,46 @@ async function uploadFiles(files) {
       `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
     );
 
-    // Determine if files are media or mixed
-    const mediaTypes = ["image/", "video/", "audio/"];
-    const allMedia = files.every((file) =>
-      mediaTypes.some((type) => file.type && file.type.startsWith(type))
-    );
+    const fileType = getSelectedFileType();
+    const namespace = ""; // Can be enhanced later
 
-    if (allMedia && files.length > 0) {
-      // Use media endpoint for media files
-      await ingestMedia(files);
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
-      );
+    // Use unified endpoint with file type override
+    const result = await ingestFiles(files, namespace, "", fileType);
+
+    // Show consolidated success message
+    let overrideCount = 0;
+    let totalCount = 0;
+    if (result && result.results && result.results.media) {
+      totalCount += result.results.media.length;
+      overrideCount += result.results.media.filter(
+        (m) => m.user_override_type && m.user_override_type !== ""
+      ).length;
+    } else if (result && result.results && result.results.files) {
+      totalCount += result.results.files.length;
+      overrideCount += result.results.files.filter(
+        (f) => f.user_override_type && f.user_override_type !== ""
+      ).length;
+    }
+
+    if (totalCount > 0) {
+      const msg =
+        overrideCount > 0
+          ? `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded (${
+              overrideCount
+            } with override)`
+          : `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded successfully`;
+      showToast(msg, "success");
     } else {
-      // Use unified endpoint for mixed files
-      await ingestFiles(files);
       showToast(
         `Successfully uploaded ${files.length} file${
           files.length > 1 ? "s" : ""
-        }`
+        }`,
+        "success"
       );
     }
+
+    // Reset selector after upload
+    resetFileTypeSelector();
 
     // Reload current collection if viewing one
     if (currentCollectionType) {
@@ -1728,7 +1818,7 @@ async function uploadFiles(files) {
 }
 
 let toastTimeoutId;
-function showToast(message) {
+function showToast(message, type = "info", duration = 2400) {
   if (!toast) {
     toast = document.getElementById("toast");
     if (!toast) return;
@@ -1736,13 +1826,20 @@ function showToast(message) {
   toast.textContent = message;
   toast.hidden = false;
   toast.classList.add("is-visible");
+  
+  // Add type class for styling (optional)
+  toast.classList.remove("toast-success", "toast-error", "toast-info");
+  if (type) {
+    toast.classList.add(`toast-${type}`);
+  }
+  
   clearTimeout(toastTimeoutId);
   toastTimeoutId = setTimeout(() => {
     toast.classList.remove("is-visible");
     toastTimeoutId = setTimeout(() => {
       toast.hidden = true;
     }, 200);
-  }, 2400);
+  }, duration);
 }
 
 // Make showToast available globally for code editor

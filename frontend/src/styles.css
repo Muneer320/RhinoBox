@@ -966,6 +966,37 @@ body {
   transform: translateY(0);
 }
 
+/* Toast type styles */
+#toast.toast-success {
+  border-color: #10b981;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+#toast.toast-success::before {
+  content: "✅ ";
+}
+
+#toast.toast-error {
+  border-color: #ef4444;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+#toast.toast-error::before {
+  content: "❌ ";
+}
+
+#toast.toast-info {
+  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+#toast.toast-info::before {
+  content: "ℹ️ ";
+}
+
 /* =================================
    Mobile-First Responsive Design
    ================================= */
@@ -2639,6 +2670,67 @@ body {
   font-size: 14px;
 }
 
+/* File Type Selector Styles */
+.file-type-selector {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.selector-label {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+}
+
+.type-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  font-family: inherit;
+}
+
+.type-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.type-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 4px 12px rgba(71, 98, 255, 0.3);
+}
+
+.type-btn.active:hover {
+  background: #3a52d7;
+  border-color: #3a52d7;
+}
+
+.type-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ==================== Code Editor Styles ==================== */
 
 .code-editor-section {
@@ -2940,7 +3032,45 @@ body {
   align-items: center;
 }
 
-/* Mobile responsiveness */
+.type-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.type-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.selector-help {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Mobile responsiveness for file type selector */
+@media (max-width: 640px) {
+  .type-buttons {
+    justify-content: center;
+  }
+
+  .type-btn {
+    min-width: 70px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .type-icon {
+    font-size: 1.25rem;
+  }
+
+  .type-label {
+    font-size: 0.7rem;
+  }
+}
+
+/* Mobile responsiveness for code editor */
 @media (max-width: 768px) {
   .editor-modal-card {
     width: 100vw;
