@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/Muneer320/RhinoBox/internal/cache"
 )
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
@@ -23,6 +24,7 @@ type Manager struct {
 	storageRoot string
 	classifier  *Classifier
 	index       *MetadataIndex
+	hashIndex   *cache.HashIndex
 	mu          sync.Mutex
 }
 
@@ -64,7 +66,23 @@ func NewManager(root string) (*Manager, error) {
 		return nil, err
 	}
 
-	return &Manager{root: root, storageRoot: storageRoot, classifier: classifier, index: index}, nil
+	// Initialize cache for deduplication
+	cacheConfig := cache.DefaultConfig()
+	cacheConfig.L3Path = filepath.Join(root, "cache")
+	cacheInstance, err := cache.New(cacheConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize cache: %w", err)
+	}
+
+	hashIndex := cache.NewHashIndex(cacheInstance)
+
+	return &Manager{
+		root:        root,
+		storageRoot: storageRoot,
+		classifier:  classifier,
+		index:       index,
+		hashIndex:   hashIndex,
+	}, nil
 }
 
 // Root returns the configured base directory.
