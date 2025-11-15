@@ -1,2 +1,4 @@
 
 backend/data/
+backend/rhinobox
+*.log
