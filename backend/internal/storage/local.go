@@ -291,6 +291,66 @@ func (m *Manager) NextJSONBatchPath(engine, namespace string) string {
 	return filepath.ToSlash(filepath.Join("json", engine, slug, fmt.Sprintf("batch_%s.ndjson", ts)))
 }
 
+// StatisticsResult contains aggregated statistics about stored files.
+type StatisticsResult struct {
+	TotalFiles   int64  `json:"total_files"`
+	StorageUsed  int64  `json:"storage_used_bytes"`
+	StorageUsedFormatted string `json:"storage_used"`
+	CollectionCount int `json:"collection_count"`
+	Collections map[string]int64 `json:"collections"`
+}
+
+// GetStatistics calculates and returns dashboard statistics.
+func (m *Manager) GetStatistics() (*StatisticsResult, error) {
+	m.mu.Lock()
+	allMetadata := m.index.GetAllMetadata()
+	m.mu.Unlock()
+
+	var totalFiles int64
+	var totalStorage int64
+	collectionMap := make(map[string]int64)
+	collectionSet := make(map[string]bool)
+
+	for _, meta := range allMetadata {
+		totalFiles++
+		totalStorage += meta.Size
+
+		// Extract collection/category from category path
+		// Category format is like "images/jpg" or "documents/pdf"
+		categoryParts := strings.Split(meta.Category, "/")
+		if len(categoryParts) > 0 {
+			collection := categoryParts[0]
+			collectionSet[collection] = true
+			collectionMap[collection]++
+		}
+	}
+
+	// Format storage size
+	storageFormatted := formatBytes(totalStorage)
+
+	return &StatisticsResult{
+		TotalFiles:          totalFiles,
+		StorageUsed:         totalStorage,
+		StorageUsedFormatted: storageFormatted,
+		CollectionCount:    len(collectionSet),
+		Collections:        collectionMap,
+	}, nil
+}
+
+// formatBytes converts bytes to human-readable format.
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
 var invalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 func sanitize(input string) string {
