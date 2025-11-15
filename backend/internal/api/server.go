@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -81,13 +82,15 @@ func (s *Server) routes() {
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
-	r.Delete("/files/{file_id}", s.handleFileDelete)
-	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
-	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	// More specific routes must come before parameterized routes
+	r.Get("/files/type/{type}", s.handleGetFilesByType)
 	r.Get("/files/search", s.handleFileSearch)
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Delete("/files/{file_id}", s.handleFileDelete)
+	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
+	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
 
 	// Notes endpoints
 	r.Get("/files/{file_id}/notes", s.handleGetNotes)
@@ -932,6 +935,100 @@ func (s *Server) handleGetCollectionStats(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// handleGetFilesByType returns files filtered by collection type with pagination.
+func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "type")
+	if collectionType == "" {
+		s.handleError(w, r, apierrors.BadRequest("collection type is required"))
+		return
+	}
+
+	// Parse pagination parameters
+	page := 1
+	limit := 50
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	// Parse category filter
+	category := r.URL.Query().Get("category")
+
+	// Build request
+	req := storage.GetFilesByTypeRequest{
+		Type:     collectionType,
+		Page:     page,
+		Limit:    limit,
+		Category: category,
+	}
+
+	// Get files
+	result, err := s.storage.GetFilesByType(req)
+	if err != nil {
+		s.handleError(w, r, apierrors.InternalServerError(fmt.Sprintf("failed to get files: %v", err)))
+		return
+	}
+
+	// Convert FileMetadata to response format
+	files := make([]map[string]any, 0, len(result.Files))
+	for _, file := range result.Files {
+		// Extract optional fields from metadata map
+		dimensions := ""
+		description := ""
+		if file.Metadata != nil {
+			if dims, ok := file.Metadata["dimensions"]; ok {
+				dimensions = dims
+			}
+			if desc, ok := file.Metadata["description"]; ok {
+				description = desc
+			}
+			if comment, ok := file.Metadata["comment"]; ok && description == "" {
+				description = comment
+			}
+		}
+
+		files = append(files, map[string]any{
+			"id":            file.Hash, // Use hash as ID
+			"name":          file.OriginalName,
+			"fileName":      file.OriginalName, // Alias for compatibility
+			"path":          file.StoredPath,
+			"filePath":      file.StoredPath, // Alias for compatibility
+			"storedPath":    file.StoredPath,
+			"size":          file.Size,
+			"fileSize":      file.Size, // Alias for compatibility
+			"type":          file.MimeType,
+			"fileType":      file.MimeType, // Alias for compatibility
+			"date":          file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":    file.UploadedAt.Format(time.RFC3339),
+			"hash":          file.Hash,
+			"url":           fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":   fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":    dimensions,
+			"fileDimensions": dimensions, // Alias for compatibility
+			"description":   description,
+			"comment":       description, // Alias for compatibility
+		})
+	}
+
+	// Build response matching frontend expectations
+	response := map[string]any{
+		"files":      files,
+		"type":       collectionType,
+		"total":      result.Total,
+		"page":       result.Page,
+		"limit":      result.Limit,
+		"total_pages": result.TotalPages,
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Helper structs
