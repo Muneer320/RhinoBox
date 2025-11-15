@@ -95,6 +95,8 @@ func (s *Server) routes() {
 	r.Delete("/files/{file_id}", s.handleFileDelete)
 	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+	r.Post("/files/{file_id}/copy", s.handleFileCopy)
+	r.Post("/files/copy/batch", s.handleBatchFileCopy)
 	r.Get("/files/search", s.handleFileSearch)
 	r.Get("/files", s.handleFileList)
 	r.Get("/files/browse", s.handleBrowseDirectory)
@@ -1137,6 +1139,121 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleFileCopy handles POST /files/{file_id}/copy - copy a single file.
+func (s *Server) handleFileCopy(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req struct {
+		NewName     string            `json:"new_name,omitempty"`
+		NewCategory string            `json:"new_category,omitempty"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
+		HardLink    bool              `json:"hard_link,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	copyReq := storage.CopyRequest{
+		Hash:        fileID,
+		NewName:     req.NewName,
+		NewCategory: req.NewCategory,
+		Metadata:    req.Metadata,
+		HardLink:    req.HardLink,
+	}
+
+	result, err := s.storage.CopyFile(copyReq)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrFileNotFound):
+			httpError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, storage.ErrCopyConflict):
+			httpError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, storage.ErrInvalidFilename):
+			httpError(w, http.StatusBadRequest, err.Error())
+		default:
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("copy failed: %v", err))
+		}
+		return
+	}
+
+	s.logger.Info("file copied",
+		slog.String("original_hash", result.OriginalHash),
+		slog.String("new_hash", result.NewHash),
+		slog.String("original_name", result.OriginalMeta.OriginalName),
+		slog.String("new_name", result.NewMeta.OriginalName),
+		slog.Bool("hard_link", result.HardLink),
+	)
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleBatchFileCopy handles POST /files/copy/batch - copy multiple files.
+func (s *Server) handleBatchFileCopy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Copies []storage.CopyRequest `json:"copies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	if len(req.Copies) == 0 {
+		httpError(w, http.StatusBadRequest, "no copies provided")
+		return
+	}
+
+	if len(req.Copies) > 100 {
+		httpError(w, http.StatusBadRequest, "too many copies (max 100)")
+		return
+	}
+
+	results := make([]map[string]any, len(req.Copies))
+	successCount := 0
+	failureCount := 0
+
+	for i, copyReq := range req.Copies {
+		result, err := s.storage.CopyFile(copyReq)
+		if err != nil {
+			results[i] = map[string]any{
+				"hash":    copyReq.Hash,
+				"success": false,
+				"error":   err.Error(),
+			}
+			failureCount++
+		} else {
+			results[i] = map[string]any{
+				"original_hash": result.OriginalHash,
+				"new_hash":      result.NewHash,
+				"original_meta": result.OriginalMeta,
+				"new_meta":      result.NewMeta,
+				"hard_link":     result.HardLink,
+				"success":       true,
+			}
+			successCount++
+		}
+	}
+
+	s.logger.Info("batch file copy",
+		slog.Int("total", len(req.Copies)),
+		slog.Int("success", successCount),
+		slog.Int("failed", failureCount),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results":       results,
+		"total":         len(req.Copies),
+		"success_count": successCount,
+		"failure_count": failureCount,
+	})
 }
 
 // Helper structs

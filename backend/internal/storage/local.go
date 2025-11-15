@@ -20,12 +20,13 @@ import (
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
 type Manager struct {
-	root        string
-	storageRoot string
-	classifier  *Classifier
-	index       *MetadataIndex
-	hashIndex   *cache.HashIndex
-	mu          sync.Mutex
+	root           string
+	storageRoot    string
+	classifier     *Classifier
+	index          *MetadataIndex
+	hashIndex      *cache.HashIndex
+	referenceIndex *ReferenceIndex
+	mu             sync.Mutex
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.
