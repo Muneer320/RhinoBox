@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -523,14 +524,25 @@ func uploadTestFileContent(t *testing.T, srv *api.Server, filename string, conte
 		return "", ""
 	}
 
-	stored := response["stored"].([]interface{})
-	if len(stored) == 0 {
+	stored, ok := response["stored"].([]interface{})
+	if !ok || len(stored) == 0 {
 		return "", ""
 	}
 
-	fileInfo := stored[0].(map[string]interface{})
-	hash := fileInfo["hash"].(string)
-	path := fileInfo["path"].(string)
+	fileInfo, ok := stored[0].(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+
+	hash, ok := fileInfo["hash"].(string)
+	if !ok {
+		return "", ""
+	}
+
+	path, ok := fileInfo["path"].(string)
+	if !ok {
+		return "", ""
+	}
 
 	return hash, path
 }
@@ -548,13 +560,9 @@ func calculateStressMetrics(testName string, totalOps, expectedOps int64, succes
 		// Sort latencies
 		sorted := make([]time.Duration, len(latencies))
 		copy(sorted, latencies)
-		for i := 0; i < len(sorted)-1; i++ {
-			for j := i + 1; j < len(sorted); j++ {
-				if sorted[i] > sorted[j] {
-					sorted[i], sorted[j] = sorted[j], sorted[i]
-				}
-			}
-		}
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i] < sorted[j]
+		})
 
 		minLatency = sorted[0]
 		maxLatency = sorted[len(sorted)-1]
