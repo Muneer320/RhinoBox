@@ -52,10 +52,10 @@ func TestCollectionsEndpointIntegration(t *testing.T) {
 		}
 	})
 
-	// Test collections with real file uploads
-	t.Run("CollectionsWithUploads", func(t *testing.T) {
-		// This would require actual file uploads through the ingest endpoint
-		// For now, we test the endpoint structure
+	// Test collections response structure (without uploads)
+	t.Run("CollectionsListStructure", func(t *testing.T) {
+		// This test validates the response structure without performing uploads
+		// For uploads and full end-to-end testing, see collections_e2e_test.go
 		req := httptest.NewRequest(http.MethodGet, "/collections", nil)
 		resp := httptest.NewRecorder()
 		srv.Router().ServeHTTP(resp, req)

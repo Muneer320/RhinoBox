@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // CollectionMetadata represents metadata for a collection type.
@@ -110,6 +109,7 @@ func (m *Manager) GetCollections() ([]CollectionMetadata, error) {
 	// Also check metadata index for collections that might not have files on disk yet
 	// but have metadata entries
 	indexedCollections := make(map[string]bool)
+	m.index.mu.RLock()
 	for _, meta := range m.index.data {
 		// Extract collection type from stored path (e.g., "media/images/jpg/..." -> "images")
 		// StoredPath uses forward slashes as separators
@@ -121,6 +121,7 @@ func (m *Manager) GetCollections() ([]CollectionMetadata, error) {
 			}
 		}
 	}
+	m.index.mu.RUnlock()
 
 	// Add collections that exist in index but not yet scanned
 	for collectionType := range indexedCollections {
@@ -155,9 +156,6 @@ func (m *Manager) GetCollections() ([]CollectionMetadata, error) {
 
 // scanCollection recursively scans a collection directory and counts files and total size.
 func (m *Manager) scanCollection(path string) (fileCount int, totalSize int64, err error) {
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
 	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -167,24 +165,19 @@ func (m *Manager) scanCollection(path string) (fileCount int, totalSize int64, e
 			return nil
 		}
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			mu.Lock()
-			defer mu.Unlock()
-			fileCount++
-			totalSize += info.Size()
-		}()
-
+		fileCount++
+		totalSize += info.Size()
 		return nil
 	})
 
-	wg.Wait()
 	return fileCount, totalSize, err
 }
 
 // countFilesInCollection counts files in a collection from the metadata index.
 func (m *Manager) countFilesInCollection(collectionType string) int {
+	m.index.mu.RLock()
+	defer m.index.mu.RUnlock()
+	
 	count := 0
 	for _, meta := range m.index.data {
 		parts := strings.Split(meta.StoredPath, "/")
@@ -197,6 +190,9 @@ func (m *Manager) countFilesInCollection(collectionType string) int {
 
 // calculateCollectionSize calculates total size of files in a collection from metadata index.
 func (m *Manager) calculateCollectionSize(collectionType string) int64 {
+	m.index.mu.RLock()
+	defer m.index.mu.RUnlock()
+	
 	var totalSize int64
 	for _, meta := range m.index.data {
 		parts := strings.Split(meta.StoredPath, "/")

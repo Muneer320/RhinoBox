@@ -902,7 +902,7 @@ func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
 	collections, err := s.storage.GetCollections()
 	if err != nil {
 		s.logger.Error("failed to get collections", slog.Any("err", err))
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collections: %v", err))
+		httpError(w, http.StatusInternalServerError, "failed to get collections")
 		return
 	}
 
