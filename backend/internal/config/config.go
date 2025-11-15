@@ -17,6 +17,9 @@ type Config struct {
 	PostgresURL    string
 	MongoURL       string
 	DBMaxConns     int
+	
+	// Security configuration
+	Security SecurityConfig
 }
 
 // Load reads environment variables and falls back to sane defaults for hackathon usage.
@@ -53,6 +56,7 @@ func Load() (Config, error) {
 		PostgresURL:    postgresURL,
 		MongoURL:       mongoURL,
 		DBMaxConns:     dbMaxConns,
+		Security:       LoadSecurityConfig(),
 	}, nil
 }
 
