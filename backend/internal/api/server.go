@@ -73,6 +73,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/collections", s.handleGetCollections)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -894,6 +895,21 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleGetCollections returns all available collections with their metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections, err := s.storage.GetCollections()
+	if err != nil {
+		s.logger.Error("failed to get collections", slog.Any("err", err))
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get collections: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collections": collections,
+		"count":       len(collections),
+	})
 }
 
 // Helper structs

@@ -10,7 +10,8 @@ import {
   getNotes,
   addNote,
   deleteNote,
-  getStatistics
+  getStatistics,
+  getCollections
 } from './api.js'
 
 const root = document.documentElement
@@ -242,7 +243,8 @@ function initSidebarNavigation() {
       if (target === 'statistics') {
         await loadStatistics()
       } else if (target === 'files') {
-        // Files page shows collections, no need to load here
+        // Load collections when switching to files page
+        await loadCollections()
       }
       
       showToast(`Switched to ${target === 'home' ? 'Home' : target.charAt(0).toUpperCase() + target.slice(1)}`)
@@ -250,10 +252,84 @@ function initSidebarNavigation() {
   })
 }
 
+// Load collections from API and render collection cards
+async function loadCollections() {
+  const collectionCardsContainer = document.getElementById('collectionCards')
+  if (!collectionCardsContainer) return
+
+  try {
+    // Show loading state
+    collectionCardsContainer.innerHTML = '<div class="loading-state"><p>Loading collections...</p></div>'
+    
+    const response = await getCollections()
+    const collections = response.collections || response || []
+    
+    // Clear loading state
+    collectionCardsContainer.innerHTML = ''
+    
+    if (collections.length === 0) {
+      collectionCardsContainer.innerHTML = '<div class="empty-state"><p>No collections available. Upload some files to get started!</p></div>'
+      return
+    }
+    
+    // Render collection cards
+    collections.forEach(collection => {
+      const card = createCollectionCard(collection)
+      collectionCardsContainer.appendChild(card)
+    })
+    
+    // Initialize click handlers for the new cards
+    initCollectionCards()
+    
+  } catch (error) {
+    console.error('Error loading collections:', error)
+    collectionCardsContainer.innerHTML = '<div class="empty-state"><p>Error loading collections. Please try again.</p></div>'
+    showToast('Failed to load collections')
+  }
+}
+
+// Create a collection card element
+function createCollectionCard(collection) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'collection-card'
+  button.dataset.collection = collection.type
+  
+  button.innerHTML = `
+    <img
+      src="${collection.icon || 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80'}"
+      alt="${collection.name || collection.type}"
+      loading="lazy"
+    />
+    <div class="collection-meta">
+      <h3>${escapeHtml(collection.name || collection.type)}</h3>
+      <p>${escapeHtml(collection.description || '')}</p>
+      ${collection.file_count > 0 ? `<span class="collection-stats">${collection.file_count} file${collection.file_count !== 1 ? 's' : ''} • ${collection.formatted_size || formatBytes(collection.total_size || 0)}</span>` : ''}
+    </div>
+  `
+  
+  return button
+}
+
+// Format bytes helper
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+}
+
 // Collection card navigation
 function initCollectionCards() {
   const collectionCardButtons = document.querySelectorAll('.collection-card')
   collectionCardButtons.forEach((card) => {
+    // Skip if listener already attached
+    if (card.hasAttribute('data-listener-attached')) {
+      return
+    }
+    card.setAttribute('data-listener-attached', 'true')
+    
     card.addEventListener('click', () => {
       const collection = card.dataset.collection
       currentCollectionType = collection
