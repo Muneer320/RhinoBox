@@ -563,20 +563,100 @@ writeJSON(w, http.StatusOK, map[string]any{
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
-	// Get search query from URL parameter
-	query := r.URL.Query().Get("name")
-	if query == "" {
-		httpError(w, http.StatusBadRequest, "name query parameter is required")
+	// Parse query parameters
+	filters := storage.SearchFilters{}
+
+	// Name filter (optional, partial match)
+	if name := r.URL.Query().Get("name"); name != "" {
+		filters.Name = name
+	}
+
+	// Extension filter (optional, exact match)
+	if ext := r.URL.Query().Get("extension"); ext != "" {
+		filters.Extension = ext
+	}
+
+	// Type filter (optional, matches MIME type or category)
+	if typ := r.URL.Query().Get("type"); typ != "" {
+		filters.Type = typ
+	}
+
+	// Category filter (optional, partial match)
+	if category := r.URL.Query().Get("category"); category != "" {
+		filters.Category = category
+	}
+
+	// MIME type filter (optional, exact match)
+	if mimeType := r.URL.Query().Get("mime_type"); mimeType != "" {
+		filters.MimeType = mimeType
+	}
+
+	// Date range filters (optional)
+	if dateFromStr := r.URL.Query().Get("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse(time.RFC3339, dateFromStr); err == nil {
+			filters.DateFrom = dateFrom
+		} else if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			// Support date-only format (start of day)
+			filters.DateFrom = dateFrom
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_from format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	if dateToStr := r.URL.Query().Get("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse(time.RFC3339, dateToStr); err == nil {
+			// RFC3339 format: use exact timestamp
+			filters.DateTo = dateTo
+		} else if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			// YYYY-MM-DD format: extend to end of day (23:59:59.999...)
+			filters.DateTo = dateTo.Add(24*time.Hour - time.Nanosecond)
+		} else {
+			httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid date_to format: %v (use RFC3339 or YYYY-MM-DD)", err))
+			return
+		}
+	}
+
+	// At least one filter must be provided
+	if filters.Name == "" && filters.Extension == "" && filters.Type == "" &&
+		filters.Category == "" && filters.MimeType == "" &&
+		filters.DateFrom.IsZero() && filters.DateTo.IsZero() {
+		httpError(w, http.StatusBadRequest, "at least one filter parameter is required (name, extension, type, category, mime_type, date_from, date_to)")
 		return
 	}
 
-	results := s.storage.FindByOriginalName(query)
+	results := s.storage.SearchFiles(filters)
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"query":   query,
+	// Build response with filter summary
+	response := map[string]any{
+		"filters": map[string]any{},
 		"results": results,
 		"count":   len(results),
-	})
+	}
+
+	if filters.Name != "" {
+		response["filters"].(map[string]any)["name"] = filters.Name
+	}
+	if filters.Extension != "" {
+		response["filters"].(map[string]any)["extension"] = filters.Extension
+	}
+	if filters.Type != "" {
+		response["filters"].(map[string]any)["type"] = filters.Type
+	}
+	if filters.Category != "" {
+		response["filters"].(map[string]any)["category"] = filters.Category
+	}
+	if filters.MimeType != "" {
+		response["filters"].(map[string]any)["mime_type"] = filters.MimeType
+	}
+	if !filters.DateFrom.IsZero() {
+		response["filters"].(map[string]any)["date_from"] = filters.DateFrom.Format(time.RFC3339)
+	}
+	if !filters.DateTo.IsZero() {
+		response["filters"].(map[string]any)["date_to"] = filters.DateTo.Format(time.RFC3339)
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleFileDownload downloads a file by hash or path.
