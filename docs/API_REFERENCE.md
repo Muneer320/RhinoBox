@@ -10,24 +10,43 @@ http://localhost:8090
 
 Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
+## Documentation Sections
+
+- **[Async API Documentation](./ASYNC_API.md)** - Detailed guide for asynchronous job queue endpoints
+- **[Synchronous Endpoints](#synchronous-endpoints)** - Traditional request-response APIs (below)
+
 ---
 
 ## Endpoints Overview
 
-| Method | Endpoint                | Purpose                                        |
-| ------ | ----------------------- | ---------------------------------------------- |
-| GET    | `/healthz`              | Health check probe                             |
-| POST   | `/ingest`               | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media`         | Media-specific ingestion                       |
-| POST   | `/ingest/json`          | JSON-specific ingestion                        |
-| PATCH  | `/files/rename`         | Rename a file                                  |
-| DELETE | `/files/{file_id}`      | Delete a file                                  |
-| PATCH  | `/files/{file_id}/metadata` | Update file metadata                      |
-| POST   | `/files/metadata/batch`  | Batch update file metadata                    |
-| GET    | `/files/search`         | Search files by name                           |
-| GET    | `/files/download`       | Download file by hash or path                  |
-| GET    | `/files/metadata`       | Get file metadata without downloading         |
-| GET    | `/files/stream`         | Stream file with range request support        |
+| Method | Endpoint                    | Purpose                                           |
+| ------ | --------------------------- | ------------------------------------------------- |
+| GET    | `/healthz`                  | Health check probe                                |
+| POST   | `/ingest`                   | **Unified ingestion** - handles all data types    |
+| POST   | `/ingest/media`             | Media-specific ingestion                          |
+| POST   | `/ingest/json`              | JSON-specific ingestion                           |
+| POST   | `/ingest/async`             | **Async unified ingestion** - returns job ID      |
+| POST   | `/ingest/media/async`       | **Async media ingestion** - background processing |
+| POST   | `/ingest/json/async`        | **Async JSON ingestion** - queued processing      |
+| GET    | `/jobs`                     | List all active and recent jobs                   |
+| GET    | `/jobs/{job_id}`            | Get job status with progress                      |
+| GET    | `/jobs/{job_id}/result`     | Get detailed job results                          |
+| DELETE | `/jobs/{job_id}`            | Cancel a job                                      |
+| GET    | `/jobs/stats`               | Queue statistics                                  |
+| PATCH  | `/files/rename`             | Rename a file                                     |
+| DELETE | `/files/{file_id}`          | Delete a file                                     |
+| PATCH  | `/files/{file_id}/metadata` | Update file metadata                              |
+| POST   | `/files/metadata/batch`     | Batch update file metadata                        |
+| GET    | `/files/search`             | Search files by name                              |
+| GET    | `/files/download`           | Download file by hash or path                     |
+| GET    | `/files/metadata`           | Get file metadata without downloading             |
+| GET    | `/files/stream`             | Stream file with range request support            |
+
+---
+
+## Synchronous Endpoints
+
+All endpoints below return results immediately (blocking). For asynchronous processing of large batches, see [Async API Documentation](./ASYNC_API.md).
 
 ---
 
@@ -66,8 +85,8 @@ Automatically routes media files, JSON data, and generic files to appropriate pr
 
 | Field       | Type        | Required | Description                                    |
 | ----------- | ----------- | -------- | ---------------------------------------------- |
-| `files`     | File(s)     | No     | One or more files (media, documents, archives) |
-| `data`      | JSON string | No     | Inline JSON data (object or array)             |
+| `files`     | File(s)     | No       | One or more files (media, documents, archives) |
+| `data`      | JSON string | No       | Inline JSON data (object or array)             |
 | `namespace` | string      | No       | Organization/category namespace                |
 | `comment`   | string      | No       | Hints for categorization or decision engine    |
 | `metadata`  | JSON string | No       | Additional context (tags, source, description) |
@@ -468,8 +487,8 @@ All ingestions logged to: `data/json/ingest_log.ndjson`
 
 ### URL Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
+| Parameter | Type   | Required | Description                                  |
+| --------- | ------ | -------- | -------------------------------------------- |
 | `file_id` | string | Yes      | SHA-256 hash of the file (64 hex characters) |
 
 ### Response Schema
@@ -584,10 +603,10 @@ Download a file by its hash or stored path.
 
 ### Query Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
-| `hash`    | string | No*      | SHA-256 hash of the file       |
-| `path`    | string | No*      | Stored path of the file        |
+| Parameter | Type   | Required | Description              |
+| --------- | ------ | -------- | ------------------------ |
+| `hash`    | string | No\*     | SHA-256 hash of the file |
+| `path`    | string | No\*     | Stored path of the file  |
 
 \* Either `hash` or `path` must be provided.
 
@@ -710,20 +729,20 @@ Stream a file with HTTP range request support. Ideal for video/audio streaming a
 
 ### Query Parameters
 
-| Parameter | Type   | Required | Description                    |
-| --------- | ------ | -------- | ------------------------------ |
-| `hash`    | string | No*      | SHA-256 hash of the file       |
-| `path`    | string | No*      | Stored path of the file        |
+| Parameter | Type   | Required | Description              |
+| --------- | ------ | -------- | ------------------------ |
+| `hash`    | string | No\*     | SHA-256 hash of the file |
+| `path`    | string | No\*     | Stored path of the file  |
 
 \* Either `hash` or `path` must be provided.
 
 ### Request Headers
 
-| Header      | Description                                    |
-| ----------- | ---------------------------------------------- |
-| `Range`     | Byte range request (e.g., `bytes=0-1023`)     |
-| `If-Range`  | Conditional range request using ETag           |
-| `If-Modified-Since` | Conditional request using Last-Modified |
+| Header              | Description                               |
+| ------------------- | ----------------------------------------- |
+| `Range`             | Byte range request (e.g., `bytes=0-1023`) |
+| `If-Range`          | Conditional range request using ETag      |
+| `If-Modified-Since` | Conditional request using Last-Modified   |
 
 ### Range Request Formats
 

@@ -27,6 +27,16 @@ The server exposes:
 - `GET /healthz` — basic health probe.
 - `POST /ingest/media` — multipart form upload (`file` parts, optional `category` + `comment`).
 - `POST /ingest/json` — JSON body with either a single `document` or multiple `documents` plus optional metadata.
+- `POST /ingest/async` — async unified ingestion (returns job ID immediately).
+- `POST /ingest/media/async` — async media upload (background processing).
+- `POST /ingest/json/async` — async JSON ingestion (queued processing).
+- `GET /jobs` — list active and recent jobs.
+- `GET /jobs/{job_id}` — check job status and progress.
+- `GET /jobs/{job_id}/result` — get detailed job results.
+- `DELETE /jobs/{job_id}` — cancel a job.
+- `GET /jobs/stats` — queue statistics (pending, processing, completed, workers).
+
+For full API documentation, see [API_REFERENCE.md](../docs/API_REFERENCE.md) and [ASYNC_API.md](../docs/ASYNC_API.md).
 
 ### Media Upload Example
 
