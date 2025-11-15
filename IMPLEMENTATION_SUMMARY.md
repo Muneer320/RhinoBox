@@ -1,103 +1,140 @@
-# Implementation Summary: Dynamic Collection Cards (Issue #55)
+# Implementation Summary: GET /files/{file_id} Endpoint
 
 ## Overview
-This PR implements dynamic loading of collection cards from the backend with real statistics, replacing the hardcoded HTML cards.
+This implementation adds a new backend endpoint `GET /files/{file_id}` to retrieve complete file information by ID, addressing GitHub issue #57.
 
 ## Changes Made
 
-### Backend
+### Backend Changes
 
-1. **New Storage Module** (`backend/internal/storage/collections.go`)
-   - `GetCollections()`: Returns all available collection types with metadata
-   - `GetCollectionStats(collectionType)`: Returns file count and storage statistics for a collection
-   - `formatBytes()`: Helper function to format bytes into human-readable format (KB, MB, GB)
+1. **New Endpoint Handler** (`backend/internal/api/server.go`)
+   - Added route: `r.Get("/files/{file_id}", s.handleGetFileByID)`
+   - Implemented `handleGetFileByID` function that:
+     - Extracts file_id from URL parameter
+     - Retrieves file metadata using `storage.GetFileMetadata`
+     - Constructs download and stream URLs
+     - Returns complete file information including:
+       - hash, original_name, stored_path, category, mime_type, size
+       - uploaded_at, metadata, download_url, stream_url, url
+       - media_type (extracted from category)
+       - width/height (if available in metadata)
 
-2. **New API Endpoints** (`backend/internal/api/server.go`)
-   - `GET /collections`: Returns list of all collections with metadata
-   - `GET /collections/{type}/stats`: Returns statistics for a specific collection type
+2. **Unit Tests** (`backend/internal/api/server_test.go`)
+   - `TestGetFileByIDSuccess`: Tests successful file retrieval
+   - `TestGetFileByIDNotFound`: Tests 404 handling for non-existent files
+   - `TestGetFileByIDMissingFileID`: Tests 400 handling for missing file_id
 
-3. **Unit Tests**
-   - `backend/internal/storage/collections_test.go`: Tests for storage layer
-   - `backend/internal/api/server_test.go`: Tests for API endpoints (TestGetCollections, TestGetCollectionStats, etc.)
-
-4. **End-to-End Tests**
-   - `backend/tests/integration/collections_e2e_test.go`: Complete integration tests
-
-### Frontend
-
-1. **HTML Changes** (`frontend/index.html`)
-   - Removed hardcoded collection cards (lines 140-227)
-   - Added loading and error state containers
-
-2. **JavaScript Changes** (`frontend/src/script.js`)
-   - Added `loadCollections()` function to fetch and render collections dynamically
-   - Added `createCollectionCard()` function to generate collection cards with real stats
-   - Updated page navigation to load collections when switching to Files page
-   - Integrated with existing `getCollections()` and `getCollectionStats()` API functions
-
-3. **CSS Changes** (`frontend/src/styles.css`)
-   - Added `.collection-stats` and `.stat-item` styles for displaying statistics on cards
+3. **Integration Tests** (`backend/tests/integration/file_retrieval_test.go`)
+   - Added `getFileByID` helper function
+   - Extended `TestFileRetrievalEndToEnd` to test new endpoint
+   - Extended `TestFileRetrievalNotFound` to test 404 for new endpoint
 
 ## Test Results
 
 ### Unit Tests
-- ✅ All storage layer tests pass (5 tests)
-- ✅ All API endpoint tests pass (4 tests)
+```
+=== RUN   TestGetFileByIDSuccess
+--- PASS: TestGetFileByIDSuccess (0.03s)
+=== RUN   TestGetFileByIDNotFound
+--- PASS: TestGetFileByIDNotFound (0.02s)
+=== RUN   TestGetFileByIDMissingFileID
+--- PASS: TestGetFileByIDMissingFileID (0.02s)
+PASS
+```
 
 ### Integration Tests
-- ✅ End-to-end test passes (4 sub-tests)
-- ✅ Performance benchmarks complete
+```
+=== RUN   TestFileRetrievalEndToEnd
+--- PASS: TestFileRetrievalEndToEnd (0.03s)
+=== RUN   TestFileRetrievalNotFound
+--- PASS: TestFileRetrievalNotFound (0.05s)
+```
 
-### Test Coverage
-- Collections retrieval: 100%
-- Collection statistics: 100%
-- Error handling: Covered
-- Edge cases: Covered (empty collections, invalid types)
+## API Response Format
+
+### Success Response (200 OK)
+```json
+{
+  "hash": "abc123...",
+  "original_name": "example.jpg",
+  "stored_path": "images/jpg/example.jpg",
+  "category": "images/jpg",
+  "mime_type": "image/jpeg",
+  "size": 12345,
+  "uploaded_at": "2025-01-15T10:30:00Z",
+  "metadata": {
+    "comment": "test file"
+  },
+  "download_url": "/files/download?hash=abc123...",
+  "stream_url": "/files/stream?hash=abc123...",
+  "url": "/files/download?hash=abc123...",
+  "media_type": "images"
+}
+```
+
+### Error Responses
+
+**404 Not Found** (file doesn't exist):
+```json
+{
+  "error": "file not found: hash abc123..."
+}
+```
+
+**400 Bad Request** (missing file_id):
+```json
+{
+  "error": "file_id is required"
+}
+```
 
 ## Metrics
 
-### Performance
-- Collections endpoint: < 1ms average response time
-- Stats endpoint: < 5ms average response time (with data)
-- Frontend loading: Parallel stats fetching for optimal performance
+- **Response Time**: < 100ms (typical)
+- **Response Size**: ~500-1000 bytes (typical)
+- **Required Fields**: 12
+- **Error Handling**: 
+  - 404 for file not found
+  - 400 for missing/invalid file_id
+  - 500 for internal server errors
 
-### Code Quality
-- All linter checks pass
-- No breaking changes to existing functionality
-- Backward compatible API design
+## Frontend Integration
+
+The frontend already calls this endpoint via:
+- `api.getFile(fileId)` in `frontend/src/api.js`
+- `dataService.getFile(fileId)` in `frontend/src/dataService.js`
+- Used in `script.js` line 645 for file download functionality
+
+No frontend changes were required as the endpoint matches the expected API contract.
 
 ## Acceptance Criteria Met
 
-✅ Collection cards are loaded from backend on page load
-✅ Each card shows real file count and storage statistics
-✅ Cards are clickable and navigate to collection view
-✅ Loading and error states are handled gracefully
-✅ Backend endpoints return proper JSON responses
-✅ All tests pass
+✅ Endpoint returns complete file information  
+✅ Handles invalid file IDs with 404 error  
+✅ Frontend can fetch file details for info modal and download  
+✅ Includes download URL, file path, size, type, etc.  
+✅ All unit tests pass  
+✅ All integration tests pass  
+✅ Error handling implemented correctly
 
 ## Files Modified
 
-### Backend
-- `backend/internal/api/server.go` - Added endpoints
-- `backend/internal/api/server_test.go` - Added tests
-- `backend/internal/storage/collections.go` - New file
-- `backend/internal/storage/collections_test.go` - New file
-- `backend/tests/integration/collections_e2e_test.go` - New file
+1. `backend/internal/api/server.go` - Added endpoint and handler
+2. `backend/internal/api/server_test.go` - Added unit tests
+3. `backend/tests/integration/file_retrieval_test.go` - Added integration tests
 
-### Frontend
-- `frontend/index.html` - Removed hardcoded cards
-- `frontend/src/script.js` - Added dynamic loading
-- `frontend/src/styles.css` - Added stats styling
+## Testing
 
-## Screenshots
+To test the endpoint manually:
+```bash
+# Start the backend server
+cd backend && go run cmd/rhinobox/main.go
 
-*Note: Screenshots will be added to the PR description*
+# In another terminal, test the endpoint
+curl http://localhost:8090/files/{file_id}
+```
 
-## Breaking Changes
-None - This is a backward-compatible enhancement.
-
-## Next Steps
-1. Review and merge PR
-2. Test in staging environment
-3. Monitor performance metrics in production
-
+Or use the provided test script:
+```bash
+cd backend && ./test_file_by_id.sh
+```
