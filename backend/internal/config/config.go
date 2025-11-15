@@ -18,6 +18,9 @@ type Config struct {
 	MongoURL       string
 	DBMaxConns     int
 	
+	// Authentication configuration
+	AuthEnabled bool
+	
 	// Security configuration
 	Security SecurityConfig
 }
@@ -49,6 +52,9 @@ func Load() (Config, error) {
 		}
 	}
 
+	// Authentication configuration (defaults to false for security)
+	authEnabled := getBoolEnvFromEnv("RHINOBOX_AUTH_ENABLED", false)
+
 	return Config{
 		Addr:           addr,
 		DataDir:        dataDir,
@@ -56,6 +62,7 @@ func Load() (Config, error) {
 		PostgresURL:    postgresURL,
 		MongoURL:       mongoURL,
 		DBMaxConns:     dbMaxConns,
+		AuthEnabled:    authEnabled,
 		Security:       LoadSecurityConfig(),
 	}, nil
 }
@@ -65,4 +72,17 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getBoolEnvFromEnv reads a boolean environment variable (separate from security.go's getBoolEnv)
+func getBoolEnvFromEnv(key string, defaultValue bool) bool {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return defaultValue
+	}
+	return b
 }

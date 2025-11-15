@@ -65,24 +65,6 @@
         <div class="actions">
           <button
             type="button"
-            id="about-btn"
-            class="icon-button"
-            aria-label="About RhinoBox"
-            title="About RhinoBox"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="2"
-              stroke="currentColor"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4m0-4h.01" stroke-linecap="round" />
-            </svg>
-          </button>
-          <button
-            type="button"
             id="modeToggle"
             class="icon-button"
             aria-label="Toggle dark mode"
@@ -109,8 +91,55 @@
               <path d="M12 20v2" />
             </svg>
           </button>
-          <button type="button" class="profile-button" aria-label="Account">
+          <button
+            type="button"
+            id="user-icon"
+            class="icon-button hidden"
+            aria-label="User menu"
+            title="User menu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="profile-button hidden"
+            aria-label="Account"
+            id="profile-button"
+          >
             <span class="profile-initials">AZ</span>
+          </button>
+          <button
+            type="button"
+            id="about-btn"
+            class="icon-button"
+            aria-label="About"
+            title="About RhinoBox"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+              />
+            </svg>
           </button>
         </div>
       </header>
@@ -363,10 +392,31 @@
                         </tr>
                       </thead>
                       <tbody id="sql-tables-body">
-                        <!-- SQL tables will be dynamically loaded here -->
-                        <tr id="sql-empty" style="display: none;">
-                          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                            No SQL tables available
+                        <tr>
+                          <td>users</td>
+                          <td>1,234</td>
+                          <td>2.5 MB</td>
+                          <td>2024-01-15</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>orders</td>
+                          <td>5,678</td>
+                          <td>8.2 MB</td>
+                          <td>2024-01-15</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>products</td>
+                          <td>890</td>
+                          <td>1.1 MB</td>
+                          <td>2024-01-14</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
                           </td>
                         </tr>
                       </tbody>
@@ -399,19 +449,85 @@
                     </button>
                   </div>
                   <div class="nosql-diagram" id="nosql-diagram">
-                    <!-- Schema diagram will be dynamically rendered here -->
+                    <!-- Schema diagram will be rendered here -->
                     <svg class="nosql-svg" id="nosql-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
                       <defs>
                         <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                          <polygon points="0 0, 10 3, 0 6" fill="var(--border-strong)" />
+                          <polygon points="0 0, 10 3, 0 6" />
                         </marker>
                       </defs>
                       <!-- Background -->
                       <rect width="1200" height="800" fill="transparent" />
-                      <!-- NoSQL collections will be dynamically added here -->
-                      <text x="600" y="400" text-anchor="middle" fill="var(--text-secondary)" font-size="16" id="nosql-empty-message" style="display: none;">
-                        No NoSQL collections available. Upload JSON data to create collections.
-                      </text>
+                      
+                      <!-- Collection: cart -->
+                      <g class="collection-box" transform="translate(50, 50)">
+                        <rect x="0" y="0" width="200" height="180" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">cart</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">date (date NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">total_value (double)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">item {} (object NN)</text>
+                        <text x="10" y="135" fill="var(--text-primary)" font-size="12">customer (objectId NN)</text>
+                        <text x="10" y="155" fill="var(--text-primary)" font-size="12">coupon_code (string)</text>
+                      </g>
+
+                      <!-- Collection: product -->
+                      <g class="collection-box" transform="translate(700, 50)">
+                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">product</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">sku (string NN)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">price {} (object)</text>
+                      </g>
+
+                      <!-- Collection: customer -->
+                      <g class="collection-box" transform="translate(50, 400)">
+                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">customer</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">surname (string NN)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">contact {} (object)</text>
+                      </g>
+
+                      <!-- Embedded: item {} -->
+                      <g class="embedded-box" transform="translate(350, 150)">
+                        <rect x="0" y="0" width="180" height="120" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">item {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">product_id (objectId)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">name (string)</text>
+                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">qty (int)</text>
+                        <text x="10" y="105" fill="var(--text-primary)" font-size="11">price (double)</text>
+                      </g>
+
+                      <!-- Embedded: price {} -->
+                      <g class="embedded-box" transform="translate(950, 150)">
+                        <rect x="0" y="0" width="180" height="100" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">price {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">list_price (double)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">valid_from (date)</text>
+                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">valid_to (date)</text>
+                      </g>
+
+                      <!-- Embedded: contact {} -->
+                      <g class="embedded-box" transform="translate(350, 500)">
+                        <rect x="0" y="0" width="180" height="80" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">contact {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">address {} (object)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">phones {} (object)</text>
+                      </g>
+
+                      <!-- Relationship lines -->
+                      <line x1="250" y1="140" x2="350" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="250" y1="230" x2="350" y2="210" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="900" y1="140" x2="950" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="250" y1="540" x2="350" y2="500" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="530" y1="200" x2="700" y2="120" stroke="var(--accent)" stroke-width="2" />
+                      <line x1="250" y1="400" x2="250" y2="400" stroke="var(--accent)" stroke-width="2" />
                     </svg>
                   </div>
                 </div>
@@ -884,49 +1000,49 @@
       </div>
     </div>
 
+    <!-- User Menu Dropdown (conditionally shown) -->
+    <div id="user-menu" class="dropdown-menu hidden">
+      <button id="login-btn" class="menu-item hidden">
+        <span class="menu-icon">🔑</span>
+        Login
+      </button>
+      <button id="logout-btn" class="menu-item hidden">
+        <span class="menu-icon">🚪</span>
+        Logout
+      </button>
+      <a href="/profile" class="menu-item hidden">
+        <span class="menu-icon">👤</span>
+        Profile
+      </a>
+    </div>
+
     <!-- About Modal -->
     <div
       id="about-modal"
       class="about-modal"
+      style="display: none"
       role="dialog"
-      aria-labelledby="about-title"
-      aria-hidden="true"
+      aria-labelledby="about-modal-title"
+      aria-modal="true"
     >
-      <div class="about-modal-overlay" aria-hidden="true"></div>
+      <div class="about-modal-overlay"></div>
       <div class="about-modal-content">
-        <header class="about-modal-header">
-          <div class="about-header">
-            <div class="about-logo">
-              <svg
-                class="logo-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M3 3h18v4H3V3zm0 6h18v12H3V9zm2 2v8h14v-8H5z"
-                />
-              </svg>
-            </div>
-            <div class="about-title-group">
-              <h2 id="about-title" class="about-modal-title">RhinoBox</h2>
-              <p class="about-tagline">Intelligent space for every file</p>
-              <span class="version-badge" id="version-badge">v1.0.0</span>
-            </div>
+        <div class="about-modal-header">
+          <div class="about-header-info">
+            <h2 id="about-modal-title" class="about-modal-title">About RhinoBox</h2>
+            <p class="about-subtitle">Intelligent Storage System</p>
           </div>
           <button
-            class="about-close-button"
-            aria-label="Close about dialog"
             type="button"
+            class="about-close-button"
+            id="about-close-button"
+            aria-label="Close about modal"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              stroke-width="2"
+              stroke-width="1.5"
               stroke="currentColor"
             >
               <path
@@ -936,133 +1052,37 @@
               />
             </svg>
           </button>
-        </header>
-
-        <section class="about-modal-body">
-          <div class="about-section">
-            <h3>📖 About</h3>
-            <p>
-              RhinoBox is an intelligent file storage and organization system
-              that automatically categorizes your files, eliminates duplicates
-              through content-based hashing, and routes data to appropriate
-              storage backends (SQL/NoSQL) based on structure and type.
-            </p>
-          </div>
-
-          <div class="about-section">
-            <h3>✨ Key Features</h3>
+        </div>
+        <div class="about-modal-body">
+          <section class="about-section">
+            <h3>📦 Application</h3>
             <ul class="feature-list">
-              <li>
-                <span class="feature-icon">📁</span>
-                <div class="feature-content">
-                  <strong>Smart Categorization</strong>
-                  <p>Automatic media file detection and organization</p>
-                </div>
-              </li>
-              <li>
-                <span class="feature-icon">🔗</span>
-                <div class="feature-content">
-                  <strong>Content Deduplication</strong>
-                  <p>SHA-256 hashing prevents duplicate storage</p>
-                </div>
-              </li>
-              <li>
-                <span class="feature-icon">🗄️</span>
-                <div class="feature-content">
-                  <strong>Multi-Backend Storage</strong>
-                  <p>PostgreSQL for structured data, MongoDB for flexibility</p>
-                </div>
-              </li>
-              <li>
-                <span class="feature-icon">⚡</span>
-                <div class="feature-content">
-                  <strong>Async Batch Ingestion</strong>
-                  <p>High-throughput processing with background workers</p>
-                </div>
-              </li>
-              <li>
-                <span class="feature-icon">🔍</span>
-                <div class="feature-content">
-                  <strong>Fast Search</strong>
-                  <p>Content-based search across all stored files</p>
-                </div>
-              </li>
-              <li>
-                <span class="feature-icon">🛡️</span>
-                <div class="feature-content">
-                  <strong>Namespace Isolation</strong>
-                  <p>Secure multi-tenant data separation</p>
-                </div>
-              </li>
+              <li><strong>Version:</strong> <span id="app-version">Loading...</span></li>
+              <li><strong>Description:</strong> Intelligent file storage and management system</li>
             </ul>
-          </div>
+          </section>
 
-          <div class="about-section">
-            <h3>🔗 Resources</h3>
-            <div class="resource-links">
-              <a
-                href="https://github.com/Muneer320/RhinoBox"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="resource-link"
-              >
-                <span class="resource-icon">💻</span>
-                <span>GitHub Repository</span>
-                <span class="external-icon">↗</span>
-              </a>
-              <a
-                href="https://github.com/Muneer320/RhinoBox/blob/main/README.md"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="resource-link"
-              >
-                <span class="resource-icon">📚</span>
-                <span>Documentation</span>
-                <span class="external-icon">↗</span>
-              </a>
-              <a
-                href="https://github.com/Muneer320/RhinoBox/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="resource-link"
-              >
-                <span class="resource-icon">📝</span>
-                <span>Changelog</span>
-                <span class="external-icon">↗</span>
-              </a>
-              <a
-                href="https://github.com/Muneer320/RhinoBox/issues/new"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="resource-link"
-              >
-                <span class="resource-icon">🐛</span>
-                <span>Report Issue</span>
-                <span class="external-icon">↗</span>
-              </a>
-            </div>
-          </div>
+          <section class="about-section">
+            <h3>🔐 Security & Features</h3>
+            <ul class="feature-list">
+              <li id="auth-status">🔒 <strong>Authentication:</strong> Loading...</li>
+              <li>🏢 <strong>Multi-Tenant:</strong> Enabled</li>
+              <li>⚡ <strong>Async Ingestion:</strong> Enabled</li>
+              <li>🔄 <strong>Deduplication:</strong> Enabled</li>
+            </ul>
+          </section>
 
-          <div class="about-section">
-            <h3>⚖️ License</h3>
-            <p>
-              RhinoBox is open-source software licensed under the
-              <a
-                href="https://opensource.org/licenses/MIT"
-                target="_blank"
-                rel="noopener noreferrer"
-                >MIT License</a
-              >.
-            </p>
-          </div>
-        </section>
-
-        <footer class="about-modal-footer">
-          <div class="about-footer">
-            <p class="copyright">© 2025 RhinoBox Contributors</p>
-            <p class="build-info" id="build-info">Version 1.0.0 • Built on 2025-01-15</p>
-          </div>
-        </footer>
+          <section class="about-section">
+            <h3>💡 Features</h3>
+            <ul class="feature-list">
+              <li>📁 File upload and management</li>
+              <li>🔍 Global search across files</li>
+              <li>📝 Notes and comments</li>
+              <li>📊 Statistics and analytics</li>
+              <li>🎨 Dark mode support</li>
+            </ul>
+          </section>
+        </div>
       </div>
     </div>
 

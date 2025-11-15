@@ -16,6 +16,7 @@ import {
   searchFiles,
   API_CONFIG,
 } from "./api.js";
+import { configService } from "./configService.js";
 
 const root = document.documentElement;
 const THEME_KEY = "rhinobox-theme";
@@ -1978,15 +1979,28 @@ async function loadVersionInfo() {
 }
 
 // Initialize all features when DOM is ready
-function initAll() {
+async function initAll() {
   try {
     toast = document.getElementById("toast");
+
+    // Show loading state
+    showLoadingOverlay("Loading configuration...");
+
+    // Load configuration first
+    try {
+      await configService.loadConfig();
+    } catch (error) {
+      console.warn("Failed to load config, using defaults:", error);
+    }
 
     // Initialize theme toggle FIRST so modeToggle is available
     initThemeToggle();
 
     // Then initialize theme (which uses modeToggle)
     initTheme();
+
+    // Initialize UI based on config
+    initAuthUI();
 
     // Initialize all other features
     initHomePageFeatures();
@@ -2009,9 +2023,13 @@ function initAll() {
       loadCollections();
     }
 
+    // Hide loading overlay
+    hideLoadingOverlay();
+
     console.log("All features initialized successfully");
   } catch (error) {
     console.error("Error initializing features:", error);
+    hideLoadingOverlay();
     if (toast) {
       toast.textContent = "Error initializing page. Please refresh.";
       toast.hidden = false;
@@ -2610,6 +2628,132 @@ function closeCommentsModal() {
 }
 
 // Comments modal initialization moved to initCommentsModal()
+
+// Initialize authentication UI based on configuration
+function initAuthUI() {
+  const profileButton = document.querySelector(".profile-button");
+  const userIcon = document.getElementById("user-icon");
+
+  if (configService.isAuthEnabled()) {
+    // Show auth UI
+    if (profileButton) {
+      profileButton.classList.remove("hidden");
+    }
+    if (userIcon) {
+      userIcon.classList.remove("hidden");
+    }
+
+    // Check if user is logged in (future implementation)
+    // For now, just show the UI
+    console.info("Authentication is enabled");
+  } else {
+    // Hide all auth UI
+    if (profileButton) {
+      profileButton.classList.add("hidden");
+    }
+    if (userIcon) {
+      userIcon.classList.add("hidden");
+    }
+
+    console.info("Authentication is disabled");
+  }
+}
+
+// Show loading overlay
+function showLoadingOverlay(message) {
+  let overlay = document.getElementById("loading-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "loading-overlay";
+    overlay.className = "loading-overlay";
+    overlay.innerHTML = `
+      <div class="loading-spinner"></div>
+      <p style="margin-top: 1rem; color: white;">${message || "Loading..."}</p>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = "flex";
+}
+
+// Hide loading overlay
+function hideLoadingOverlay() {
+  const overlay = document.getElementById("loading-overlay");
+  if (overlay) {
+    overlay.style.display = "none";
+  }
+}
+
+// Initialize About modal
+let aboutModalInitialized = false;
+function initAboutModal() {
+  if (aboutModalInitialized) return;
+
+  const aboutBtn = document.getElementById("about-btn");
+  const aboutModal = document.getElementById("about-modal");
+  const aboutCloseBtn = document.getElementById("about-close-button");
+
+  if (!aboutBtn || !aboutModal) {
+    // Try again later if elements not found
+    setTimeout(initAboutModal, 100);
+    return;
+  }
+
+  aboutModalInitialized = true;
+
+  // Open modal
+  aboutBtn.addEventListener("click", () => {
+    updateAboutModal();
+    aboutModal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  });
+
+  // Close modal
+  if (aboutCloseBtn) {
+    aboutCloseBtn.addEventListener("click", () => {
+      aboutModal.style.display = "none";
+      document.body.style.overflow = "";
+    });
+  }
+
+  // Close on overlay click
+  const overlay = aboutModal.querySelector(".about-modal-overlay");
+  if (overlay) {
+    overlay.addEventListener("click", () => {
+      aboutModal.style.display = "none";
+      document.body.style.overflow = "";
+    });
+  }
+
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (
+      e.key === "Escape" &&
+      aboutModal &&
+      aboutModal.style.display === "flex"
+    ) {
+      aboutModal.style.display = "none";
+      document.body.style.overflow = "";
+    }
+  });
+}
+
+// Update About modal with auth status
+function updateAboutModal() {
+  const authStatusEl = document.getElementById("auth-status");
+
+  if (authStatusEl) {
+    const isEnabled = configService.isAuthEnabled();
+    authStatusEl.innerHTML = isEnabled
+      ? '🔓 <strong>Authentication:</strong> Enabled'
+      : '🔒 <strong>Authentication:</strong> Disabled';
+  }
+
+  // Update version
+  const versionEl = document.getElementById("app-version");
+  if (versionEl) {
+    versionEl.textContent = configService.getVersion();
+  }
+}
 
 // Load statistics from API
 async function loadStatistics() {
