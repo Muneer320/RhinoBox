@@ -15,20 +15,16 @@ import {
   getCollectionStats,
   searchFiles,
   API_CONFIG,
-  APIError,
 } from "./api.js";
-import { configService } from "./configService.js";
 
-// Import upload manager
-import { uploadManager } from "./upload-manager.js";
-import { uploadQueueUI } from "./upload-queue.js";
-
-// Import keyboard shortcuts
-import { keyboardShortcuts } from "./keyboard-shortcuts.js";
-
-// Import file filters and bulk operations
-import { fileFilterManager } from "./file-filters.js";
-import { bulkOperationsManager } from "./bulk-operations.js";
+// Import code editor
+import {
+  initCodeEditor,
+  getEditorValue,
+  getCurrentLanguage,
+  setEditorValue,
+  submitCode,
+} from "./codeEditor.js";
 
 const root = document.documentElement;
 const THEME_KEY = "rhinobox-theme";
@@ -124,20 +120,28 @@ function initHomePageFeatures() {
     quickAddTrigger.addEventListener("click", () => {
       quickAddPanel.classList.add("is-open");
       document.body.style.overflow = "hidden";
-      const textarea = document.getElementById("quickAdd");
-      if (textarea) {
-        setTimeout(() => textarea.focus(), 100);
-      }
+      // Initialize code editor if not already initialized (has guard inside)
+      setTimeout(() => {
+        initCodeEditor();
+        // Focus the editor
+        const codePreview = document.getElementById("code-preview");
+        if (codePreview) {
+          codePreview.focus();
+        }
+      }, 100);
     });
 
     // Close panel handlers
     const closePanel = () => {
       quickAddPanel.classList.remove("is-open");
       document.body.style.overflow = "";
-      const textarea = document.getElementById("quickAdd");
-      const typeSelect = document.getElementById("quickAddType");
-      if (textarea) textarea.value = "";
-      if (typeSelect) typeSelect.value = "text";
+      // Clear editor
+      setEditorValue("");
+      // Reset language selector
+      const languageSelector = document.getElementById("language-selector");
+      if (languageSelector) {
+        languageSelector.value = "json";
+      }
     };
 
     if (quickAddClose) {
@@ -164,18 +168,16 @@ function initHomePageFeatures() {
   if (quickAddForm) {
     quickAddForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const textarea = document.getElementById("quickAdd");
-      const typeSelect = document.getElementById("quickAddType");
-      const value = textarea?.value.trim() || "";
-      const selectedType = typeSelect?.value || "text";
+      
+      // Get value from code editor
+      const value = getEditorValue().trim();
+      const selectedType = getCurrentLanguage() || "json";
 
       if (!value) {
-        showToast("Provide a link, query, or description first", "warning");
-        if (textarea) textarea.focus();
+        showToast("Provide a link, query, or description first");
         return;
       }
 
-      let processingToast = null;
       try {
         let documents = [];
         
@@ -184,33 +186,12 @@ function initHomePageFeatures() {
           // Treat as URL
           documents = [{ content: value, type: "url", url: value }];
         } else if (selectedType === "json") {
-          // Try to parse as JSON with enhanced validation
+          // Try to parse as JSON
           try {
             const parsed = JSON.parse(value);
-            // Backend expects array of objects (documents)
-            if (Array.isArray(parsed)) {
-              // Filter to only include plain objects (not arrays, not null)
-              documents = parsed.filter(doc => 
-                doc !== null && 
-                typeof doc === 'object' && 
-                !Array.isArray(doc) &&
-                Object.prototype.toString.call(doc) === '[object Object]'
-              );
-              if (documents.length === 0) {
-                showToast("JSON array must contain objects. Each array item should be an object like {\"key\": \"value\"}", "error");
-                return;
-              }
-            } else if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              // Single object
-              documents = [parsed];
-            } else {
-              // Primitive values or other types - wrap in object
-              documents = [{ value: parsed, type: typeof parsed }];
-            }
-            console.log("Prepared documents for ingestion:", documents);
-          } catch (parseError) {
-            console.error("JSON parse error:", parseError);
-            showToast(`Invalid JSON format: ${parseError.message}`, "error");
+            documents = Array.isArray(parsed) ? parsed : [parsed];
+          } catch {
+            showToast("Invalid JSON format");
             return;
           }
         } else {
@@ -218,10 +199,9 @@ function initHomePageFeatures() {
           documents = [{ content: value, type: selectedType }];
         }
 
-        processingToast = showToast("Processing...", "info", 0);
+        showToast("Processing...");
         await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
-        dismissToast(processingToast);
-        showToast("Successfully added item", "success");
+        showToast("Successfully added item");
         
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -229,8 +209,13 @@ function initHomePageFeatures() {
           quickAddPanel.classList.remove("is-open");
           document.body.style.overflow = "";
         }
-        if (textarea) textarea.value = "";
-        if (typeSelect) typeSelect.value = "text";
+        setEditorValue("");
+        
+        // Reset language selector
+        const languageSelector = document.getElementById("language-selector");
+        if (languageSelector) {
+          languageSelector.value = "json";
+        }
 
         // Reload current collection if viewing one
         if (currentCollectionType) {
@@ -238,16 +223,7 @@ function initHomePageFeatures() {
         }
       } catch (error) {
         console.error("Quick add error:", error);
-        if (processingToast) {
-          dismissToast(processingToast);
-        }
-        let errorMessage = "Unknown error";
-        if (error instanceof APIError) {
-          errorMessage = error.getUserMessage();
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-        showToast(`Failed to add item: ${errorMessage}`, "error");
+        showToast(`Failed to add item: ${error.message || "Unknown error"}`);
       }
     });
   }
@@ -627,9 +603,8 @@ function initSidebarNavigation() {
       } else if (target === "data") {
         // Initialize data tabs when switching to data page
         initDataTabs();
-        // Load SQL and NoSQL data
-        loadSQLTables();
-        loadNoSQLCollections();
+        // Update diagram colors
+        setTimeout(updateNosqlDiagramColors, 100);
       }
 
       showToast(
@@ -836,20 +811,11 @@ async function performSearch(query) {
     console.error("Search error:", error);
     if (searchLoading) searchLoading.style.display = "none";
     if (searchEmpty) searchEmpty.style.display = "flex";
-    
-    // Extract user-friendly error message
-    let errorMessage = "Error performing search. Please try again.";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
     if (searchResultsList) {
       searchResultsList.innerHTML =
-        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
+        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error performing search. Please try again.</div>';
     }
-    showToast(`Search failed: ${errorMessage}`, "error");
+    showToast("Search failed: " + (error.message || "Unknown error"));
   }
 }
 
@@ -1003,9 +969,6 @@ function initCollectionCards() {
   });
 }
 
-// Store current files for filtering
-let currentFiles = [];
-
 // Load files for a collection from API
 async function loadCollectionFiles(collectionType) {
   const gallery = document.getElementById("files-gallery");
@@ -1038,58 +1001,32 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType);
     const files = response.files || response || [];
 
-    // Store files for filtering
-    currentFiles = files;
-
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    // Apply filters and sort
-    const filteredFiles = fileFilterManager.apply(files);
-
-    if (filteredFiles.length === 0) {
-      if (emptyState) {
-        emptyState.innerHTML = "<p>No files match your filters.</p>";
-        emptyState.style.display = "block";
-      }
+    if (files.length === 0) {
+      if (emptyState) emptyState.style.display = "block";
       return;
     }
 
     if (emptyState) emptyState.style.display = "none";
 
     // Render files
-    filteredFiles.forEach((file) => {
+    files.forEach((file) => {
       const fileElement = createFileElement(file, collectionType);
       gallery.appendChild(fileElement);
     });
 
     // Re-initialize gallery menus for new elements
     initGalleryMenus();
-    initBulkSelectionCheckboxes();
   } catch (error) {
     console.error("Error loading files:", error);
     if (loadingState) loadingState.style.display = "none";
     if (emptyState) {
-      let errorMessage = "Error loading files. Please try again.";
-      if (error instanceof APIError) {
-        errorMessage = error.getUserMessage();
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      emptyState.innerHTML = `<p>${escapeHtml(errorMessage)}</p>`;
+      emptyState.innerHTML = "<p>Error loading files. Please try again.</p>";
       emptyState.style.display = "block";
     }
-    let errorMessage = "Failed to load files";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    showToast(errorMessage, "error", 0, [{
-      id: "retry",
-      label: "Retry",
-      handler: () => loadCollectionFiles(collectionType),
-    }]);
+    showToast("Failed to load files");
   }
 }
 
@@ -1097,8 +1034,7 @@ async function loadCollectionFiles(collectionType) {
 function createFileElement(file, collectionType) {
   const div = document.createElement("div");
   div.className = "gallery-item";
-  const fileId = file.id || file.fileId || file.hash || `file-${Date.now()}`;
-  div.dataset.fileId = fileId;
+  div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`;
   div.dataset.fileName = file.name || file.fileName || "Untitled";
   div.dataset.filePath = file.path || file.filePath || "";
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || "";
@@ -1114,9 +1050,6 @@ function createFileElement(file, collectionType) {
 
   div.innerHTML = `
     <div class="gallery-item-header">
-      <div class="bulk-select-checkbox">
-        <input type="checkbox" class="file-checkbox" data-file-id="${fileId}" aria-label="Select file">
-      </div>
       <div class="gallery-image-container">
         ${
           isImage
@@ -1286,26 +1219,12 @@ async function loadCollections() {
     console.error("Error loading collections:", error);
     if (loadingState) loadingState.style.display = "none";
     if (errorState) {
-      let errorMessage = "Unknown error";
-      if (error instanceof APIError) {
-        errorMessage = error.getUserMessage();
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
       errorState.style.display = "block";
-      errorState.innerHTML = `<p>Failed to load collections: ${escapeHtml(errorMessage)}</p>`;
+      errorState.innerHTML = `<p>Failed to load collections: ${
+        error.message || "Unknown error"
+      }</p>`;
     }
-    let errorMessage = "Failed to load collections";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    showToast(errorMessage, "error", 0, [{
-      id: "retry",
-      label: "Retry",
-      handler: () => loadCollections(),
-    }]);
+    showToast("Failed to load collections");
   }
 }
 
@@ -1435,26 +1354,11 @@ function initGalleryMenus() {
       if (action === "download") {
         e.preventDefault();
         try {
-          const downloadToast = showToast(`Downloading "${fileName}"...`, "info", 0);
           await downloadFile(fileId, fileName, fileUrl, filePath);
-          dismissToast(downloadToast);
-          showToast(`Download started for "${fileName}"`, "success");
+          showToast(`Downloading "${fileName}"...`);
         } catch (error) {
           console.error("Download error:", error);
-          let errorMessage = "Unknown error";
-          if (error instanceof APIError) {
-            errorMessage = error.getUserMessage();
-          } else if (error.message) {
-            errorMessage = error.message;
-          }
-          showToast(`Failed to download: ${errorMessage}`, "error", 0, [{
-            id: "retry",
-            label: "Retry",
-            handler: () => {
-              const actionEvent = new Event("click");
-              option.dispatchEvent(actionEvent);
-            },
-          }]);
+          showToast(`Failed to download: ${error.message || "Unknown error"}`);
         }
       } else if (action === "rename") {
         e.preventDefault();
@@ -1464,16 +1368,10 @@ function initGalleryMenus() {
             await renameFile(fileId, newName.trim());
             titleElement.textContent = newName.trim();
             galleryItem.dataset.fileName = newName.trim();
-            showToast(`Renamed to "${newName.trim()}"`, "success");
+            showToast(`Renamed to "${newName.trim()}"`);
           } catch (error) {
             console.error("Rename error:", error);
-            let errorMessage = "Unknown error";
-            if (error instanceof APIError) {
-              errorMessage = error.getUserMessage();
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-            showToast(`Failed to rename: ${errorMessage}`, "error");
+            showToast(`Failed to rename: ${error.message || "Unknown error"}`);
           }
         }
       } else if (action === "delete") {
@@ -1485,17 +1383,11 @@ function initGalleryMenus() {
             galleryItem.style.transform = "scale(0.95)";
             setTimeout(() => {
               galleryItem.remove();
-              showToast(`Deleted "${fileName}"`, "success");
+              showToast(`Deleted "${fileName}"`);
             }, 200);
           } catch (error) {
             console.error("Delete error:", error);
-            let errorMessage = "Unknown error";
-            if (error instanceof APIError) {
-              errorMessage = error.getUserMessage();
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-            showToast(`Failed to delete: ${errorMessage}`, "error");
+            showToast(`Failed to delete: ${error.message || "Unknown error"}`);
           }
         }
       } else if (action === "copy-path") {
@@ -1521,13 +1413,8 @@ function initGalleryMenus() {
           await openCommentsModal(galleryItem);
         } catch (error) {
           console.error("Error opening comments modal:", error);
-          let errorMessage = "Unknown error";
-          if (error instanceof APIError) {
-            errorMessage = error.getUserMessage();
-          } else if (error.message) {
-            errorMessage = error.message;
-          }
-          showToast(`Failed to open notes: ${errorMessage}`, "error");
+          const errorMessage = getUserFriendlyErrorMessage(error);
+          showToast(`Failed to open notes: ${errorMessage}`);
         }
       }
     });
@@ -1699,196 +1586,41 @@ function ensureButtonsClickable() {
   });
 }
 
-// Helper function to detect file type category
-function detectFileTypeCategory(file) {
-  const mimeType = file.type || "";
-  const fileName = file.name || "";
-  const extension = fileName.split(".").pop()?.toLowerCase() || "";
-
-  // Image types
-  if (mimeType.startsWith("image/")) {
-    return "images";
-  }
-  
-  // Video types
-  if (mimeType.startsWith("video/")) {
-    return "videos";
-  }
-  
-  // Audio types
-  if (mimeType.startsWith("audio/")) {
-    return "audio";
-  }
-  
-  // Document types
-  if (
-    mimeType.includes("pdf") ||
-    mimeType.includes("document") ||
-    mimeType.includes("text") ||
-    ["doc", "docx", "txt", "rtf", "odt"].includes(extension)
-  ) {
-    return "documents";
-  }
-  
-  // Spreadsheet types
-  if (
-    mimeType.includes("spreadsheet") ||
-    mimeType.includes("excel") ||
-    ["xls", "xlsx", "csv", "ods"].includes(extension)
-  ) {
-    return "spreadsheets";
-  }
-  
-  // Presentation types
-  if (
-    mimeType.includes("presentation") ||
-    mimeType.includes("powerpoint") ||
-    ["ppt", "pptx", "odp"].includes(extension)
-  ) {
-    return "presentations";
-  }
-  
-  // Archive types
-  if (
-    mimeType.includes("zip") ||
-    mimeType.includes("rar") ||
-    mimeType.includes("tar") ||
-    mimeType.includes("gz") ||
-    ["zip", "rar", "tar", "gz", "7z"].includes(extension)
-  ) {
-    return "archives";
-  }
-  
-  // Code types
-  if (
-    ["js", "py", "java", "cpp", "c", "h", "css", "html", "json", "xml", "go", "rs", "ts"].includes(extension)
-  ) {
-    return "code";
-  }
-  
-  // JSON files
-  if (mimeType.includes("json") || extension === "json") {
-    return "json";
-  }
-  
-  return "others";
-}
-
-/**
- * Get user-friendly file type name
- * @param {string} category - Category name
- * @returns {string} User-friendly type name
- */
-function getFileTypeName(category) {
-  const typeNames = {
-    images: "Image",
-    videos: "Video",
-    audio: "Audio",
-    documents: "Document",
-    spreadsheets: "Spreadsheet",
-    presentations: "Presentation",
-    archives: "Archive",
-    json: "JSON",
-    code: "Code",
-    others: "Other",
-  };
-  return typeNames[category] || "File";
-}
-
-// Upload files to backend with progress tracking
+// Upload files to backend
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
-    showToast("No files selected", "warning");
+    showToast("No files selected");
     return;
   }
 
   try {
-    // Initialize upload queue UI if not already done
-    uploadQueueUI.init();
+    showToast(
+      `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
+    );
 
-  for (const file of files) {
-    const errors = validateFile(file);
-    if (errors.length > 0) {
-      validationErrors.push(...errors);
-    } else {
-      validFiles.push(file);
-    }
-  }
-
-  // Show validation errors
-  if (validationErrors.length > 0) {
-    validationErrors.forEach((error) => {
-      showToast(error.message, "error");
-    });
-    
-    if (validFiles.length === 0) {
-      return; // No valid files to upload
-    }
-  }
-
-    // Determine if files are media or mixed for options
+    // Determine if files are media or mixed
     const mediaTypes = ["image/", "video/", "audio/"];
-    const allMedia = validFiles.every((file) =>
+    const allMedia = files.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
-    const options = allMedia
-      ? { category: "" }
-      : { namespace: "", comment: "" };
-
-    // Start uploads with progress tracking
-    const results = await uploadManager.uploadFiles(files, options);
-
-    // Show success message for completed uploads
-    const completed = results.filter(
-      (r) => r.status === "fulfilled"
-    ).length;
-    const failed = results.filter((r) => r.status === "rejected").length;
-
-    if (completed > 0) {
-      // Show file type information
-      const typeMessages = [];
-      fileTypes.forEach((count, category) => {
-        const typeName = getFileTypeName(category);
-        typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
-      });
-
-      const typeMessage = typeMessages.join(", ");
+    if (allMedia && files.length > 0) {
+      // Use media endpoint for media files
+      await ingestMedia(files);
       showToast(
-        `Successfully uploaded ${completed} file${completed > 1 ? "s" : ""}: ${typeMessage}`
+        `Successfully uploaded ${files.length} file${
+          files.length > 1 ? "s" : ""
+        }`
+      );
+    } else {
+      // Use unified endpoint for mixed files
+      await ingestFiles(files);
+      showToast(
+        `Successfully uploaded ${files.length} file${
+          files.length > 1 ? "s" : ""
+        }`
       );
     }
-
-    if (failed > 0) {
-      showToast(
-        `${failed} file${failed > 1 ? "s" : ""} failed to upload. Check upload queue.`
-      );
-    }
-
-    // Reload collections to show new folders
-    await loadCollections();
-    }
-
-    // Dismiss upload toast
-    dismissToast(uploadToast);
-
-    // Show success with file type information
-    const typeMessages = [];
-    fileTypes.forEach((count, category) => {
-      const typeName = getFileTypeName(category);
-      typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
-    });
-
-    const typeMessage = typeMessages.join(", ");
-    showToast(
-      `Successfully uploaded: ${typeMessage}`,
-      "success"
-    );
-
-    uploadResults.success = validFiles;
-
-    // Reload collections to show new folders
-    await loadCollections();
 
     // Reload current collection if viewing one
     if (currentCollectionType) {
@@ -1896,324 +1628,53 @@ async function uploadFiles(files) {
     }
   } catch (error) {
     console.error("Upload error:", error);
-    
-    // Dismiss upload toast
-    dismissToast(uploadToast);
+    const errorMessage = error.message || "Unknown error";
 
-    // Import APIError if available
-    let errorMessage = "Unknown error";
-    let errorType = "error";
-    let retryAction = null;
-
-    if (error && typeof error === 'object') {
-      // Check if it's an APIError
-      if (error.getUserMessage && typeof error.getUserMessage === 'function') {
-        errorMessage = error.getUserMessage();
-        errorType = error.getErrorType ? error.getErrorType() : 'error';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      // Determine error type for better messaging
-      if (errorMessage.includes("Cannot connect") || errorMessage.includes("Failed to fetch") || errorMessage.includes("Network")) {
-        errorMessage = "Cannot connect to backend. Please ensure the server is running.";
-        errorType = "network";
-        retryAction = {
-          id: "retry",
-          label: "Retry",
-          handler: () => uploadFiles(validFiles),
-        };
-      } else if (errorMessage.includes("413") || errorMessage.includes("too large")) {
-        errorMessage = "File exceeds the maximum size limit (500MB).";
-        errorType = "file-too-large";
-      } else if (errorMessage.includes("415") || errorMessage.includes("unsupported")) {
-        errorMessage = "File format not supported.";
-        errorType = "unsupported-format";
-      }
-    }
-
-    // Show error toast with retry option
-    showToast(
-      `Upload failed: ${errorMessage}`,
-      "error",
-      0, // Manual dismiss
-      retryAction ? [retryAction] : []
-    );
-
-    uploadResults.failed = validFiles;
-  }
-
-  return uploadResults;
-}
-
-// ==================== Toast Notification System ====================
-
-const TOAST_CONTAINER_ID = 'toast-container';
-const MAX_TOASTS = 5;
-const TOAST_DURATIONS = {
-  success: 3000,
-  error: 0, // Manual dismiss for errors
-  info: 5000,
-  warning: 4000,
-};
-
-let toastContainer = null;
-let activeToasts = [];
-
-/**
- * Initialize toast container
- */
-function initToastContainer() {
-  if (!toastContainer) {
-    // Check if container already exists
-    toastContainer = document.getElementById(TOAST_CONTAINER_ID);
-    
-    if (!toastContainer) {
-      // Create toast container
-      toastContainer = document.createElement('div');
-      toastContainer.id = TOAST_CONTAINER_ID;
-      toastContainer.className = 'toast-container';
-      toastContainer.setAttribute('aria-live', 'polite');
-      toastContainer.setAttribute('aria-atomic', 'false');
-      document.body.appendChild(toastContainer);
+    // Provide more helpful error messages
+    if (
+      errorMessage.includes("Cannot connect to backend") ||
+      errorMessage.includes("Failed to fetch")
+    ) {
+      showToast(
+        "Cannot connect to backend. Is the server running on port 8090?"
+      );
+    } else {
+      showToast(`Upload failed: ${errorMessage}`);
     }
   }
-  return toastContainer;
 }
 
-/**
- * Get icon for toast type
- */
-function getToastIcon(type) {
-  const icons = {
-    success: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>`,
-    error: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-    </svg>`,
-    info: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-    </svg>`,
-    warning: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.008v.008H12v-.008z" />
-    </svg>`,
-  };
-  return icons[type] || icons.info;
-}
-
-/**
- * Show toast notification
- * @param {string} message - Toast message
- * @param {string} type - Toast type: 'success', 'error', 'info', 'warning'
- * @param {number} duration - Auto-dismiss duration in ms (0 = manual dismiss)
- * @param {Array} actions - Array of action buttons: [{ id, label, handler }]
- * @returns {HTMLElement} Toast element
- */
-function showToast(message, type = 'info', duration = null, actions = []) {
-  const container = initToastContainer();
-  
-  // Remove oldest toast if at max capacity
-  if (activeToasts.length >= MAX_TOASTS) {
-    const oldestToast = activeToasts.shift();
-    dismissToast(oldestToast);
-  }
-  
-  // Use default duration if not specified
-  if (duration === null) {
-    duration = TOAST_DURATIONS[type] || TOAST_DURATIONS.info;
-  }
-  
-  // Create toast element
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-  
-  const icon = getToastIcon(type);
-  const actionsHTML = actions
-    .map(
-      (a) =>
-        `<button class="toast-action" data-action="${escapeHtml(a.id)}" aria-label="${escapeHtml(a.label)}">${escapeHtml(a.label)}</button>`
-    )
-    .join('');
-  
-  toast.innerHTML = `
-    <div class="toast-icon">${icon}</div>
-    <div class="toast-content">
-      <div class="toast-message">${escapeHtml(message)}</div>
-      ${actionsHTML ? `<div class="toast-actions">${actionsHTML}</div>` : ''}
-    </div>
-    <button class="toast-close" aria-label="Close" type="button">&times;</button>
-  `;
-  
-  // Add to container and active list
-  container.appendChild(toast);
-  activeToasts.push(toast);
-  
-  // Trigger animation
-  requestAnimationFrame(() => {
-    toast.classList.add('is-visible');
-  });
-  
-  // Handle close button
-  const closeButton = toast.querySelector('.toast-close');
-  closeButton.addEventListener('click', () => {
-    dismissToast(toast);
-  });
-  
-  // Handle action buttons
-  actions.forEach((action) => {
-    const actionButton = toast.querySelector(`[data-action="${action.id}"]`);
-    if (actionButton && action.handler) {
-      actionButton.addEventListener('click', () => {
-        action.handler();
-        if (action.dismissOnClick !== false) {
-          dismissToast(toast);
-        }
-      });
-    }
-  });
-  
-  // Auto-dismiss for non-error toasts
-  if (type !== 'error' && duration > 0) {
-    const timeoutId = setTimeout(() => {
-      dismissToast(toast);
-    }, duration);
-    
-    // Store timeout ID for potential cancellation
-    toast.dataset.timeoutId = timeoutId;
-  }
-  
-  return toast;
-}
-
-/**
- * Dismiss a toast
- */
-function dismissToast(toast) {
-  if (!toast || !toast.parentNode) return;
-  
-  // Clear timeout if exists
-  if (toast.dataset.timeoutId) {
-    clearTimeout(parseInt(toast.dataset.timeoutId, 10));
-  }
-  
-  // Remove from active list
-  const index = activeToasts.indexOf(toast);
-  if (index > -1) {
-    activeToasts.splice(index, 1);
-  }
-  
-  // Animate out
-  toast.classList.remove('is-visible');
-  toast.classList.add('is-dismissing');
-  
-  setTimeout(() => {
-    if (toast.parentNode) {
-      toast.parentNode.removeChild(toast);
-    }
-  }, 300);
-}
-
-/**
- * Dismiss all toasts
- */
-function dismissAllToasts() {
-  // Use slice() to avoid mutation during iteration
-  activeToasts.slice().forEach((toast) => dismissToast(toast));
-  activeToasts = [];
-}
-
-// ==================== Loading Overlay System ====================
-
-let loadingOverlay = null;
-let loadingOverlayCount = 0;
-
-/**
- * Show global loading overlay
- * @param {string} message - Optional loading message
- */
-function showLoadingOverlay(message = 'Loading...') {
-  if (!loadingOverlay) {
-    loadingOverlay = document.createElement('div');
-    loadingOverlay.id = 'loading-overlay';
-    loadingOverlay.className = 'loading-overlay';
-    loadingOverlay.setAttribute('role', 'status');
-    loadingOverlay.setAttribute('aria-live', 'polite');
-    loadingOverlay.setAttribute('aria-label', message);
-    document.body.appendChild(loadingOverlay);
-  }
-
-  loadingOverlay.innerHTML = `
-    <div class="loading-spinner">
-      <div class="spinner-ring"></div>
-      <div class="spinner-text">${escapeHtml(message)}</div>
-    </div>
-  `;
-
-  loadingOverlayCount++;
-  loadingOverlay.style.display = 'flex';
-}
-
-/**
- * Hide global loading overlay
- */
-function hideLoadingOverlay() {
-  if (loadingOverlayCount > 0) {
-    loadingOverlayCount--;
-  }
-
-  if (loadingOverlayCount === 0 && loadingOverlay) {
-    loadingOverlay.style.display = 'none';
-  }
-}
-
-/**
- * Wrap async function with loading overlay
- */
-async function withLoadingOverlay(asyncFn, message = 'Loading...') {
-  showLoadingOverlay(message);
-  try {
-    const result = await asyncFn();
-    return result;
-  } finally {
-    hideLoadingOverlay();
-  }
-}
-
-/**
- * Legacy showToast function for backward compatibility
- * @deprecated Use showToast(message, type, duration, actions) instead
- */
 let toastTimeoutId;
-function showToastLegacy(message) {
-  showToast(message, 'info');
+function showToast(message) {
+  if (!toast) {
+    toast = document.getElementById("toast");
+    if (!toast) return;
+  }
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.add("is-visible");
+  clearTimeout(toastTimeoutId);
+  toastTimeoutId = setTimeout(() => {
+    toast.classList.remove("is-visible");
+    toastTimeoutId = setTimeout(() => {
+      toast.hidden = true;
+    }, 200);
+  }, 2400);
 }
+
+// Make showToast available globally for code editor
+window.showToast = showToast;
 
 // Initialize all features when DOM is ready
-async function initAll() {
+function initAll() {
   try {
     toast = document.getElementById("toast");
-
-    // Show loading state
-    showLoadingOverlay("Loading configuration...");
-
-    // Load configuration first
-    try {
-      await configService.loadConfig();
-    } catch (error) {
-      console.warn("Failed to load config, using defaults:", error);
-    }
 
     // Initialize theme toggle FIRST so modeToggle is available
     initThemeToggle();
 
     // Then initialize theme (which uses modeToggle)
     initTheme();
-
-    // Initialize UI based on config
-    initAuthUI();
 
     // Initialize all other features
     initHomePageFeatures();
@@ -2226,10 +1687,16 @@ async function initAll() {
     initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
-    uploadQueueUI.init();
-    initKeyboardShortcuts();
-    initFileFilters();
-    initBulkOperations();
+    
+    // Initialize code editor (will be initialized when Quick Add panel opens)
+    // But we can pre-initialize it for better UX
+    setTimeout(() => {
+      try {
+        initCodeEditor();
+      } catch (error) {
+        console.warn("Code editor initialization deferred:", error);
+      }
+    }, 500);
 
     // Load collections if on files page
     if (
@@ -2239,13 +1706,9 @@ async function initAll() {
       loadCollections();
     }
 
-    // Hide loading overlay
-    hideLoadingOverlay();
-
     console.log("All features initialized successfully");
   } catch (error) {
     console.error("Error initializing features:", error);
-    hideLoadingOverlay();
     if (toast) {
       toast.textContent = "Error initializing page. Please refresh.";
       toast.hidden = false;
@@ -2276,303 +1739,6 @@ function initLayoutToggle() {
   });
 }
 
-<<<<<<< HEAD
-=======
-// Load SQL tables from backend
-async function loadSQLTables() {
-  const tbody = document.getElementById("sql-tables-body");
-  const emptyRow = document.getElementById("sql-empty");
-  
-  if (!tbody) return;
-
-  try {
-    // For now, we'll get SQL data from JSON collections that were stored as SQL
-    // This would need a proper SQL tables endpoint in the backend
-    // For now, show empty state
-    tbody.innerHTML = "";
-    if (emptyRow) {
-      emptyRow.style.display = "table-row";
-    } else {
-      const emptyTr = document.createElement("tr");
-      emptyTr.id = "sql-empty";
-      emptyTr.innerHTML = `
-        <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-          No SQL tables available. Upload JSON data to create SQL tables.
-        </td>
-      `;
-      tbody.appendChild(emptyTr);
-    }
-  } catch (error) {
-    console.error("Error loading SQL tables:", error);
-    if (tbody) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-            Error loading SQL tables
-          </td>
-        </tr>
-      `;
-    }
-  }
-}
-
-// Load NoSQL collections and create tiles
-async function loadNoSQLCollections() {
-  const nosqlTilesGrid = document.getElementById("nosql-tiles-grid");
-  if (!nosqlTilesGrid) return;
-
-  try {
-    const emptyState = document.getElementById("nosql-empty");
-    
-    // Clear existing tiles
-    const existingTiles = nosqlTilesGrid.querySelectorAll(".nosql-tile");
-    existingTiles.forEach(tile => tile.remove());
-    
-    // Try to get JSON collections (NoSQL data)
-    try {
-      const jsonFiles = await getFiles("json", "", { limit: 100 });
-      const files = jsonFiles.files || jsonFiles || [];
-      
-      if (files.length === 0) {
-        if (emptyState) emptyState.style.display = "block";
-        return;
-      }
-      
-      if (emptyState) emptyState.style.display = "none";
-      
-      // Group files by namespace/collection name to create different tiles
-      const collectionsMap = new Map();
-      files.forEach(file => {
-        const namespace = file.namespace || file.collection || "default";
-        if (!collectionsMap.has(namespace)) {
-          collectionsMap.set(namespace, []);
-        }
-        collectionsMap.get(namespace).push(file);
-      });
-      
-      // Create a tile for each collection/namespace
-      collectionsMap.forEach((files, collectionName) => {
-        // Analyze the first file to get schema
-        const firstFile = files[0];
-        let schema = {};
-        
-        try {
-          if (firstFile.content) {
-            const content = typeof firstFile.content === 'string' 
-              ? JSON.parse(firstFile.content) 
-              : firstFile.content;
-            schema = content;
-          } else if (firstFile.data) {
-            schema = typeof firstFile.data === 'string' 
-              ? JSON.parse(firstFile.data) 
-              : firstFile.data;
-          }
-        } catch (e) {
-          console.warn("Could not parse schema for", collectionName, e);
-        }
-        
-        // Create collection tile
-        const tile = createNoSQLCollectionTile(collectionName, schema, files);
-        nosqlTilesGrid.appendChild(tile);
-      });
-      
-    } catch (error) {
-      console.warn("Could not load NoSQL collections:", error);
-      if (emptyState) emptyState.style.display = "block";
-    }
-    
-  } catch (error) {
-    console.error("Error loading NoSQL collections:", error);
-    const emptyState = document.getElementById("nosql-empty");
-    if (emptyState) emptyState.style.display = "block";
-  }
-}
-
-// Create a NoSQL collection tile (HTML element)
-function createNoSQLCollectionTile(collectionName, schema, files) {
-  const tile = document.createElement("button");
-  tile.type = "button";
-  tile.className = "nosql-tile";
-  tile.dataset.collectionName = collectionName;
-  
-  // Get schema fields
-  const fields = [];
-  if (schema && typeof schema === 'object') {
-    Object.keys(schema).forEach(key => {
-      const value = schema[key];
-      let type = typeof value;
-      if (Array.isArray(value)) type = "array";
-      else if (value === null) type = "null";
-      else if (typeof value === 'object') type = "object";
-      fields.push({ name: key, type });
-    });
-  }
-  
-  const fileCount = files.length;
-  const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
-  const formattedSize = formatFileSize(totalSize);
-  
-  tile.innerHTML = `
-    <div class="nosql-tile-header">
-      <h3 class="nosql-tile-title">${escapeHtml(collectionName || "collection")}</h3>
-    </div>
-    <div class="nosql-tile-body">
-      <div class="nosql-tile-stats">
-        <span class="nosql-tile-stat">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-          </svg>
-          ${fileCount} document${fileCount !== 1 ? "s" : ""}
-        </span>
-        <span class="nosql-tile-stat">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-          </svg>
-          ${formattedSize}
-        </span>
-      </div>
-      <div class="nosql-tile-fields">
-        ${fields.slice(0, 5).map(field => `
-          <div class="nosql-tile-field">
-            <span class="nosql-field-name">${escapeHtml(field.name)}</span>
-            <span class="nosql-field-type">${escapeHtml(field.type)}</span>
-          </div>
-        `).join("")}
-        ${fields.length > 5 ? `<div class="nosql-tile-field-more">+${fields.length - 5} more fields</div>` : ""}
-      </div>
-    </div>
-  `;
-  
-  // Add click handler to open modal
-  tile.addEventListener("click", () => {
-    openNoSQLModal(collectionName, schema, files);
-  });
-  
-  return tile;
-}
-
-// Open NoSQL database modal
-function openNoSQLModal(collectionName, schema, files) {
-  const modal = document.getElementById("nosql-modal");
-  const overlay = document.getElementById("nosql-modal-overlay");
-  const closeBtn = document.getElementById("nosql-modal-close");
-  const title = document.getElementById("nosql-modal-title");
-  const info = document.getElementById("nosql-modal-info");
-  const data = document.getElementById("nosql-modal-data");
-  
-  if (!modal || !title || !info || !data) return;
-  
-  // Set title
-  title.textContent = collectionName || "NoSQL Database";
-  
-  // Get schema fields
-  const fields = [];
-  if (schema && typeof schema === 'object') {
-    Object.keys(schema).forEach(key => {
-      const value = schema[key];
-      let type = typeof value;
-      if (Array.isArray(value)) type = "array";
-      else if (value === null) type = "null";
-      else if (typeof value === 'object') type = "object";
-      fields.push({ name: key, type, sample: value });
-    });
-  }
-  
-  const fileCount = files.length;
-  const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
-  const formattedSize = formatFileSize(totalSize);
-  
-  // Set info
-  info.innerHTML = `
-    <div class="nosql-modal-stat">
-      <span class="nosql-modal-stat-label">Documents</span>
-      <span class="nosql-modal-stat-value">${fileCount}</span>
-    </div>
-    <div class="nosql-modal-stat">
-      <span class="nosql-modal-stat-label">Total Size</span>
-      <span class="nosql-modal-stat-value">${formattedSize}</span>
-    </div>
-    <div class="nosql-modal-stat">
-      <span class="nosql-modal-stat-label">Fields</span>
-      <span class="nosql-modal-stat-value">${fields.length}</span>
-    </div>
-  `;
-  
-  // Set data - show schema and sample documents
-  data.innerHTML = `
-    <div class="nosql-modal-schema">
-      <h3>Schema</h3>
-      <div class="nosql-schema-fields">
-        ${fields.map(field => `
-          <div class="nosql-schema-field">
-            <span class="nosql-schema-field-name">${escapeHtml(field.name)}</span>
-            <span class="nosql-schema-field-type">${escapeHtml(field.type)}</span>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-    <div class="nosql-modal-documents">
-      <h3>Sample Documents</h3>
-      <div class="nosql-documents-list">
-        ${files.slice(0, 10).map((file, index) => {
-          let content = {};
-          try {
-            if (file.content) {
-              content = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
-            } else if (file.data) {
-              content = typeof file.data === 'string' ? JSON.parse(file.data) : file.data;
-            }
-          } catch (e) {
-            content = { error: "Could not parse" };
-          }
-          return `
-            <div class="nosql-document-item">
-              <div class="nosql-document-header">
-                <span class="nosql-document-index">Document ${index + 1}</span>
-                ${file.name ? `<span class="nosql-document-name">${escapeHtml(file.name)}</span>` : ""}
-              </div>
-              <pre class="nosql-document-content">${escapeHtml(JSON.stringify(content, null, 2))}</pre>
-            </div>
-          `;
-        }).join("")}
-        ${files.length > 10 ? `<div class="nosql-documents-more">... and ${files.length - 10} more documents</div>` : ""}
-      </div>
-    </div>
-  `;
-  
-  // Show modal
-  modal.style.display = "flex";
-  document.body.style.overflow = "hidden";
-  
-  // Close handlers - remove existing listeners first
-  const closeModal = () => {
-    modal.style.display = "none";
-    document.body.style.overflow = "";
-  };
-  
-  // Remove old listeners by cloning elements
-  if (closeBtn) {
-    const newCloseBtn = closeBtn.cloneNode(true);
-    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-    newCloseBtn.addEventListener("click", closeModal);
-  }
-  if (overlay) {
-    const newOverlay = overlay.cloneNode(true);
-    overlay.parentNode.replaceChild(newOverlay, overlay);
-    newOverlay.addEventListener("click", closeModal);
-  }
-  
-  // Close on Escape key
-  const escapeHandler = (e) => {
-    if (e.key === "Escape" && modal.style.display === "flex") {
-      closeModal();
-      document.removeEventListener("keydown", escapeHandler);
-    }
-  };
-  document.addEventListener("keydown", escapeHandler);
-}
-
->>>>>>> this
 // Initialize data tabs (SQL/NoSQL)
 let dataTabsInitialized = false;
 function initDataTabs() {
@@ -2624,8 +1790,10 @@ function initDataTabs() {
       } else if (tabType === "nosql") {
         sqlSection.style.display = "none";
         nosqlSection.style.display = "flex";
-        // Load NoSQL collections when switching to NoSQL tab
-        loadNoSQLCollections();
+        // Update diagram colors when switching to NoSQL tab
+        setTimeout(updateNosqlDiagramColors, 100);
+        // Initialize zoom and pan when switching to NoSQL tab
+        setTimeout(initNosqlZoomPan, 100);
       }
     });
   });
@@ -2857,7 +2025,7 @@ async function renderComments(fileId) {
 // Add a new comment
 async function addComment(fileId, text) {
   if (!text.trim()) {
-    showToast("Note cannot be empty", "warning");
+    showToast("Note cannot be empty");
     return;
   }
 
@@ -2865,16 +2033,10 @@ async function addComment(fileId, text) {
     await addNote(fileId, text.trim());
     commentInput.value = "";
     await renderComments(fileId);
-    showToast("Note added", "success");
+    showToast("Note added");
   } catch (error) {
     console.error("Error adding note:", error);
-    let errorMessage = "Unknown error";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    showToast(`Failed to add note: ${errorMessage}`, "error");
+    showToast(`Failed to add note: ${error.message || "Unknown error"}`);
   }
 }
 
@@ -2887,16 +2049,10 @@ async function deleteComment(fileId, commentId) {
   try {
     await deleteNote(fileId, commentId);
     await renderComments(fileId);
-    showToast("Note deleted", "success");
+    showToast("Note deleted");
   } catch (error) {
     console.error("Error deleting note:", error);
-    let errorMessage = "Unknown error";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    showToast(`Failed to delete note: ${errorMessage}`, "error");
+    showToast(`Failed to delete note: ${error.message || "Unknown error"}`);
   }
 }
 
@@ -2927,231 +2083,6 @@ function closeCommentsModal() {
 }
 
 // Comments modal initialization moved to initCommentsModal()
-
-// Initialize keyboard shortcuts
-function initKeyboardShortcuts() {
-  keyboardShortcuts.init();
-
-  // Register shortcuts
-  keyboardShortcuts.register('Ctrl+k', () => {
-    const searchInput = document.getElementById('global-search');
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.select();
-    }
-  }, 'Open global search');
-
-  keyboardShortcuts.register('Ctrl+u', () => {
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) {
-      fileInput.click();
-    }
-  }, 'Open file upload');
-
-  keyboardShortcuts.register('Ctrl+/', () => {
-    keyboardShortcuts.showHelp();
-  }, 'Show keyboard shortcuts');
-
-  keyboardShortcuts.register('Escape', () => {
-    // Close modals
-    const searchModal = document.getElementById('search-modal');
-    if (searchModal && searchModal.style.display !== 'none') {
-      closeSearchModal();
-      return;
-    }
-
-    const commentsModal = document.getElementById('comments-modal');
-    if (commentsModal && commentsModal.style.display === 'flex') {
-      closeCommentsModal();
-      return;
-    }
-
-    const quickAddPanel = document.getElementById('quickAdd-panel');
-    if (quickAddPanel && quickAddPanel.classList.contains('is-open')) {
-      quickAddPanel.classList.remove('is-open');
-      document.body.style.overflow = '';
-      return;
-    }
-
-    // Close keyboard shortcuts help
-    keyboardShortcuts.hideHelp();
-  }, 'Close modal/search');
-
-  // Sidebar navigation shortcuts
-  keyboardShortcuts.register('Ctrl+1', () => {
-    const homeBtn = document.querySelector('[data-target="home"]');
-    if (homeBtn) homeBtn.click();
-  }, 'Switch to Home page');
-
-  keyboardShortcuts.register('Ctrl+2', () => {
-    const filesBtn = document.querySelector('[data-target="files"]');
-    if (filesBtn) filesBtn.click();
-  }, 'Switch to Files page');
-
-  keyboardShortcuts.register('Ctrl+3', () => {
-    const dataBtn = document.querySelector('[data-target="data"]');
-    if (dataBtn) dataBtn.click();
-  }, 'Switch to Data page');
-
-  keyboardShortcuts.register('Ctrl+4', () => {
-    const statsBtn = document.querySelector('[data-target="statistics"]');
-    if (statsBtn) statsBtn.click();
-  }, 'Switch to Statistics page');
-
-  // Refresh file list
-  keyboardShortcuts.register('Ctrl+r', (e) => {
-    e.preventDefault(); // Prevent browser refresh
-    if (currentCollectionType) {
-      loadCollectionFiles(currentCollectionType);
-      showToast('Refreshed file list');
-    }
-  }, 'Refresh file list');
-}
-
-// Initialize file filters UI
-function initFileFilters() {
-  const filterTypeBtn = document.getElementById('filter-type');
-  const filterDateBtn = document.getElementById('filter-date');
-  const filterSizeBtn = document.getElementById('filter-size');
-  const clearFiltersBtn = document.getElementById('clear-filters');
-  const sortSelect = document.getElementById('sort-by');
-
-  // Register filter change callback
-  fileFilterManager.onFilterChange(() => {
-    if (currentCollectionType && currentFiles.length > 0) {
-      const gallery = document.getElementById('files-gallery');
-      if (gallery) {
-        gallery.innerHTML = '';
-        const filteredFiles = fileFilterManager.apply(currentFiles);
-        filteredFiles.forEach((file) => {
-          const fileElement = createFileElement(file, currentCollectionType);
-          gallery.appendChild(fileElement);
-        });
-        initGalleryMenus();
-        initBulkSelectionCheckboxes();
-      }
-    }
-    updateFilterCounts();
-  });
-
-  // Sort change handler
-  if (sortSelect) {
-    sortSelect.addEventListener('change', (e) => {
-      fileFilterManager.setSortBy(e.target.value);
-    });
-  }
-
-  // Clear filters
-  if (clearFiltersBtn) {
-    clearFiltersBtn.addEventListener('click', () => {
-      fileFilterManager.clearFilters();
-      if (sortSelect) sortSelect.value = 'date-desc';
-    });
-  }
-
-  // Update filter counts
-  updateFilterCounts();
-}
-
-// Update filter count badges
-function updateFilterCounts() {
-  const filterTypeCount = document.getElementById('filter-type-count');
-  if (filterTypeCount) {
-    const filters = fileFilterManager.getFilters();
-    filterTypeCount.textContent = filters.fileTypes.length;
-    filterTypeCount.style.display = filters.fileTypes.length > 0 ? 'inline' : 'none';
-  }
-}
-
-// Initialize bulk operations
-function initBulkOperations() {
-  const bulkActionsBar = document.getElementById('bulk-actions-bar');
-  const selectionCount = document.getElementById('selection-count');
-  const bulkDownloadBtn = document.getElementById('bulk-download');
-  const bulkDeleteBtn = document.getElementById('bulk-delete');
-  const bulkDeselectBtn = document.getElementById('bulk-deselect');
-
-  // Register selection change callback
-  bulkOperationsManager.onSelectionChange((count, ids) => {
-    if (selectionCount) {
-      selectionCount.textContent = count;
-    }
-    if (bulkActionsBar) {
-      bulkActionsBar.style.display = count > 0 ? 'flex' : 'none';
-    }
-    updateCheckboxStates();
-  });
-
-  // Bulk download
-  if (bulkDownloadBtn) {
-    bulkDownloadBtn.addEventListener('click', async () => {
-      try {
-        showToast('Preparing download...');
-        await bulkOperationsManager.bulkDownloadAsZip(currentFiles);
-        showToast('Download started');
-      } catch (error) {
-        console.error('Bulk download error:', error);
-        showToast(`Download failed: ${error.message || 'Unknown error'}`);
-      }
-    });
-  }
-
-  // Bulk delete
-  if (bulkDeleteBtn) {
-    bulkDeleteBtn.addEventListener('click', async () => {
-      const count = bulkOperationsManager.getSelectedCount();
-      if (!confirm(`Are you sure you want to delete ${count} file${count > 1 ? 's' : ''}?`)) {
-        return;
-      }
-
-      try {
-        showToast('Deleting files...');
-        const result = await bulkOperationsManager.bulkDelete(currentFiles);
-        showToast(`Deleted ${result.succeeded} of ${result.total} file${result.total > 1 ? 's' : ''}`);
-        
-        // Reload files
-        if (currentCollectionType) {
-          await loadCollectionFiles(currentCollectionType);
-        }
-      } catch (error) {
-        console.error('Bulk delete error:', error);
-        showToast(`Delete failed: ${error.message || 'Unknown error'}`);
-      }
-    });
-  }
-
-  // Deselect all
-  if (bulkDeselectBtn) {
-    bulkDeselectBtn.addEventListener('click', () => {
-      bulkOperationsManager.deselectAll();
-    });
-  }
-}
-
-// Initialize bulk selection checkboxes
-function initBulkSelectionCheckboxes() {
-  const checkboxes = document.querySelectorAll('.file-checkbox');
-  checkboxes.forEach((checkbox) => {
-    checkbox.addEventListener('change', (e) => {
-      const fileId = e.target.dataset.fileId;
-      if (e.target.checked) {
-        bulkOperationsManager.selectFile(fileId);
-      } else {
-        bulkOperationsManager.deselectFile(fileId);
-      }
-    });
-  });
-  updateCheckboxStates();
-}
-
-// Update checkbox states based on selection
-function updateCheckboxStates() {
-  const checkboxes = document.querySelectorAll('.file-checkbox');
-  checkboxes.forEach((checkbox) => {
-    const fileId = checkbox.dataset.fileId;
-    checkbox.checked = bulkOperationsManager.isSelected(fileId);
-  });
-}
 
 // Load statistics from API
 async function loadStatistics() {
@@ -3216,25 +2147,9 @@ async function loadStatistics() {
     console.error("Error loading statistics:", error);
     if (statsLoading) statsLoading.style.display = "none";
     if (statsGrid) {
-      let errorMessage = "Error loading statistics";
-      if (error instanceof APIError) {
-        errorMessage = error.getUserMessage();
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
       statsGrid.innerHTML =
-        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
+        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading statistics</div>';
     }
-    let errorMessage = "Failed to load statistics";
-    if (error instanceof APIError) {
-      errorMessage = error.getUserMessage();
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    showToast(errorMessage, "error", 0, [{
-      id: "retry",
-      label: "Retry",
-      handler: () => loadStatistics(),
-    }]);
+    showToast("Failed to load statistics");
   }
 }

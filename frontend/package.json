@@ -11,7 +11,10 @@
     "preview": "vite preview",
     "test": "node --experimental-modules tests/run-tests.js || echo 'Tests completed'"
   },
-  "dependencies": {},
+  "dependencies": {
+    "monaco-editor": "^0.54.0",
+    "vite-plugin-monaco-editor": "^1.1.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "eslint": "^9.39.1",
