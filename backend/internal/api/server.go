@@ -61,6 +61,14 @@ func (s *Server) setupValidation() *validationmw.Validator {
 	return validator
 }
 
+// Stop gracefully stops the server and cleans up resources.
+func (s *Server) Stop() {
+	// Job queue shutdown will be implemented when async endpoints are added
+	if s.jobQueue != nil {
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
+	}
+}
+
 func (s *Server) routes() {
 	r := s.router
 
