@@ -21,6 +21,7 @@ import (
 	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
+	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -33,6 +34,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	fileService service.FileService
 	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
@@ -45,11 +47,12 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:      cfg,
-		logger:   logger,
-		router:   chi.NewRouter(),
-		storage:  store,
-		jobQueue: nil, // TODO: Initialize when async endpoints are needed
+		cfg:         cfg,
+		logger:      logger,
+		router:      chi.NewRouter(),
+		storage:     store,
+		fileService: service.NewFileService(store),
+		jobQueue:    nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
@@ -293,7 +296,7 @@ func (s *Server) storeSingleFile(header *multipart.FileHeader, categoryHint, com
 		metadata["comment"] = comment
 	}
 
-	result, err := s.storage.StoreFile(storage.StoreRequest{
+	result, err := s.fileService.StoreFile(storage.StoreRequest{
 		Reader:       reader,
 		Filename:     header.Filename,
 		MimeType:     mimeType,
@@ -415,7 +418,7 @@ httpError(w, r, http.StatusBadRequest, "new_name is required")
 return
 }
 
-result, err := s.storage.RenameFile(req)
+	result, err := s.fileService.RenameFile(req)
 if err != nil {
 switch {
 case errors.Is(err, storage.ErrFileNotFound):
@@ -451,7 +454,7 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		Hash: fileID,
 	}
 
-	result, err := s.storage.DeleteFile(req)
+	result, err := s.fileService.DeleteFile(req)
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrInvalidInput):
@@ -494,7 +497,7 @@ if req.Action == "" {
 req.Action = "merge"
 }
 
-result, err := s.storage.UpdateFileMetadata(req)
+	result, err := s.fileService.UpdateFileMetadata(req)
 if err != nil {
 	switch {
 	case errors.Is(err, storage.ErrMetadataNotFound):
@@ -550,7 +553,7 @@ httpError(w, r, http.StatusBadRequest, "too many updates (max 100)")
 return
 }
 
-results, errs := s.storage.BatchUpdateFileMetadata(req.Updates)
+	results, errs := s.fileService.BatchUpdateFileMetadata(req.Updates)
 
 // Add timestamps and count successes/failures
 successCount := 0
@@ -602,7 +605,7 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := s.storage.FindByOriginalName(query)
+	results := s.fileService.SearchFiles(query)
 
 	writeJSON(w, r, http.StatusOK, map[string]any{
 		"query":   query,
@@ -620,9 +623,9 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if hash != "" {
-		result, err = s.storage.GetFileByHash(hash)
+		result, err = s.fileService.GetFileByHash(hash)
 	} else if path != "" {
-		result, err = s.storage.GetFileByPath(path)
+		result, err = s.fileService.GetFileByPath(path)
 	} else {
 		httpError(w, r, http.StatusBadRequest, "hash or path query parameter is required")
 		return
@@ -660,7 +663,7 @@ func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadata, err := s.storage.GetFileMetadata(hash)
+	metadata, err := s.fileService.GetFileMetadata(hash)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
 			httpError(w, r, http.StatusNotFound, err.Error())
@@ -682,9 +685,9 @@ func (s *Server) handleFileStream(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if hash != "" {
-		result, err = s.storage.GetFileByHash(hash)
+		result, err = s.fileService.GetFileByHash(hash)
 	} else if path != "" {
-		result, err = s.storage.GetFileByPath(path)
+		result, err = s.fileService.GetFileByPath(path)
 	} else {
 		httpError(w, r, http.StatusBadRequest, "hash or path query parameter is required")
 		return
@@ -925,7 +928,7 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 		IPAddress:    ip,
 	}
 
-	return s.storage.LogDownload(log)
+	return s.fileService.LogDownload(log)
 }
 
 // Helper structs
