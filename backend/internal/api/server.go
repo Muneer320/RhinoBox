@@ -17,6 +17,9 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
@@ -31,6 +34,7 @@ type Server struct {
 	router      chi.Router
 	storage     *storage.Manager
 	fileService *service.FileService
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -49,6 +53,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		router:      chi.NewRouter(),
 		storage:     store,
 		fileService: fileService,
+		jobQueue:    nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
