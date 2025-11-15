@@ -23,6 +23,7 @@ type Manager struct {
 	root           string
 	storageRoot    string
 	classifier     *Classifier
+	rulesMgr       *RoutingRulesManager
 	index          *MetadataIndex
 	versionIndex   *VersionIndex
 	hashIndex      *cache.HashIndex
@@ -69,6 +70,12 @@ func NewManager(root string) (*Manager, error) {
 		return nil, err
 	}
 
+	// Initialize routing rules manager
+	rulesMgr, err := NewRoutingRulesManager(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize routing rules manager: %w", err)
+	}
+
 	versionIndex, err := NewVersionIndex(filepath.Join(root, "metadata", "versions.json"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize version index: %w", err)
@@ -88,6 +95,7 @@ func NewManager(root string) (*Manager, error) {
 		root:           root,
 		storageRoot:    storageRoot,
 		classifier:     classifier,
+		rulesMgr:       rulesMgr,
 		index:          index,
 		versionIndex:   versionIndex,
 		hashIndex:      hashIndex,
@@ -100,13 +108,23 @@ func (m *Manager) Root() string {
 	return m.root
 }
 
+// RoutingRules returns the routing rules manager.
+func (m *Manager) RoutingRules() *RoutingRulesManager {
+	return m.rulesMgr
+}
+
+// Classifier returns the file classifier.
+func (m *Manager) Classifier() *Classifier {
+	return m.classifier
+}
+
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.
 func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {
 		return nil, errors.New("store file: nil reader")
 	}
 
-	components := m.classifier.Classify(req.MimeType, req.Filename, req.CategoryHint)
+	components := m.classifier.ClassifyWithRules(req.MimeType, req.Filename, req.CategoryHint, m.rulesMgr)
 	fullDir := filepath.Join(append([]string{m.storageRoot}, components...)...)
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		return nil, err
