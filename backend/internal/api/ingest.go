@@ -173,7 +173,26 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 	defer file.Close()
 
 	mimeType := detectMIMEType(header)
-	mediaType, category := s.categorizer.Classify(mimeType, header.Filename, comment)
+	
+	// Classify media type
+	mediaType := "other"
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		mediaType = "images"
+	case strings.HasPrefix(mimeType, "video/"):
+		mediaType = "videos"
+	case strings.HasPrefix(mimeType, "audio/"):
+		mediaType = "audio"
+	}
+	
+	// Use comment as category if provided, else use base filename
+	category := comment
+	if category == "" {
+		category = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
+	}
+	if category == "" {
+		category = mediaType
+	}
 
 	relPath, err := s.storage.StoreMedia([]string{mediaType, category}, header.Filename, file)
 	if err != nil {
