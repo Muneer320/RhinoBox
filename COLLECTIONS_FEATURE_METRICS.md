@@ -31,7 +31,7 @@ Implemented backend endpoint `/collections` that dynamically scans storage and r
 
 ## Test Results Summary
 
-```
+```text
 ✅ All unit tests: PASS
 ✅ All integration tests: PASS  
 ✅ All end-to-end tests: PASS
