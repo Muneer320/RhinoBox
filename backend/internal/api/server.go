@@ -51,44 +51,47 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 }
 
 func (s *Server) routes() {
-r := s.router
-r.Use(middleware.Logger)
-r.Use(middleware.Recoverer)
+	r := s.router
 
-r.Get("/healthz", s.handleHealth)
-r.Post("/ingest", s.handleUnifiedIngest)
-r.Post("/ingest/media", s.handleMediaIngest)
-r.Post("/ingest/json", s.handleJSONIngest)
-r.Patch("/files/rename", s.handleFileRename)
-r.Get("/files/search", s.handleFileSearch)
+	// Lightweight middleware for performance
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(s.customLogger)       // Custom lightweight logger
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
+
+	// Endpoints
+	r.Get("/healthz", s.handleHealth)
+	r.Post("/ingest", s.handleUnifiedIngest)
+	r.Post("/ingest/media", s.handleMediaIngest)
+	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/rename", s.handleFileRename)
+	r.Get("/files/search", s.handleFileSearch)
 }
 
-// Router exposes the HTTP router for testing.
+// customLogger is a lightweight logger middleware for high-performance scenarios
+func (s *Server) customLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		
+		defer func() {
+			duration := time.Since(start)
+			s.logger.Debug("request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", ww.Status()),
+				slog.Duration("duration", duration),
+				slog.String("proto", r.Proto))
+		}()
+		
+		next.ServeHTTP(ww, r)
+	})
+}
+
+// Router exposes the HTTP router for testing and server setup.
 func (s *Server) Router() http.Handler {
 	return s.router
-}
-
-// Run starts the HTTP server and blocks until the context is cancelled.
-func (s *Server) Run(ctx context.Context) error {
-	s.server = &http.Server{Addr: s.cfg.Addr, Handler: s.router}
-
-	errCh := make(chan error, 1)
-	go func() {
-		s.logger.Info("http server listening", slog.String("addr", s.cfg.Addr))
-		errCh <- s.server.ListenAndServe()
-	}()
-
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return s.server.Shutdown(shutdownCtx)
-	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
