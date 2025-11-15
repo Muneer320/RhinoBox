@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # ---- Builder ----
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /src
 
 # Install build deps (git already included)
