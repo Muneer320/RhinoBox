@@ -4,16 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RhinoBox — Intelligent Storage</title>
-    <link rel="icon" type="image/svg+xml" href="https://www.svgrepo.com/show/479030/cloud-storage.svg" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="https://www.svgrepo.com/show/479030/cloud-storage.svg"
+    />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-      <div class="container">
+    <div class="container">
       <header class="topbar">
         <div class="brand">
           <div class="brand-icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+              />
             </svg>
           </div>
           <div class="brand-text">
@@ -23,9 +37,21 @@
         </div>
 
         <label class="search-field" for="global-search">
-          <span class="search-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
+          <span class="search-icon" aria-hidden="true"
+            ><svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="size-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+              />
+            </svg>
           </span>
           <input
             id="global-search"
@@ -37,9 +63,32 @@
         </label>
 
         <div class="actions">
-          <button type="button" id="modeToggle" class="icon-button" aria-label="Toggle dark mode">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+          <button
+            type="button"
+            id="modeToggle"
+            class="icon-button"
+            aria-label="Toggle dark mode"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="0.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656z" />
+              <path d="M6.343 17.657l-1.414 1.414" />
+              <path d="M6.343 6.343l-1.414 -1.414" />
+              <path d="M17.657 6.343l1.414 -1.414" />
+              <path d="M17.657 17.657l1.414 1.414" />
+              <path d="M4 12h-2" />
+              <path d="M12 4v-2" />
+              <path d="M20 12h2" />
+              <path d="M12 20v2" />
             </svg>
           </button>
           <button type="button" class="profile-button" aria-label="Account">
@@ -51,26 +100,86 @@
       <div class="workspace">
         <aside class="sidebar" aria-label="Collections navigation">
           <div class="sidebar-buttons">
-            <button type="button" class="sidebar-button is-active" data-target="home">
+            <button
+              type="button"
+              class="sidebar-button is-active"
+              data-target="home"
+            >
               <span aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
+                  />
                 </svg>
               </span>
               Home
             </button>
             <button type="button" class="sidebar-button" data-target="files">
               <span aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                  />
                 </svg>
               </span>
               Files
             </button>
-            <button type="button" class="sidebar-button" data-target="statistics">
+            <button
+              type="button"
+              class="sidebar-button"
+              data-target="data"
+            >
               <span aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"
+                  />
+                </svg>
+              </span>
+              Data
+            </button>
+            <button
+              type="button"
+              class="sidebar-button"
+              data-target="statistics"
+            >
+              <span aria-hidden="true">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
+                  />
                 </svg>
               </span>
               Statistics
@@ -81,241 +190,318 @@
         <main class="main" id="mainContent">
           <!-- Home Page -->
           <div id="page-home" class="page-content">
-          <section class="ingest-panel" aria-labelledby="welcome-heading">
-            <div class="ingest-heading">
-              <h1 id="welcome-heading">Welcome to RhinoBox </h1>
-              
-            </div>
+            <section class="ingest-panel" aria-labelledby="welcome-heading">
+              <div class="ingest-heading">
+                <h1 id="welcome-heading">Welcome to RhinoBox</h1>
+                <div class="ingest-actions">
+                  <button type="button" class="primary-button" id="uploadButton">
+                    New
+                  </button>
+                  <button type="button" class="ghost-button" id="quickAddTrigger" title="Add text, code, or link">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
 
-            <div class="dropzone" id="dropzone" role="button" tabindex="0">
-              <span class="dropzone-icon" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                </svg>
-              </span>
-              <p class="dropzone-title">Drag files here</p>
-              <!-- <p class="dropzone-description">
+              <div class="dropzone" id="dropzone" role="button" tabindex="0">
+                <span class="dropzone-icon" aria-hidden="true">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                    />
+                  </svg>
+                </span>
+                <p class="dropzone-title">Drag files here</p>
+                <!-- <p class="dropzone-description">
                 Upload anything — documents, media, code snippets, and structured data.
               </p> -->
-              <input class="visually-hidden" type="file" id="fileInput" multiple aria-hidden="true" />
-            </div>
-
-            <form class="ingest-actions" id="quickAddForm">
-              <label class="ingest-input" for="quickAdd">
-                <span class="visually-hidden">Add a link or description</span>
                 <input
-                  id="quickAdd"
-                  type="text"
-                  placeholder="Paste link, query, or data snippet..."
-                  autocomplete="off"
+                  class="visually-hidden"
+                  type="file"
+                  id="fileInput"
+                  multiple
+                  aria-hidden="true"
                 />
-              </label>
-              <button type="submit" class="primary-button">New</button>
-            </form>
-          </section>
+              </div>
+            </section>
           </div>
 
           <!-- Files Page -->
-          <div id="page-files" class="page-content" style="display: none;">
-            <section class="collection-grid" aria-labelledby="collections-heading">
+          <div id="page-files" class="page-content" style="display: none">
+            <section
+              class="collection-grid"
+              aria-labelledby="collections-heading"
+            >
               <div class="collection-header">
                 <h2 id="collections-heading">Collections</h2>
                 <div class="collection-controls">
                   <div class="layout-toggle">
-                    <button type="button" class="layout-button is-active" data-layout="grid" aria-label="Grid layout">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                    <button
+                      type="button"
+                      class="layout-button is-active"
+                      data-layout="grid"
+                      aria-label="Grid layout"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
+                        />
                       </svg>
                     </button>
-                    <button type="button" class="layout-button" data-layout="list" aria-label="List layout">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 17.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                    <button
+                      type="button"
+                      class="layout-button"
+                      data-layout="list"
+                      aria-label="List layout"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 17.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+                        />
                       </svg>
                     </button>
                   </div>
-                  <button type="button" class="ghost-button" data-action="view-all">View all</button>
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    data-action="view-all"
+                  >
+                    View all
+                  </button>
                 </div>
               </div>
               <div class="collection-cards" id="collectionCards">
-                <button type="button" class="collection-card" data-collection="images">
-                  <img
-                    src="https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80"
-                    alt="Photography and image files"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Images</h3>
-                    <p>Photos, graphics, and visual media files.</p>
-                    <div class="collection-stats" data-stats="images">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
+                <!-- Collection cards will be dynamically loaded here -->
+                <div
+                  class="loading-state"
+                  id="collections-loading"
+                  style="display: none"
+                >
+                  <p>Loading collections...</p>
+                </div>
+                <div
+                  class="error-state"
+                  id="collections-error"
+                  style="display: none"
+                >
+                  <p>Failed to load collections. Please try again.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Data Page -->
+          <div id="page-data" class="page-content" style="display: none">
+            <section class="data-panel">
+              <div class="data-header">
+                <h1 class="data-title">Data</h1>
+                <div class="data-tabs">
+                  <button type="button" class="data-tab is-active" data-tab="sql">SQL</button>
+                  <button type="button" class="data-tab" data-tab="nosql">NoSQL</button>
+                </div>
+              </div>
+
+              <!-- SQL Section -->
+              <div id="data-sql" class="data-section" style="display: flex;">
+                <div class="data-section-header">
+                  <h2>SQL Databases</h2>
+                </div>
+                <div class="sql-container">
+                  <div class="sql-table-wrapper">
+                    <table class="sql-table">
+                      <thead>
+                        <tr>
+                          <th>Table Name</th>
+                          <th>Rows</th>
+                          <th>Size</th>
+                          <th>Last Updated</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="sql-tables-body">
+                        <tr>
+                          <td>users</td>
+                          <td>1,234</td>
+                          <td>2.5 MB</td>
+                          <td>2024-01-15</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>orders</td>
+                          <td>5,678</td>
+                          <td>8.2 MB</td>
+                          <td>2024-01-15</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>products</td>
+                          <td>890</td>
+                          <td>1.1 MB</td>
+                          <td>2024-01-14</td>
+                          <td>
+                            <button type="button" class="ghost-button small">View</button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="videos">
-                  <img
-                    src="https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80"
-                    alt="Video files and recordings"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Videos</h3>
-                    <p>Video recordings, clips, and multimedia content.</p>
-                    <div class="collection-stats" data-stats="videos">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
+                </div>
+              </div>
+
+              <!-- NoSQL Section -->
+              <div id="data-nosql" class="data-section" style="display: none;">
+                <div class="data-section-header">
+                  <h2>NoSQL Databases</h2>
+                </div>
+                <div class="nosql-container">
+                  <div class="nosql-controls">
+                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-in" aria-label="Zoom in">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                    </button>
+                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-out" aria-label="Zoom out">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+                      </svg>
+                    </button>
+                    <button type="button" class="nosql-zoom-btn" id="nosql-reset" aria-label="Reset zoom">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.25 18.75h4.992v-.001M2.25 18.75l4.992-4.992M21.75 5.25l-4.992 4.992" />
+                      </svg>
+                    </button>
                   </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="audio">
-                  <img
-                    src="https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80"
-                    alt="Audio files and music"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Audio</h3>
-                    <p>Music files, recordings, and sound clips.</p>
-                    <div class="collection-stats" data-stats="audio">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
+                  <div class="nosql-diagram" id="nosql-diagram">
+                    <!-- Schema diagram will be rendered here -->
+                    <svg class="nosql-svg" id="nosql-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+                      <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                          <polygon points="0 0, 10 3, 0 6" />
+                        </marker>
+                      </defs>
+                      <!-- Background -->
+                      <rect width="1200" height="800" fill="transparent" />
+                      
+                      <!-- Collection: cart -->
+                      <g class="collection-box" transform="translate(50, 50)">
+                        <rect x="0" y="0" width="200" height="180" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">cart</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">date (date NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">total_value (double)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">item {} (object NN)</text>
+                        <text x="10" y="135" fill="var(--text-primary)" font-size="12">customer (objectId NN)</text>
+                        <text x="10" y="155" fill="var(--text-primary)" font-size="12">coupon_code (string)</text>
+                      </g>
+
+                      <!-- Collection: product -->
+                      <g class="collection-box" transform="translate(700, 50)">
+                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">product</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">sku (string NN)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">price {} (object)</text>
+                      </g>
+
+                      <!-- Collection: customer -->
+                      <g class="collection-box" transform="translate(50, 400)">
+                        <rect x="0" y="0" width="200" height="140" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="2" />
+                        <rect x="0" y="0" width="200" height="32" rx="8" fill="var(--accent)" />
+                        <text x="10" y="20" fill="white" font-size="14" font-weight="600">customer</text>
+                        <text x="10" y="55" fill="var(--text-primary)" font-size="12">_id (objectId NN)</text>
+                        <text x="10" y="75" fill="var(--text-primary)" font-size="12">name (string NN)</text>
+                        <text x="10" y="95" fill="var(--text-primary)" font-size="12">surname (string NN)</text>
+                        <text x="10" y="115" fill="var(--text-primary)" font-size="12">contact {} (object)</text>
+                      </g>
+
+                      <!-- Embedded: item {} -->
+                      <g class="embedded-box" transform="translate(350, 150)">
+                        <rect x="0" y="0" width="180" height="120" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">item {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">product_id (objectId)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">name (string)</text>
+                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">qty (int)</text>
+                        <text x="10" y="105" fill="var(--text-primary)" font-size="11">price (double)</text>
+                      </g>
+
+                      <!-- Embedded: price {} -->
+                      <g class="embedded-box" transform="translate(950, 150)">
+                        <rect x="0" y="0" width="180" height="100" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">price {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">list_price (double)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">valid_from (date)</text>
+                        <text x="10" y="85" fill="var(--text-primary)" font-size="11">valid_to (date)</text>
+                      </g>
+
+                      <!-- Embedded: contact {} -->
+                      <g class="embedded-box" transform="translate(350, 500)">
+                        <rect x="0" y="0" width="180" height="80" rx="6" fill="var(--surface-muted)" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4,2" />
+                        <text x="10" y="20" fill="var(--text-secondary)" font-size="12" font-weight="600">contact {}</text>
+                        <text x="10" y="45" fill="var(--text-primary)" font-size="11">address {} (object)</text>
+                        <text x="10" y="65" fill="var(--text-primary)" font-size="11">phones {} (object)</text>
+                      </g>
+
+                      <!-- Relationship lines -->
+                      <line x1="250" y1="140" x2="350" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="250" y1="230" x2="350" y2="210" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="900" y1="140" x2="950" y2="150" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="250" y1="540" x2="350" y2="500" stroke="var(--border-strong)" stroke-width="2" stroke-dasharray="5,3" />
+                      <line x1="530" y1="200" x2="700" y2="120" stroke="var(--accent)" stroke-width="2" />
+                      <line x1="250" y1="400" x2="250" y2="400" stroke="var(--accent)" stroke-width="2" />
+                    </svg>
                   </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="documents">
-                  <img
-                    src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80"
-                    alt="Document files"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Documents</h3>
-                    <p>Text documents, PDFs, and written content.</p>
-                    <div class="collection-stats" data-stats="documents">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="spreadsheets">
-                  <img
-                    src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80"
-                    alt="Spreadsheet files"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Spreadsheets</h3>
-                    <p>Data tables, calculations, and structured data.</p>
-                    <div class="collection-stats" data-stats="spreadsheets">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="presentations">
-                  <img
-                    src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80"
-                    alt="Presentation files"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Presentations</h3>
-                    <p>Slides, decks, and presentation materials.</p>
-                    <div class="collection-stats" data-stats="presentations">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="archives">
-                  <img
-                    src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80"
-                    alt="Archive files"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Archives</h3>
-                    <p>Compressed files, ZIPs, and archived content.</p>
-                    <div class="collection-stats" data-stats="archives">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-                <button type="button" class="collection-card" data-collection="other">
-                  <img
-                    src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80"
-                    alt="Other file types"
-                    loading="lazy"
-                  />
-                  <div class="collection-meta">
-                    <h3>Other</h3>
-                    <p>Miscellaneous files and unclassified content.</p>
-                    <div class="collection-stats" data-stats="other">
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="file_count">-</span>
-                        <span class="stat-label">files</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-value" data-stat="storage_used">-</span>
-                        <span class="stat-label">storage</span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
+                </div>
               </div>
             </section>
           </div>
 
           <!-- Statistics Page -->
-          <div id="page-statistics" class="page-content" style="display: none;">
+          <div id="page-statistics" class="page-content" style="display: none">
             <section class="stats-panel">
               <h1 class="stats-title">Statistics Dashboard</h1>
-              
+
               <div class="stats-grid" id="stats-grid">
                 <!-- Statistics will be dynamically loaded here -->
+                <div
+                  class="loading-state"
+                  id="stats-loading"
+                  style="display: none"
+                >
+                  <p>Loading statistics...</p>
+                </div>
               </div>
 
               <div class="chart-container" id="charts-container">
@@ -325,57 +511,167 @@
           </div>
 
           <!-- Images Collection Page -->
-          <div id="page-images" class="page-content" style="display: none;">
+          <div id="page-images" class="page-content" style="display: none">
             <section class="collection-view">
               <div class="collection-view-header">
                 <h1 class="collection-view-title">Images</h1>
-                <p class="collection-view-subtitle">Photos, graphics, and visual media files</p>
+                <p class="collection-view-subtitle">
+                  Photos, graphics, and visual media files
+                </p>
               </div>
               <div class="image-gallery" id="files-gallery">
                 <!-- Files will be dynamically loaded here -->
+                <div
+                  class="loading-state"
+                  id="gallery-loading"
+                  style="display: none"
+                >
+                  <p>Loading files...</p>
+                </div>
+                <div
+                  class="empty-state"
+                  id="gallery-empty"
+                  style="display: none"
+                >
+                  <p>No files found in this collection.</p>
+                </div>
               </div>
             </section>
           </div>
 
           <!-- Placeholder pages for other sections -->
-          <div id="page-json" class="page-content" style="display: none;">
+          <div id="page-json" class="page-content" style="display: none">
             <section class="stats-panel">
               <h1 class="stats-title">JSON Files</h1>
-              <p class="page-placeholder">JSON files collection coming soon...</p>
+              <p class="page-placeholder">
+                JSON files collection coming soon...
+              </p>
             </section>
           </div>
 
-          <div id="page-gallery" class="page-content" style="display: none;">
+          <div id="page-gallery" class="page-content" style="display: none">
             <section class="stats-panel">
               <h1 class="stats-title">Gallery</h1>
               <p class="page-placeholder">Gallery collection coming soon...</p>
             </section>
           </div>
 
-          <div id="page-documents" class="page-content" style="display: none;">
+          <div id="page-documents" class="page-content" style="display: none">
             <section class="stats-panel">
               <h1 class="stats-title">Documents</h1>
-              <p class="page-placeholder">Documents collection coming soon...</p>
+              <p class="page-placeholder">
+                Documents collection coming soon...
+              </p>
             </section>
           </div>
         </main>
       </div>
-      </div>
+    </div>
 
     <div id="toast" role="status" aria-live="polite" hidden></div>
 
-    <!-- Notes Modal -->
-    <div id="comments-modal" class="comments-modal" style="display: none;" role="dialog" aria-labelledby="comments-modal-title" aria-modal="true">
+    <!-- Search Results Modal -->
+    <div
+      id="search-modal"
+      class="comments-modal"
+      style="display: none"
+      role="dialog"
+      aria-labelledby="search-modal-title"
+      aria-modal="true"
+    >
       <div class="comments-modal-overlay"></div>
       <div class="comments-modal-content">
         <div class="comments-modal-header">
           <div class="comments-header-info">
-            <h2 id="comments-modal-title" class="comments-modal-title">Notes</h2>
+            <h2 id="search-modal-title" class="comments-modal-title">
+              Search Results
+            </h2>
+            <p class="comments-file-name" id="search-query-display"></p>
+          </div>
+          <button
+            type="button"
+            class="comments-close-button"
+            id="search-close-button"
+            aria-label="Close search results"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="comments-body">
+          <div class="search-results-list" id="search-results-list">
+            <!-- Search results will be dynamically inserted here -->
+          </div>
+          <div class="comments-empty" id="search-empty" style="display: none">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+              />
+            </svg>
+            <p>No files found matching your search.</p>
+          </div>
+          <div class="search-loading" id="search-loading" style="display: none">
+            <div class="loading-spinner"></div>
+            <p>Searching...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes Modal -->
+    <div
+      id="comments-modal"
+      class="comments-modal"
+      style="display: none"
+      role="dialog"
+      aria-labelledby="comments-modal-title"
+      aria-modal="true"
+    >
+      <div class="comments-modal-overlay"></div>
+      <div class="comments-modal-content">
+        <div class="comments-modal-header">
+          <div class="comments-header-info">
+            <h2 id="comments-modal-title" class="comments-modal-title">
+              Notes
+            </h2>
             <p class="comments-file-name"></p>
           </div>
-          <button type="button" class="comments-close-button" aria-label="Close notes">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          <button
+            type="button"
+            class="comments-close-button"
+            aria-label="Close notes"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -384,24 +680,118 @@
             <!-- Notes will be dynamically inserted here -->
           </div>
           <div class="comments-empty" id="comments-empty">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+              />
             </svg>
             <p>No notes yet. Add your first note!</p>
           </div>
         </div>
         <div class="comments-input-section">
-          <textarea 
-            id="comment-input" 
-            class="comment-input" 
-            placeholder="Add a note..." 
+          <textarea
+            id="comment-input"
+            class="comment-input"
+            placeholder="Add a note..."
             rows="3"
             aria-label="Note input"
           ></textarea>
           <div class="comments-actions">
-            <button type="button" class="ghost-button" id="comment-cancel">Cancel</button>
-            <button type="button" class="primary-button" id="comment-submit">Add Note</button>
+            <button type="button" class="ghost-button" id="comment-cancel">
+              Cancel
+            </button>
+            <button type="button" class="primary-button" id="comment-submit">
+              Add Note
+            </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Add Side Panel -->
+    <div
+      id="quickAdd-panel"
+      class="quick-add-panel"
+      role="dialog"
+      aria-labelledby="quickAdd-panel-title"
+      aria-modal="true"
+    >
+      <div class="quick-add-panel-overlay" id="quickAdd-overlay"></div>
+      <div class="quick-add-panel-content">
+        <div class="quick-add-panel-header">
+          <div class="quick-add-header-info">
+            <h2 id="quickAdd-panel-title" class="quick-add-panel-title">
+              Add New Item
+            </h2>
+            <p class="quick-add-subtitle">Paste link, query, or data snippet</p>
+          </div>
+          <button
+            type="button"
+            class="quick-add-close-button"
+            id="quickAdd-close-button"
+            aria-label="Close"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="quick-add-panel-body">
+          <form id="quickAddForm" class="quick-add-form">
+            <div class="quick-add-type-selector">
+              <label for="quickAddType" class="visually-hidden">File Type</label>
+              <select id="quickAddType" class="quick-add-select">
+                <option value="text">Text</option>
+                <option value="json">JSON</option>
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="sql">SQL</option>
+                <option value="html">HTML</option>
+                <option value="css">CSS</option>
+                <option value="markdown">Markdown</option>
+                <option value="yaml">YAML</option>
+                <option value="xml">XML</option>
+                <option value="url">URL/Link</option>
+              </select>
+            </div>
+            <div class="quick-add-input-wrapper">
+              <label for="quickAdd" class="quick-add-input-label">Content</label>
+              <textarea
+                id="quickAdd"
+                class="quick-add-textarea"
+                placeholder="Paste link, query, or data snippet..."
+                rows="12"
+                aria-label="Content input"
+              ></textarea>
+            </div>
+            <div class="quick-add-actions">
+              <button type="button" class="ghost-button" id="quickAdd-cancel">
+                Cancel
+              </button>
+              <button type="submit" class="primary-button" id="quickAdd-submit">
+                Add
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
