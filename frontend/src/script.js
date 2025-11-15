@@ -1593,13 +1593,6 @@ async function renderComments(fileId) {
   }
 }
 
-// Escape HTML to prevent XSS
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 // Add a new comment
 async function addComment(fileId, text) {
   if (!text.trim()) {
