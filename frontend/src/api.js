@@ -27,6 +27,92 @@ function getHeaders() {
   return headers
 }
 
+/**
+ * Custom API Error class for better error handling
+ */
+export class APIError extends Error {
+  constructor(message, status = 0, details = {}) {
+    super(message)
+    this.name = 'APIError'
+    this.status = status
+    this.details = details
+    this.timestamp = new Date().toISOString()
+  }
+
+  /**
+   * Get error type based on status code
+   */
+  getErrorType() {
+    if (this.status === 0) return 'network'
+    if (this.status >= 500) return 'server'
+    if (this.status === 404) return 'not-found'
+    if (this.status === 401) return 'unauthorized'
+    if (this.status === 403) return 'forbidden'
+    if (this.status === 429) return 'rate-limited'
+    if (this.status === 413) return 'file-too-large'
+    if (this.status === 415) return 'unsupported-format'
+    return 'client-error'
+  }
+
+  /**
+   * Get user-friendly error message
+   */
+  getUserMessage() {
+    const statusMessages = {
+      0: 'Network error. Please check your connection.',
+      400: 'Invalid request. Please check your input.',
+      401: 'Session expired. Please log in again.',
+      403: 'You do not have permission to perform this action.',
+      404: 'The requested resource was not found.',
+      413: 'File exceeds the maximum size limit (500MB).',
+      415: 'File format not supported.',
+      429: 'Too many requests. Please wait a moment and try again.',
+      500: 'Server error. Please try again later.',
+      502: 'Bad gateway. The server is temporarily unavailable.',
+      503: 'Service unavailable. Please try again later.',
+      504: 'Gateway timeout. The server took too long to respond.',
+    }
+
+    if (this.status in statusMessages) {
+      return statusMessages[this.status]
+    }
+
+    if (this.message && this.message.length < 150) {
+      return this.message
+    }
+
+    return 'An error occurred. Please try again.'
+  }
+}
+
+/**
+ * Parse error response from API
+ */
+async function parseErrorResponse(response) {
+  let errorData = null
+  let errorMessage = response.statusText || `HTTP error! status: ${response.status}`
+
+  try {
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      errorData = await response.json()
+      errorMessage = errorData.message || errorData.error || errorData.detail || errorMessage
+    } else {
+      const text = await response.text()
+      if (text) {
+        errorMessage = text
+      }
+    }
+  } catch {
+    // If parsing fails, use status text
+  }
+
+  return {
+    message: errorMessage,
+    details: errorData || {},
+  }
+}
+
 // Generic API request handler
 async function apiRequest(endpoint, options = {}) {
   const url = `${API_CONFIG.baseURL}${endpoint}`
@@ -54,23 +140,8 @@ async function apiRequest(endpoint, options = {}) {
     clearTimeout(timeoutId)
     
     if (!response.ok) {
-      let errorMessage = `HTTP error! status: ${response.status}`
-      let errorData = null
-      
-      try {
-        errorData = await response.json()
-        errorMessage = errorData.message || errorData.error || errorMessage
-      } catch {
-        // If response is not JSON, use status text
-        errorMessage = response.statusText || errorMessage
-      }
-      
-      // Create error with status code for better handling
-      const error = new Error(errorMessage)
-      error.status = response.status
-      error.statusText = response.statusText
-      error.data = errorData
-      throw error
+      const { message, details } = await parseErrorResponse(response)
+      throw new APIError(message, response.status, details)
     }
 
     return await response.json()
@@ -80,10 +151,7 @@ async function apiRequest(endpoint, options = {}) {
     // Handle timeout errors
     if (error.name === 'AbortError') {
       console.error('API Request Timeout:', endpoint)
-      const timeoutError = new Error('Request timeout. Please try again.')
-      timeoutError.name = 'AbortError'
-      timeoutError.type = 'timeout'
-      throw timeoutError
+      throw new APIError('Request timeout. Please try again.', 0, { type: 'timeout' })
     }
     
     // Handle network errors
@@ -99,19 +167,21 @@ async function apiRequest(endpoint, options = {}) {
           'Incorrect backend URL'
         ]
       })
-      const networkError = new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
-      networkError.name = 'NetworkError'
-      networkError.type = 'network'
-      throw networkError
+      throw new APIError(
+        `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`,
+        0,
+        { type: 'network', url }
+      )
     }
     
-    // Re-throw if already has status (HTTP error)
-    if (error.status) {
+    // Re-throw APIError as-is
+    if (error instanceof APIError) {
       throw error
     }
     
+    // Wrap other errors
     console.error('API Request Error:', error)
-    throw error
+    throw new APIError(error.message || 'An unexpected error occurred', 0, { originalError: error })
   }
 }
 

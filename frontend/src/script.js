@@ -15,6 +15,7 @@ import {
   getCollectionStats,
   searchFiles,
   API_CONFIG,
+  APIError,
 } from "./api.js";
 
 const root = document.documentElement;
@@ -157,7 +158,7 @@ function initHomePageFeatures() {
       const selectedType = typeSelect?.value || "text";
 
       if (!value) {
-        showToast("Provide a link, query, or description first");
+        showToast("Provide a link, query, or description first", "warning");
         if (textarea) textarea.focus();
         return;
       }
@@ -175,7 +176,7 @@ function initHomePageFeatures() {
             const parsed = JSON.parse(value);
             documents = Array.isArray(parsed) ? parsed : [parsed];
           } catch {
-            showToast("Invalid JSON format");
+            showToast("Invalid JSON format", "error");
             return;
           }
         } else {
@@ -183,9 +184,10 @@ function initHomePageFeatures() {
           documents = [{ content: value, type: selectedType }];
         }
 
-        showToast("Processing...");
+        const processingToast = showToast("Processing...", "info", 0);
         await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
-        showToast("Successfully added item");
+        dismissToast(processingToast);
+        showToast("Successfully added item", "success");
         
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -202,7 +204,13 @@ function initHomePageFeatures() {
         }
       } catch (error) {
         console.error("Quick add error:", error);
-        showToast(`Failed to add item: ${error.message || "Unknown error"}`);
+        let errorMessage = "Unknown error";
+        if (error instanceof APIError) {
+          errorMessage = error.getUserMessage();
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        showToast(`Failed to add item: ${errorMessage}`, "error");
       }
     });
   }
@@ -791,10 +799,22 @@ async function performSearch(query) {
     if (searchLoading) searchLoading.style.display = "none";
     if (searchEmpty) searchEmpty.style.display = "flex";
     if (searchResultsList) {
+      let errorMessage = "Error performing search. Please try again.";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       searchResultsList.innerHTML =
-        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error performing search. Please try again.</div>';
+        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
     }
-    showToast("Search failed: " + (error.message || "Unknown error"));
+    let errorMessage = "Unknown error";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(`Search failed: ${errorMessage}`, "error");
   }
 }
 
@@ -1002,10 +1022,26 @@ async function loadCollectionFiles(collectionType) {
     console.error("Error loading files:", error);
     if (loadingState) loadingState.style.display = "none";
     if (emptyState) {
-      emptyState.innerHTML = "<p>Error loading files. Please try again.</p>";
+      let errorMessage = "Error loading files. Please try again.";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      emptyState.innerHTML = `<p>${escapeHtml(errorMessage)}</p>`;
       emptyState.style.display = "block";
     }
-    showToast("Failed to load files");
+    let errorMessage = "Failed to load files";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadCollectionFiles(collectionType),
+    }]);
   }
 }
 
@@ -1198,12 +1234,26 @@ async function loadCollections() {
     console.error("Error loading collections:", error);
     if (loadingState) loadingState.style.display = "none";
     if (errorState) {
+      let errorMessage = "Unknown error";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       errorState.style.display = "block";
-      errorState.innerHTML = `<p>Failed to load collections: ${
-        error.message || "Unknown error"
-      }</p>`;
+      errorState.innerHTML = `<p>Failed to load collections: ${escapeHtml(errorMessage)}</p>`;
     }
-    showToast("Failed to load collections");
+    let errorMessage = "Failed to load collections";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadCollections(),
+    }]);
   }
 }
 
@@ -1333,11 +1383,26 @@ function initGalleryMenus() {
       if (action === "download") {
         e.preventDefault();
         try {
+          const downloadToast = showToast(`Downloading "${fileName}"...`, "info", 0);
           await downloadFile(fileId, fileName, fileUrl, filePath);
-          showToast(`Downloading "${fileName}"...`);
+          dismissToast(downloadToast);
+          showToast(`Download started for "${fileName}"`, "success");
         } catch (error) {
           console.error("Download error:", error);
-          showToast(`Failed to download: ${error.message || "Unknown error"}`);
+          let errorMessage = "Unknown error";
+          if (error instanceof APIError) {
+            errorMessage = error.getUserMessage();
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          showToast(`Failed to download: ${errorMessage}`, "error", 0, [{
+            id: "retry",
+            label: "Retry",
+            handler: () => {
+              const actionEvent = new Event("click");
+              option.dispatchEvent(actionEvent);
+            },
+          }]);
         }
       } else if (action === "rename") {
         e.preventDefault();
@@ -1347,10 +1412,16 @@ function initGalleryMenus() {
             await renameFile(fileId, newName.trim());
             titleElement.textContent = newName.trim();
             galleryItem.dataset.fileName = newName.trim();
-            showToast(`Renamed to "${newName.trim()}"`);
+            showToast(`Renamed to "${newName.trim()}"`, "success");
           } catch (error) {
             console.error("Rename error:", error);
-            showToast(`Failed to rename: ${error.message || "Unknown error"}`);
+            let errorMessage = "Unknown error";
+            if (error instanceof APIError) {
+              errorMessage = error.getUserMessage();
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            showToast(`Failed to rename: ${errorMessage}`, "error");
           }
         }
       } else if (action === "delete") {
@@ -1362,11 +1433,17 @@ function initGalleryMenus() {
             galleryItem.style.transform = "scale(0.95)";
             setTimeout(() => {
               galleryItem.remove();
-              showToast(`Deleted "${fileName}"`);
+              showToast(`Deleted "${fileName}"`, "success");
             }, 200);
           } catch (error) {
             console.error("Delete error:", error);
-            showToast(`Failed to delete: ${error.message || "Unknown error"}`);
+            let errorMessage = "Unknown error";
+            if (error instanceof APIError) {
+              errorMessage = error.getUserMessage();
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            showToast(`Failed to delete: ${errorMessage}`, "error");
           }
         }
       } else if (action === "copy-path") {
@@ -1392,8 +1469,13 @@ function initGalleryMenus() {
           await openCommentsModal(galleryItem);
         } catch (error) {
           console.error("Error opening comments modal:", error);
-          const errorMessage = getUserFriendlyErrorMessage(error);
-          showToast(`Failed to open notes: ${errorMessage}`);
+          let errorMessage = "Unknown error";
+          if (error instanceof APIError) {
+            errorMessage = error.getUserMessage();
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          showToast(`Failed to open notes: ${errorMessage}`, "error");
         }
       }
     });
@@ -1565,41 +1647,108 @@ function ensureButtonsClickable() {
   });
 }
 
-// Upload files to backend
+// File validation constants
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp'];
+const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
+const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac'];
+const SUPPORTED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
+const ALL_SUPPORTED_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES, ...SUPPORTED_AUDIO_TYPES, ...SUPPORTED_DOCUMENT_TYPES];
+
+/**
+ * Validate file before upload
+ */
+function validateFile(file) {
+  const errors = [];
+
+  // Check file size
+  if (file.size > MAX_FILE_SIZE) {
+    errors.push({
+      type: 'file-too-large',
+      message: `File "${file.name}" exceeds the maximum size limit of 500MB.`,
+    });
+  }
+
+  // Check file type (optional - allow all types but warn)
+  if (file.type && ALL_SUPPORTED_TYPES.length > 0 && !ALL_SUPPORTED_TYPES.includes(file.type)) {
+    // Don't block, just note it
+    console.warn(`File type ${file.type} may not be fully supported`);
+  }
+
+  return errors;
+}
+
+/**
+ * Upload files to backend with progress and error handling
+ */
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
-    showToast("No files selected");
+    showToast("No files selected", "warning");
     return;
   }
 
-  try {
-    showToast(
-      `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
-    );
+  // Validate all files first
+  const validationErrors = [];
+  const validFiles = [];
 
+  for (const file of files) {
+    const errors = validateFile(file);
+    if (errors.length > 0) {
+      validationErrors.push(...errors);
+    } else {
+      validFiles.push(file);
+    }
+  }
+
+  // Show validation errors
+  if (validationErrors.length > 0) {
+    validationErrors.forEach((error) => {
+      showToast(error.message, "error");
+    });
+    
+    if (validFiles.length === 0) {
+      return; // No valid files to upload
+    }
+  }
+
+  // Show upload started notification
+  const uploadToast = showToast(
+    `Uploading ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}...`,
+    "info",
+    0 // Don't auto-dismiss
+  );
+
+  const uploadResults = {
+    success: [],
+    failed: [],
+  };
+
+  try {
     // Determine if files are media or mixed
     const mediaTypes = ["image/", "video/", "audio/"];
-    const allMedia = files.every((file) =>
+    const allMedia = validFiles.every((file) =>
       mediaTypes.some((type) => file.type && file.type.startsWith(type))
     );
 
-    if (allMedia && files.length > 0) {
+    let result;
+    if (allMedia && validFiles.length > 0) {
       // Use media endpoint for media files
-      await ingestMedia(files);
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
-      );
+      result = await ingestMedia(validFiles);
     } else {
       // Use unified endpoint for mixed files
-      await ingestFiles(files);
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`
-      );
+      result = await ingestFiles(validFiles);
     }
+
+    // Dismiss upload toast
+    dismissToast(uploadToast);
+
+    // Show success
+    showToast(
+      `Successfully uploaded ${validFiles.length} file${validFiles.length > 1 ? "s" : ""}`,
+      "success"
+    );
+
+    uploadResults.success = validFiles;
 
     // Reload current collection if viewing one
     if (currentCollectionType) {
@@ -1607,38 +1756,298 @@ async function uploadFiles(files) {
     }
   } catch (error) {
     console.error("Upload error:", error);
-    const errorMessage = error.message || "Unknown error";
+    
+    // Dismiss upload toast
+    dismissToast(uploadToast);
 
-    // Provide more helpful error messages
-    if (
-      errorMessage.includes("Cannot connect to backend") ||
-      errorMessage.includes("Failed to fetch")
-    ) {
-      showToast(
-        "Cannot connect to backend. Is the server running on port 8090?"
-      );
-    } else {
-      showToast(`Upload failed: ${errorMessage}`);
+    // Import APIError if available
+    let errorMessage = "Unknown error";
+    let errorType = "error";
+    let retryAction = null;
+
+    if (error && typeof error === 'object') {
+      // Check if it's an APIError
+      if (error.getUserMessage && typeof error.getUserMessage === 'function') {
+        errorMessage = error.getUserMessage();
+        errorType = error.getErrorType ? error.getErrorType() : 'error';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      // Determine error type for better messaging
+      if (errorMessage.includes("Cannot connect") || errorMessage.includes("Failed to fetch") || errorMessage.includes("Network")) {
+        errorMessage = "Cannot connect to backend. Please ensure the server is running.";
+        errorType = "network";
+        retryAction = {
+          id: "retry",
+          label: "Retry",
+          handler: () => uploadFiles(validFiles),
+        };
+      } else if (errorMessage.includes("413") || errorMessage.includes("too large")) {
+        errorMessage = "File exceeds the maximum size limit (500MB).";
+        errorType = "file-too-large";
+      } else if (errorMessage.includes("415") || errorMessage.includes("unsupported")) {
+        errorMessage = "File format not supported.";
+        errorType = "unsupported-format";
+      }
     }
+
+    // Show error toast with retry option
+    showToast(
+      `Upload failed: ${errorMessage}`,
+      "error",
+      0, // Manual dismiss
+      retryAction ? [retryAction] : []
+    );
+
+    uploadResults.failed = validFiles;
+  }
+
+  return uploadResults;
+}
+
+// ==================== Toast Notification System ====================
+
+const TOAST_CONTAINER_ID = 'toast-container';
+const MAX_TOASTS = 5;
+const TOAST_DURATIONS = {
+  success: 3000,
+  error: 0, // Manual dismiss for errors
+  info: 5000,
+  warning: 4000,
+};
+
+let toastContainer = null;
+let activeToasts = [];
+
+/**
+ * Initialize toast container
+ */
+function initToastContainer() {
+  if (!toastContainer) {
+    // Check if container already exists
+    toastContainer = document.getElementById(TOAST_CONTAINER_ID);
+    
+    if (!toastContainer) {
+      // Create toast container
+      toastContainer = document.createElement('div');
+      toastContainer.id = TOAST_CONTAINER_ID;
+      toastContainer.className = 'toast-container';
+      toastContainer.setAttribute('aria-live', 'polite');
+      toastContainer.setAttribute('aria-atomic', 'false');
+      document.body.appendChild(toastContainer);
+    }
+  }
+  return toastContainer;
+}
+
+/**
+ * Get icon for toast type
+ */
+function getToastIcon(type) {
+  const icons = {
+    success: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>`,
+    error: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+    </svg>`,
+    info: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+    </svg>`,
+    warning: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.008v.008H12v-.008z" />
+    </svg>`,
+  };
+  return icons[type] || icons.info;
+}
+
+/**
+ * Show toast notification
+ * @param {string} message - Toast message
+ * @param {string} type - Toast type: 'success', 'error', 'info', 'warning'
+ * @param {number} duration - Auto-dismiss duration in ms (0 = manual dismiss)
+ * @param {Array} actions - Array of action buttons: [{ id, label, handler }]
+ * @returns {HTMLElement} Toast element
+ */
+function showToast(message, type = 'info', duration = null, actions = []) {
+  const container = initToastContainer();
+  
+  // Remove oldest toast if at max capacity
+  if (activeToasts.length >= MAX_TOASTS) {
+    const oldestToast = activeToasts.shift();
+    dismissToast(oldestToast);
+  }
+  
+  // Use default duration if not specified
+  if (duration === null) {
+    duration = TOAST_DURATIONS[type] || TOAST_DURATIONS.info;
+  }
+  
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+  
+  const icon = getToastIcon(type);
+  const actionsHTML = actions
+    .map(
+      (a) =>
+        `<button class="toast-action" data-action="${escapeHtml(a.id)}" aria-label="${escapeHtml(a.label)}">${escapeHtml(a.label)}</button>`
+    )
+    .join('');
+  
+  toast.innerHTML = `
+    <div class="toast-icon">${icon}</div>
+    <div class="toast-content">
+      <div class="toast-message">${escapeHtml(message)}</div>
+      ${actionsHTML ? `<div class="toast-actions">${actionsHTML}</div>` : ''}
+    </div>
+    <button class="toast-close" aria-label="Close" type="button">&times;</button>
+  `;
+  
+  // Add to container and active list
+  container.appendChild(toast);
+  activeToasts.push(toast);
+  
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.classList.add('is-visible');
+  });
+  
+  // Handle close button
+  const closeButton = toast.querySelector('.toast-close');
+  closeButton.addEventListener('click', () => {
+    dismissToast(toast);
+  });
+  
+  // Handle action buttons
+  actions.forEach((action) => {
+    const actionButton = toast.querySelector(`[data-action="${action.id}"]`);
+    if (actionButton && action.handler) {
+      actionButton.addEventListener('click', () => {
+        action.handler();
+        if (action.dismissOnClick !== false) {
+          dismissToast(toast);
+        }
+      });
+    }
+  });
+  
+  // Auto-dismiss for non-error toasts
+  if (type !== 'error' && duration > 0) {
+    const timeoutId = setTimeout(() => {
+      dismissToast(toast);
+    }, duration);
+    
+    // Store timeout ID for potential cancellation
+    toast.dataset.timeoutId = timeoutId;
+  }
+  
+  return toast;
+}
+
+/**
+ * Dismiss a toast
+ */
+function dismissToast(toast) {
+  if (!toast || !toast.parentNode) return;
+  
+  // Clear timeout if exists
+  if (toast.dataset.timeoutId) {
+    clearTimeout(parseInt(toast.dataset.timeoutId, 10));
+  }
+  
+  // Remove from active list
+  const index = activeToasts.indexOf(toast);
+  if (index > -1) {
+    activeToasts.splice(index, 1);
+  }
+  
+  // Animate out
+  toast.classList.remove('is-visible');
+  toast.classList.add('is-dismissing');
+  
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 300);
+}
+
+/**
+ * Dismiss all toasts
+ */
+function dismissAllToasts() {
+  activeToasts.forEach((toast) => dismissToast(toast));
+  activeToasts = [];
+}
+
+// ==================== Loading Overlay System ====================
+
+let loadingOverlay = null;
+let loadingOverlayCount = 0;
+
+/**
+ * Show global loading overlay
+ * @param {string} message - Optional loading message
+ */
+function showLoadingOverlay(message = 'Loading...') {
+  if (!loadingOverlay) {
+    loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'loading-overlay';
+    loadingOverlay.className = 'loading-overlay';
+    loadingOverlay.setAttribute('role', 'status');
+    loadingOverlay.setAttribute('aria-live', 'polite');
+    loadingOverlay.setAttribute('aria-label', message);
+    document.body.appendChild(loadingOverlay);
+  }
+
+  loadingOverlay.innerHTML = `
+    <div class="loading-spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-text">${escapeHtml(message)}</div>
+    </div>
+  `;
+
+  loadingOverlayCount++;
+  loadingOverlay.style.display = 'flex';
+}
+
+/**
+ * Hide global loading overlay
+ */
+function hideLoadingOverlay() {
+  if (loadingOverlayCount > 0) {
+    loadingOverlayCount--;
+  }
+
+  if (loadingOverlayCount === 0 && loadingOverlay) {
+    loadingOverlay.style.display = 'none';
   }
 }
 
-let toastTimeoutId;
-function showToast(message) {
-  if (!toast) {
-    toast = document.getElementById("toast");
-    if (!toast) return;
+/**
+ * Wrap async function with loading overlay
+ */
+async function withLoadingOverlay(asyncFn, message = 'Loading...') {
+  showLoadingOverlay(message);
+  try {
+    const result = await asyncFn();
+    return result;
+  } finally {
+    hideLoadingOverlay();
   }
-  toast.textContent = message;
-  toast.hidden = false;
-  toast.classList.add("is-visible");
-  clearTimeout(toastTimeoutId);
-  toastTimeoutId = setTimeout(() => {
-    toast.classList.remove("is-visible");
-    toastTimeoutId = setTimeout(() => {
-      toast.hidden = true;
-    }, 200);
-  }, 2400);
+}
+
+/**
+ * Legacy showToast function for backward compatibility
+ * @deprecated Use showToast(message, type, duration, actions) instead
+ */
+let toastTimeoutId;
+function showToastLegacy(message) {
+  showToast(message, 'info');
 }
 
 // Initialize all features when DOM is ready
@@ -1991,7 +2400,7 @@ async function renderComments(fileId) {
 // Add a new comment
 async function addComment(fileId, text) {
   if (!text.trim()) {
-    showToast("Note cannot be empty");
+    showToast("Note cannot be empty", "warning");
     return;
   }
 
@@ -1999,10 +2408,16 @@ async function addComment(fileId, text) {
     await addNote(fileId, text.trim());
     commentInput.value = "";
     await renderComments(fileId);
-    showToast("Note added");
+    showToast("Note added", "success");
   } catch (error) {
     console.error("Error adding note:", error);
-    showToast(`Failed to add note: ${error.message || "Unknown error"}`);
+    let errorMessage = "Unknown error";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(`Failed to add note: ${errorMessage}`, "error");
   }
 }
 
@@ -2015,10 +2430,16 @@ async function deleteComment(fileId, commentId) {
   try {
     await deleteNote(fileId, commentId);
     await renderComments(fileId);
-    showToast("Note deleted");
+    showToast("Note deleted", "success");
   } catch (error) {
     console.error("Error deleting note:", error);
-    showToast(`Failed to delete note: ${error.message || "Unknown error"}`);
+    let errorMessage = "Unknown error";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(`Failed to delete note: ${errorMessage}`, "error");
   }
 }
 
@@ -2113,9 +2534,25 @@ async function loadStatistics() {
     console.error("Error loading statistics:", error);
     if (statsLoading) statsLoading.style.display = "none";
     if (statsGrid) {
+      let errorMessage = "Error loading statistics";
+      if (error instanceof APIError) {
+        errorMessage = error.getUserMessage();
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       statsGrid.innerHTML =
-        '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading statistics</div>';
+        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
     }
-    showToast("Failed to load statistics");
+    let errorMessage = "Failed to load statistics";
+    if (error instanceof APIError) {
+      errorMessage = error.getUserMessage();
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    showToast(errorMessage, "error", 0, [{
+      id: "retry",
+      label: "Retry",
+      handler: () => loadStatistics(),
+    }]);
   }
 }
