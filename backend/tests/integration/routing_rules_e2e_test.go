@@ -34,7 +34,7 @@ func TestE2EUnrecognizedFileFormat(t *testing.T) {
 	s, _ := setupE2ETestServer(t)
 
 	// Create a test file with unrecognized format
-	testFile := bytes.NewBufferString("test content for unrecognized format")
+	_ = bytes.NewBufferString("test content for unrecognized format")
 	
 	req := httptest.NewRequest("POST", "/ingest", nil)
 	req.Header.Set("Content-Type", "multipart/form-data")
@@ -183,7 +183,7 @@ func TestE2ERoutingRuleUsageTracking(t *testing.T) {
 }
 
 func TestE2EFullWorkflow(t *testing.T) {
-	s, tmpDir := setupE2ETestServer(t)
+	s, _ := setupE2ETestServer(t)
 	
 	// Step 1: Upload a file with unrecognized format
 	// (In a real scenario, we'd use multipart form, but for testing we'll simulate)

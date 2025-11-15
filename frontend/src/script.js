@@ -5,6 +5,7 @@ import {
   ingestJSON, 
   getFiles,
   getFile,
+  downloadFile as apiDownloadFile,
   deleteFile, 
   renameFile,
   getNotes,
@@ -13,6 +14,15 @@ import {
   getStatistics,
   getCollectionStats
 } from './api.js'
+
+// Import UI components
+import {
+  createLoadingState,
+  createErrorState,
+  createEmptyState,
+  getErrorType,
+  getUserFriendlyErrorMessage
+} from './ui-components.js'
 
 const root = document.documentElement
 const THEME_KEY = 'rhinobox-theme'
@@ -123,7 +133,8 @@ function initHomePageFeatures() {
       }
     } catch (error) {
       console.error('Quick add error:', error)
-      showToast(`Failed to add item: ${error.message || 'Unknown error'}`)
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      showToast(`Failed to add item: ${errorMessage}`)
     }
   })
 }
@@ -287,8 +298,12 @@ async function loadAllCollectionStats() {
       updateCollectionCardStats(type, stats)
     } catch (error) {
       console.error(`Error loading stats for ${type}:`, error)
-      // Set error state on the card
-      updateCollectionCardStats(type, { file_count: 0, storage_used: 'Error' })
+      // Set error state on the card with user-friendly message
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      updateCollectionCardStats(type, { 
+        file_count: 0, 
+        storage_used: errorMessage.includes('connect') ? 'Offline' : 'Error' 
+      })
     }
   })
   
@@ -313,18 +328,16 @@ function updateCollectionCardStats(collectionType, stats) {
 }
 
 // Load files for a collection from API
-async function loadCollectionFiles(collectionType) {
+async function loadCollectionFiles(collectionType, retryCount = 0) {
   const gallery = document.getElementById('files-gallery')
-  const loadingState = document.getElementById('gallery-loading')
-  const emptyState = document.getElementById('gallery-empty')
   
   if (!gallery) return
   
   try {
     // Show loading state
     gallery.innerHTML = ''
-    if (loadingState) loadingState.style.display = 'block'
-    if (emptyState) emptyState.style.display = 'none'
+    const loadingComponent = createLoadingState('Loading files...', 'medium')
+    gallery.appendChild(loadingComponent)
     
     // Map collection types to API types
     const apiTypeMap = {
@@ -344,15 +357,25 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType)
     const files = response.files || response || []
     
-    // Hide loading state
-    if (loadingState) loadingState.style.display = 'none'
+    // Clear loading state
+    gallery.innerHTML = ''
     
     if (files.length === 0) {
-      if (emptyState) emptyState.style.display = 'block'
+      const emptyComponent = createEmptyState(
+        'No files found',
+        `This collection doesn't have any files yet. Upload some files to get started!`,
+        'files',
+        {
+          label: 'Upload Files',
+          onClick: () => {
+            const fileInput = document.getElementById('fileInput')
+            if (fileInput) fileInput.click()
+          }
+        }
+      )
+      gallery.appendChild(emptyComponent)
       return
     }
-    
-    if (emptyState) emptyState.style.display = 'none'
     
     // Render files
     files.forEach(file => {
@@ -365,11 +388,20 @@ async function loadCollectionFiles(collectionType) {
     
   } catch (error) {
     console.error('Error loading files:', error)
-    if (loadingState) loadingState.style.display = 'none'
-    if (emptyState) {
-      emptyState.innerHTML = '<p>Error loading files. Please try again.</p>'
-      emptyState.style.display = 'block'
-    }
+    
+    // Clear gallery and show error state
+    gallery.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => loadCollectionFiles(collectionType, retryCount + 1) : null,
+      errorType
+    )
+    gallery.appendChild(errorComponent)
+    
     showToast('Failed to load files')
   }
 }
@@ -380,8 +412,9 @@ function createFileElement(file, collectionType) {
   div.className = 'gallery-item'
   div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`
   div.dataset.fileName = file.name || file.fileName || 'Untitled'
-  div.dataset.filePath = file.path || file.filePath || ''
+  div.dataset.filePath = file.path || file.filePath || file.storedPath || ''
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || ''
+  div.dataset.fileHash = file.hash || ''
   div.dataset.fileDate = file.date || file.uploadedAt || new Date().toISOString()
   div.dataset.fileSize = file.size || file.fileSize || 'Unknown'
   div.dataset.fileType = file.type || file.fileType || 'Unknown'
@@ -543,11 +576,12 @@ function initGalleryMenus() {
       if (action === 'download') {
         e.preventDefault()
         try {
-          await downloadFile(fileId, fileName, fileUrl, filePath)
-          showToast(`Downloading "${fileName}"...`)
+          const fileHash = galleryItem.dataset.fileHash
+          await downloadFile(fileId, fileName, fileHash, filePath)
         } catch (error) {
           console.error('Download error:', error)
-          showToast(`Failed to download: ${error.message || 'Unknown error'}`)
+          const errorMessage = getUserFriendlyErrorMessage(error)
+          showToast(`Failed to download: ${errorMessage}`)
         }
       } else if (action === 'rename') {
         e.preventDefault()
@@ -560,7 +594,8 @@ function initGalleryMenus() {
             showToast(`Renamed to "${newName.trim()}"`)
           } catch (error) {
             console.error('Rename error:', error)
-            showToast(`Failed to rename: ${error.message || 'Unknown error'}`)
+            const errorMessage = getUserFriendlyErrorMessage(error)
+            showToast(`Failed to rename: ${errorMessage}`)
           }
         }
       } else if (action === 'delete') {
@@ -576,7 +611,8 @@ function initGalleryMenus() {
             }, 200)
           } catch (error) {
             console.error('Delete error:', error)
-            showToast(`Failed to delete: ${error.message || 'Unknown error'}`)
+            const errorMessage = getUserFriendlyErrorMessage(error)
+            showToast(`Failed to delete: ${errorMessage}`)
           }
         }
       } else if (action === 'copy-path') {
@@ -672,66 +708,86 @@ function initGhostButton() {
   }
 }
 
-// Download file function
-async function downloadFile(fileId, fileName, fileUrl, filePath) {
+// Download file function with progress tracking
+async function downloadFile(fileId, fileName, fileHash, filePath) {
+  let progressToast = null
+  let progressInterval = null
+  
   try {
-    // Try to get file from API first to get download URL
-    let downloadUrl = fileUrl
+    // Show initial download message
+    showToast(`Starting download: "${fileName}"...`)
     
-    // If no direct URL, try to construct download URL from backend
-    if (!downloadUrl || downloadUrl === '') {
-      // Try to fetch file info from API to get download URL
-      try {
-        const fileInfo = await getFile(fileId)
-        downloadUrl = fileInfo.url || fileInfo.downloadUrl || fileInfo.path || downloadUrl
-      } catch (error) {
-        console.warn('Could not fetch file info, trying direct download:', error)
-        // Construct download URL from backend
-        downloadUrl = `http://localhost:8090/files/${fileId}/download`
+    // Format file size helper
+    const formatBytes = (bytes) => {
+      if (!bytes || bytes === 0) return '0 B'
+      const k = 1024
+      const sizes = ['B', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+    }
+    
+    // Progress callback
+    const onProgress = (loaded, total) => {
+      if (total) {
+        const percent = Math.round((loaded / total) * 100)
+        const loadedStr = formatBytes(loaded)
+        const totalStr = formatBytes(total)
+        showToast(`Downloading "${fileName}": ${percent}% (${loadedStr} / ${totalStr})`, 0)
+      } else {
+        const loadedStr = formatBytes(loaded)
+        showToast(`Downloading "${fileName}": ${loadedStr}...`, 0)
       }
     }
     
-    // If still no URL, use the file path or construct from fileId
-    if (!downloadUrl || downloadUrl === '') {
-      downloadUrl = filePath || `http://localhost:8090/files/${fileId}/download`
-    }
+    // Fetch file blob from backend using proper download endpoint
+    // Use fileId if hash is not available
+    const blob = await apiDownloadFile(
+      fileHash || null,
+      filePath || null,
+      fileId || null,
+      fileName,
+      onProgress,
+      'blob'
+    )
     
-    // Create a temporary anchor element to trigger download
+    // Create blob URL and trigger download
+    const blobUrl = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = downloadUrl
+    link.href = blobUrl
     link.download = fileName || 'download'
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     
-    // If direct link doesn't work, try fetching as blob
-    setTimeout(async () => {
-      try {
-        const response = await fetch(downloadUrl, {
-          method: 'GET',
-          headers: getHeaders(),
-        })
-        
-        if (response.ok) {
-          const blob = await response.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = blobUrl
-          link.download = fileName || 'download'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(blobUrl)
-        }
-      } catch (error) {
-        console.error('Blob download failed:', error)
-      }
+    // Clean up blob URL after a short delay
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl)
     }, 100)
     
+    showToast(`Successfully downloaded "${fileName}"`)
   } catch (error) {
     console.error('Download error:', error)
+    
+    // Provide user-friendly error messages
+    let errorMessage = 'Download failed'
+    if (error.status === 404) {
+      errorMessage = 'File not found'
+    } else if (error.status === 403) {
+      errorMessage = 'Access denied'
+    } else if (error.status === 401) {
+      errorMessage = 'Authentication required'
+    } else if (error.message) {
+      errorMessage = error.message
+    }
+    
+    showToast(`Download failed: ${errorMessage}`)
     throw error
+  } finally {
+    // Clear any progress intervals
+    if (progressInterval) {
+      clearInterval(progressInterval)
+    }
   }
 }
 
@@ -757,7 +813,7 @@ function ensureButtonsClickable() {
 }
 
 // Upload files to backend
-async function uploadFiles(files) {
+async function uploadFiles(files, retryCount = 0) {
   if (!files || files.length === 0) {
     showToast('No files selected')
     return
@@ -786,19 +842,22 @@ async function uploadFiles(files) {
     }
   } catch (error) {
     console.error('Upload error:', error)
-    const errorMessage = error.message || 'Unknown error'
+    const errorMessage = getUserFriendlyErrorMessage(error)
     
-    // Provide more helpful error messages
-    if (errorMessage.includes('Cannot connect to backend') || errorMessage.includes('Failed to fetch')) {
-      showToast('Cannot connect to backend. Is the server running on port 8090?')
-    } else {
-      showToast(`Upload failed: ${errorMessage}`)
+    // Show error with retry option if retry count is less than 3
+    if (retryCount < 3) {
+      const shouldRetry = confirm(`${errorMessage}\n\nWould you like to retry?`)
+      if (shouldRetry) {
+        return uploadFiles(files, retryCount + 1)
+      }
     }
+    
+    showToast(`Upload failed: ${errorMessage}`)
   }
 }
 
 let toastTimeoutId
-function showToast(message) {
+function showToast(message, duration = 2400) {
   if (!toast) {
     toast = document.getElementById('toast')
     if (!toast) return
@@ -807,12 +866,16 @@ function showToast(message) {
   toast.hidden = false
   toast.classList.add('is-visible')
   clearTimeout(toastTimeoutId)
-  toastTimeoutId = setTimeout(() => {
-    toast.classList.remove('is-visible')
+  
+  // If duration is 0, don't auto-hide (useful for progress updates)
+  if (duration > 0) {
     toastTimeoutId = setTimeout(() => {
-      toast.hidden = true
-    }, 200)
-  }, 2400)
+      toast.classList.remove('is-visible')
+      toastTimeoutId = setTimeout(() => {
+        toast.hidden = true
+      }, 200)
+    }, duration)
+  }
 }
 
 // Initialize all features when DOM is ready
@@ -1001,7 +1064,7 @@ function getUserInitials() {
 }
 
 // Render comments
-async function renderComments(fileId) {
+async function renderComments(fileId, retryCount = 0) {
   if (!commentsList || !commentsEmpty) return
   
   commentsList.innerHTML = ''
@@ -1009,12 +1072,8 @@ async function renderComments(fileId) {
   commentsList.style.display = 'flex'
   
   // Show loading
-  const loadingDiv = document.createElement('div')
-  loadingDiv.textContent = 'Loading notes...'
-  loadingDiv.style.padding = '20px'
-  loadingDiv.style.textAlign = 'center'
-  loadingDiv.style.color = 'var(--text-secondary)'
-  commentsList.appendChild(loadingDiv)
+  const loadingComponent = createLoadingState('Loading notes...', 'small')
+  commentsList.appendChild(loadingComponent)
   
   try {
     const notes = await getNotesFromAPI(fileId)
@@ -1076,7 +1135,18 @@ async function renderComments(fileId) {
     }
   } catch (error) {
     console.error('Error rendering notes:', error)
-    commentsList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading notes</div>'
+    
+    commentsList.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => renderComments(fileId, retryCount + 1) : null,
+      errorType
+    )
+    commentsList.appendChild(errorComponent)
   }
 }
 
@@ -1101,7 +1171,8 @@ async function addComment(fileId, text) {
     showToast('Note added')
   } catch (error) {
     console.error('Error adding note:', error)
-    showToast(`Failed to add note: ${error.message || 'Unknown error'}`)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    showToast(`Failed to add note: ${errorMessage}`)
   }
 }
 
@@ -1117,7 +1188,8 @@ async function deleteComment(fileId, commentId) {
     showToast('Note deleted')
   } catch (error) {
     console.error('Error deleting note:', error)
-    showToast(`Failed to delete note: ${error.message || 'Unknown error'}`)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    showToast(`Failed to delete note: ${errorMessage}`)
   }
 }
 
@@ -1150,19 +1222,22 @@ function closeCommentsModal() {
 // Comments modal initialization moved to initCommentsModal()
 
 // Load statistics from API
-async function loadStatistics() {
+async function loadStatistics(retryCount = 0) {
   const statsGrid = document.getElementById('stats-grid')
-  const statsLoading = document.getElementById('stats-loading')
   const chartsContainer = document.getElementById('charts-container')
   
   if (!statsGrid) return
   
   try {
-    if (statsLoading) statsLoading.style.display = 'block'
+    // Show loading state
+    statsGrid.innerHTML = ''
+    const loadingComponent = createLoadingState('Loading statistics...', 'medium')
+    statsGrid.appendChild(loadingComponent)
     
     const stats = await getStatistics()
     
-    if (statsLoading) statsLoading.style.display = 'none'
+    // Clear loading state
+    statsGrid.innerHTML = ''
     
     // Render statistics cards
     const totalFiles = stats.totalFiles || stats.files || 0
@@ -1203,17 +1278,37 @@ async function loadStatistics() {
     `
     
     // Render charts if data available
-    if (chartsContainer && stats.charts) {
-      // Charts rendering can be added here based on backend response
-      chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
+    if (chartsContainer) {
+      if (stats.charts) {
+        // Charts rendering can be added here based on backend response
+        chartsContainer.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Charts coming soon...</p>'
+      } else {
+        const emptyCharts = createEmptyState(
+          'No chart data',
+          'Chart data will appear here when available.',
+          'generic'
+        )
+        chartsContainer.innerHTML = ''
+        chartsContainer.appendChild(emptyCharts)
+      }
     }
     
   } catch (error) {
     console.error('Error loading statistics:', error)
-    if (statsLoading) statsLoading.style.display = 'none'
-    if (statsGrid) {
-      statsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Error loading statistics</div>'
-    }
+    
+    // Clear and show error state
+    statsGrid.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => loadStatistics(retryCount + 1) : null,
+      errorType
+    )
+    statsGrid.appendChild(errorComponent)
+    
     showToast('Failed to load statistics')
   }
 }
