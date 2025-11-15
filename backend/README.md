@@ -5,8 +5,10 @@ RhinoBox is a hackathon-friendly, high-speed Go service that accepts any payload
 ## Features
 
 - **Single ingestion API**: upload media (images, videos, audio, anything) and structured JSON through the same server.
+- **Automatic retry logic**: exponential backoff (3 attempts, 1s→2s→4s) for transient failures in job processing.
 - **On-the-fly media organization**: MIME-aware classifier groups assets (images/videos/audio/other) and keeps related uploads inside deterministic subdirectories. Optional `category` hints keep humans in the loop.
 - **Schema-aware JSON handling**: a Go port of the MammothBox schema analyzer inspects each batch, computes stability metrics, and selects SQL vs. NoSQL storage automatically.
+- **Advanced search**: metadata search + content search inside text files (JSON, XML, code, markdown up to 10MB).
 - **Filesystem-first**: everything lands under `./data`, making demos easy and keeping the footprint portable.
 
 ## Requirements

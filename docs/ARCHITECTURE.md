@@ -22,8 +22,10 @@ These layers sit behind a single deployment artifact (Go binary + optional worke
 | JSON Analyzer       | Flatten docs, build field histograms, detect relationships     | Custom Go analyzer in `internal/jsonschema`         | Depth-limited flatten to avoid runaway arrays                     |
 | Decision Engine     | Choose SQL vs NoSQL, recommend schema/table names              | Rules engine (Go)                                   | Encodes heuristics described later                                |
 | **Async Job Queue** | **Buffer async work, track progress, enable batch processing** | **In-memory channels + disk persistence (Go)**      | **10 workers, 1000 job buffer, 596µs/op enqueue, crash recovery** |
+| **Retry Logic**     | **Automatic retry with exponential backoff**                   | **`internal/retry` package**                        | **3 attempts, 1s→2s→4s delays, transient error handling**         |
 | Worker Pool         | Execute queued jobs concurrently                               | Go worker goroutines                                | Sized by CPU count / config                                       |
 | File Storage        | Durable blob store organized by type/category                  | Local filesystem (hackathon), S3-compatible in prod | Directory naming uses slug + UUID                                 |
+| **Search Engine**   | **Metadata and content search**                                | **In-memory index + file scanning**                 | **Content search in text files up to 10MB, case-insensitive**     |
 | **PostgreSQL Pool** | **SQL-routed data with high-speed bulk inserts**               | **pgx/v5 with COPY protocol**                       | **100K+/sec, 4x CPU connections, 1024 statement cache**           |
 | **MongoDB Pool**    | **NoSQL-routed data with unordered bulk writes**               | **mongo-driver with BulkWrite**                     | **200K+/sec, 100 max connections, snappy/zstd compression**       |
 | Observability       | Metrics, traces, logs                                          | Prometheus, OpenTelemetry                           | Chi middleware emits request spans                                |
@@ -81,6 +83,20 @@ flowchart LR
   - Disk persistence for crash recovery
   - Progress tracking with percentage
   - Partial success support (continues even if some items fail)
+- **Retry Logic** (`internal/retry/retry.go`):
+  - Automatic retry with exponential backoff for transient failures
+  - Configurable retry attempts (default: 3)
+  - Initial delay: 1s, then 2s, 4s with 30s maximum
+  - Context-aware cancellation support
+  - Error classification (retryable vs non-retryable)
+  - Integrated into job processor for file operations
+- **Search Capabilities** (`internal/storage/search.go`):
+  - Metadata search: name, extension, type, category, MIME type, date range
+  - Content search: searches inside text files (text/\*, JSON, XML, JS, TS, Python, shell scripts)
+  - Case-insensitive matching for both metadata and content
+  - 10MB maximum file size for content search
+  - Efficient line-by-line scanning (1MB max line size)
+  - AND logic for multiple filters
 - **Database Write Flow** (`internal/api/server.go` → `handleJSONIngest`):
   - **SQL Route** (`decision.Engine == "sql"`): Creates table from schema → Batch insert using COPY protocol (>100 docs) or multi-value INSERT (<100 docs) → Falls back to NDJSON on error
   - **NoSQL Route** (`decision.Engine == "nosql"`): BulkWrite with unordered execution → Parallel inserts for maximum throughput → Falls back to NDJSON on error
