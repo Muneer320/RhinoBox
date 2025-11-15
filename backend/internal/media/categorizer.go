@@ -4,17 +4,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Categorizer implements lightweight heuristics to group media by type and label.
-type Categorizer struct{}
+// Thread-safe for concurrent use in worker pools.
+type Categorizer struct{
+	mu sync.RWMutex
+}
 
 func NewCategorizer() *Categorizer {
 	return &Categorizer{}
 }
 
 // Classify returns the top-level media type directory and the inferred category label.
+// Thread-safe for concurrent access.
 func (c *Categorizer) Classify(mimeType, filename, hint string) (string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
 	mediaType := classifyByMime(mimeType)
 	base := strings.TrimSuffix(filename, filepath.Ext(filename))
 	category := firstNonEmpty(sanitize(hint), sanitize(base), mediaType)
