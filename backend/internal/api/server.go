@@ -71,6 +71,16 @@ func (s *Server) Router() http.Handler {
 	return s.router
 }
 
+// Storage exposes the storage manager for testing.
+func (s *Server) Storage() *storage.Manager {
+	return s.storage
+}
+
+// Config exposes the server configuration for testing.
+func (s *Server) Config() config.Config {
+	return s.cfg
+}
+
 // Run starts the HTTP server and blocks until the context is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	s.server = &http.Server{Addr: s.cfg.Addr, Handler: s.router}
