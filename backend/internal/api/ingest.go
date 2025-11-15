@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
-	"github.com/Muneer320/RhinoBox/internal/storage"
+	"github.com/Muneer320/RhinoBox/internal/service"
 )
 
 // UnifiedIngestRequest represents the unified /ingest payload.
@@ -196,25 +196,27 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		metadata["comment"] = comment
 	}
 
-	result, err := s.storage.StoreFile(storage.StoreRequest{
+	req := service.FileStoreRequest{
 		Reader:       file,
 		Filename:     sanitizedFilename,
 		MimeType:     mimeType,
 		Size:         header.Size,
 		Metadata:     metadata,
 		CategoryHint: sanitizedComment,
-	})
+	}
+
+	result, err := s.fileService.StoreFile(req)
 	if err != nil {
 		return MediaResult{}, err
 	}
 
 	return MediaResult{
 		OriginalName: header.Filename,
-		StoredPath:   result.Metadata.StoredPath,
-		Category:     result.Metadata.Category,
-		MimeType:     result.Metadata.MimeType,
-		Size:         result.Metadata.Size,
-		Hash:         result.Metadata.Hash,
+		StoredPath:   result.StoredPath,
+		Category:     result.Category,
+		MimeType:     result.MimeType,
+		Size:         result.Size,
+		Hash:         result.Hash,
 		Duplicates:   result.Duplicate,
 	}, nil
 }
@@ -232,7 +234,7 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		category = namespace
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{"files", category}, header.Filename, file)
+	relPath, err := s.fileService.StoreMediaFile([]string{"files", category}, header.Filename, file)
 	if err != nil {
 		return GenericResult{}, err
 	}
@@ -295,8 +297,8 @@ func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata 
 	analysis = jsonschema.IncorporateCommentHints(analysis, comment)
 	decision := jsonschema.DecideStorage(namespace, docs, summary, analysis)
 
-	batchRel := s.storage.NextJSONBatchPath(decision.Engine, namespace)
-	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
+	batchRel := s.fileService.NextJSONBatchPath(decision.Engine, namespace)
+	if _, err := s.fileService.AppendNDJSON(batchRel, docs); err != nil {
 		return JSONResult{}, fmt.Errorf("store batch: %w", err)
 	}
 
