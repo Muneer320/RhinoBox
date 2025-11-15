@@ -1,0 +1,189 @@
+```mermaid
+flowchart TD
+    START([JSON Document]) --> ANALYZE[Analyze Schema]
+    
+    ANALYZE --> CHECK_CONSISTENCY{Field Consistency}
+    CHECK_CONSISTENCY -->|>80% consistent| CONSISTENT[Stable Schema]
+    CHECK_CONSISTENCY -->|<80% consistent| INCONSISTENT[Varying Schema]
+    
+    CONSISTENT --> CHECK_DEPTH{Nesting Depth}
+    INCONSISTENT --> CHECK_ARRAYS{Large Arrays?}
+    
+    CHECK_DEPTH -->|≤ 2 levels| SHALLOW[Shallow Structure]
+    CHECK_DEPTH -->|> 3 levels| DEEP[Deep Nesting]
+    
+    CHECK_ARRAYS -->|Yes: >50 elements| ARRAY_HEAVY[Array-Heavy]
+    CHECK_ARRAYS -->|No| CHECK_HINT
+    
+    SHALLOW --> CHECK_FK{Foreign Key<br/>Patterns?}
+    CHECK_FK -->|Yes: *_id suffix| FK_DETECTED[Relational Data]
+    CHECK_FK -->|No| CHECK_NUMERIC
+    
+    CHECK_NUMERIC{Numeric IDs?} -->|Yes| SQL_CANDIDATE[SQL Candidate]
+    CHECK_NUMERIC -->|No| CHECK_HINT
+    
+    FK_DETECTED --> SQL_CANDIDATE
+    DEEP --> CHECK_HINT
+    ARRAY_HEAVY --> NOSQL_CANDIDATE[NoSQL Candidate]
+    
+    CHECK_HINT{Comment Hint?}
+    CHECK_HINT -->|"sql"|"relational"| HINT_SQL[Explicit SQL]
+    CHECK_HINT -->|"nosql"|"flexible"| HINT_NOSQL[Explicit NoSQL]
+    CHECK_HINT -->|None| DEFAULT_DECISION{Default Logic}
+    
+    HINT_SQL --> SQL_FINAL
+    HINT_NOSQL --> NOSQL_FINAL
+    
+    DEFAULT_DECISION -->|Flat + stable| SQL_FINAL
+    DEFAULT_DECISION -->|Nested + varying| NOSQL_FINAL
+    
+    SQL_CANDIDATE --> SQL_FINAL
+    NOSQL_CANDIDATE --> NOSQL_FINAL
+    
+    SQL_FINAL([PostgreSQL Route])
+    NOSQL_FINAL([MongoDB Route])
+    
+    SQL_FINAL --> SQL_STEPS[1. Cache schema<br/>2. Generate DDL<br/>3. CREATE TABLE<br/>4. COPY or INSERT<br/>5. NDJSON backup]
+    NOSQL_FINAL --> NOSQL_STEPS[1. Create collection<br/>2. BulkWrite<br/>3. NDJSON backup]
+    
+    SQL_STEPS --> SQL_RESULT[✅ Structured Storage<br/>100K+ inserts/sec<br/>Full SQL queries]
+    NOSQL_STEPS --> NOSQL_RESULT[✅ Flexible Storage<br/>200K+ inserts/sec<br/>Aggregation pipelines]
+    
+    style START fill:#e1f5ff
+    style SQL_FINAL fill:#90ee90
+    style NOSQL_FINAL fill:#ffb6c1
+    style SQL_RESULT fill:#90ee90
+    style NOSQL_RESULT fill:#ffb6c1
+    style CONSISTENT fill:#ffffcc
+    style INCONSISTENT fill:#ffcccc
+    style FK_DETECTED fill:#ccffcc
+    style ARRAY_HEAVY fill:#ffcccc
+```
+
+# Database Decision Tree
+
+This flowchart shows the complete decision logic for routing JSON documents to PostgreSQL (SQL) or MongoDB (NoSQL).
+
+## Decision Factors (in order of priority)
+
+### 1. Comment Hints (Highest Priority)
+```json
+{
+  "@comment": "sql",
+  "data": {...}
+}
+```
+- Explicit `"sql"` or `"relational"` → PostgreSQL
+- Explicit `"nosql"` or `"flexible"` → MongoDB
+- **Confidence**: 1.0 (explicit override)
+
+### 2. Field Consistency
+- **>80% consistent** across documents → Stable schema → Lean SQL
+- **<80% consistent** → Varying schema → Lean NoSQL
+- Measured by histogram analysis over batch
+
+### 3. Nesting Depth
+- **≤2 levels** → Flat structure → SQL-friendly
+- **>3 levels** → Deep nesting → NoSQL-friendly
+- Example SQL-friendly: `{"user": {"name": "Alice"}}`
+- Example NoSQL-friendly: `{"a": {"b": {"c": {"d": {...}}}}}`
+
+### 4. Foreign Key Patterns
+- **Fields ending in `_id`** → Relational structure → SQL
+- Examples: `user_id`, `order_id`, `product_id`
+- Strong indicator of normalized data model
+
+### 5. Numeric IDs
+- **Integer ID fields** → SQL-friendly
+- Example: `{"id": 12345, "user_id": 67890}`
+
+### 6. Array Characteristics
+- **Large arrays (>50 elements)** → NoSQL-friendly
+- **Array-heavy structure** → Document orientation
+- Example: `{"tags": [...100 items], "comments": [...200 items]}`
+
+## Confidence Scoring
+
+### High Confidence SQL (≥0.9)
+- ✅ Consistency >90%
+- ✅ Multiple `*_id` fields
+- ✅ Shallow nesting (≤2)
+- ✅ Numeric IDs
+- ✅ No large arrays
+
+### Medium Confidence SQL (0.7-0.9)
+- ✅ Consistency 80-90%
+- ✅ At least one FK pattern
+- ✅ Nesting ≤3
+
+### High Confidence NoSQL (≥0.9)
+- ✅ Consistency <70%
+- ✅ Deep nesting (>4)
+- ✅ Multiple large arrays
+- ✅ Document-oriented structure
+
+### Medium Confidence NoSQL (0.7-0.9)
+- ✅ Consistency 70-80%
+- ✅ Nesting >3
+- ✅ Few/no FK patterns
+
+## Performance Impact
+
+| Route | Throughput | Latency | Query Capability |
+|-------|-----------|---------|------------------|
+| **PostgreSQL** | 100K+/sec | 35-300ms | Full SQL (JOIN, WHERE, GROUP BY) |
+| **MongoDB** | 200K+/sec | 20-120ms | Aggregation pipelines, flexible queries |
+
+## Edge Cases
+
+### Ambiguous Data (confidence <0.7)
+- Default: **MongoDB** (more flexible)
+- Stored in: `rhinobox.ambiguous_namespace`
+- NDJSON backup: `data/json/nosql/ambiguous/`
+- User can override with comment hint
+
+### Mixed Batch
+- Individual documents routed independently
+- Possible outcomes: Some → SQL, others → NoSQL
+- API response includes per-document routing info
+
+### Schema Evolution
+- **SQL**: ALTER TABLE automatically (add columns only)
+- **NoSQL**: No schema changes needed (flexible by design)
+
+## Example Decisions
+
+### ✅ SQL: E-commerce Orders
+```json
+{
+  "order_id": 1001,
+  "user_id": 234,
+  "product_id": 567,
+  "amount": 99.99,
+  "status": "shipped"
+}
+```
+- **Consistency**: 95% (stable fields)
+- **FK patterns**: 3 (`*_id` fields)
+- **Depth**: 1 (flat)
+- **Decision**: PostgreSQL (confidence: 0.97)
+
+### ✅ NoSQL: Activity Logs
+```json
+{
+  "event": "page_view",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "user": {
+    "id": "abc123",
+    "metadata": {
+      "browser": {...},
+      "location": {...}
+    }
+  },
+  "custom_props": {...100 dynamic fields}
+}
+```
+- **Consistency**: 45% (varying custom_props)
+- **Depth**: 3+ (nested metadata)
+- **Large objects**: Yes (100+ dynamic fields)
+- **Decision**: MongoDB (confidence: 0.94)

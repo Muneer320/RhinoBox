@@ -255,6 +255,13 @@ func (m *Manager) FindByOriginalName(name string) []FileMetadata {
 	return results
 }
 
+// FindByCategoryPrefix returns all files whose category starts with the given prefix.
+func (m *Manager) FindByCategoryPrefix(prefix string) []FileMetadata {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.index.FindByCategoryPrefix(prefix)
+}
+
 // CheckNameConflict checks if a filename would conflict with existing files in the same category.
 func (m *Manager) CheckNameConflict(hash, newName, category string) bool {
 	m.mu.Lock()

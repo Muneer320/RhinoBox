@@ -19,6 +19,8 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
 	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
+	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,6 +33,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -42,13 +45,29 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		router:      chi.NewRouter(),
-		storage:     store,
+		cfg:      cfg,
+		logger:   logger,
+		router:   chi.NewRouter(),
+		storage:  store,
+		jobQueue: nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
+}
+
+// setupValidation configures validation middleware
+func (s *Server) setupValidation() *validationmw.Validator {
+	validator := validationmw.NewValidator(s.logger)
+	validationmw.RegisterAllSchemas(validator, s.cfg.MaxUploadBytes)
+	return validator
+}
+
+// Stop gracefully stops the server and cleans up resources.
+func (s *Server) Stop() {
+	// Job queue shutdown will be implemented when async endpoints are added
+	if s.jobQueue != nil {
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
+	}
 }
 
 func (s *Server) routes() {
@@ -67,6 +86,11 @@ func (s *Server) routes() {
 	r.Use(s.customLogger)       // Custom lightweight logger
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
+
+	// Setup validation as global middleware
+	// Validation will check route context after chi matches routes
+	validator := s.setupValidation()
+	r.Use(validator.Validate)
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)

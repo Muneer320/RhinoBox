@@ -147,6 +147,36 @@ func (c *Classifier) Classify(mimeType, filename, hint string) []string {
     return appendPathWithHint([]string{"other", "unknown"}, hint)
 }
 
+// ClassifyWithRules classifies a file using both built-in rules and custom routing rules.
+func (c *Classifier) ClassifyWithRules(mimeType, filename, hint string, rulesMgr *RoutingRulesManager) []string {
+    // First check custom routing rules
+    if rulesMgr != nil {
+        ext := strings.ToLower(filepath.Ext(filename))
+        if rule := rulesMgr.FindRule(mimeType, ext); rule != nil {
+            // Increment usage count
+            rulesMgr.IncrementUsage(mimeType, ext)
+            return appendPathWithHint(rule.Destination, hint)
+        }
+    }
+    
+    // Fall back to built-in classification
+    return c.Classify(mimeType, filename, hint)
+}
+
+// IsRecognized checks if a file format is recognized by built-in rules.
+func (c *Classifier) IsRecognized(mimeType, filename string) bool {
+    if _, ok := c.mimeMap[mimeType]; ok {
+        return true
+    }
+    
+    ext := strings.ToLower(filepath.Ext(filename))
+    if _, ok := c.extMap[ext]; ok {
+        return true
+    }
+    
+    return false
+}
+
 func appendPathWithHint(path []string, hint string) []string {
     sanitized := sanitize(hint)
     if sanitized == "" {

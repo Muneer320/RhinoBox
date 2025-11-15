@@ -61,11 +61,13 @@ type JSONResult struct {
 }
 
 type GenericResult struct {
-	OriginalName string `json:"original_name"`
-	StoredPath   string `json:"stored_path"`
-	FileType     string `json:"file_type"`
-	Size         int64  `json:"size"`
-	Hash         string `json:"hash,omitempty"`
+	OriginalName    string `json:"original_name"`
+	StoredPath      string `json:"stored_path"`
+	FileType        string `json:"file_type"`
+	Size            int64  `json:"size"`
+	Hash            string `json:"hash,omitempty"`
+	Unrecognized    bool   `json:"unrecognized,omitempty"`    // true if format not recognized
+	RequiresRouting bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
@@ -156,11 +158,20 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 	defer file.Close()
 
 	mimeType := detectMIMEType(header)
+	ext := strings.ToLower(filepath.Ext(header.Filename))
 
 	s.logger.Debug("routing file",
 		slog.String("name", header.Filename),
 		slog.String("mime", mimeType),
 		slog.String("field", fieldName))
+
+	// Check if format is recognized
+	classifier := s.storage.Classifier()
+	rulesMgr := s.storage.RoutingRules()
+	
+	isRecognized := classifier.IsRecognized(mimeType, header.Filename)
+	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(mimeType, ext) != nil
+	isUnrecognized := !isRecognized && !hasCustomRule
 
 	// Route based on MIME type
 	if isMediaType(mimeType) {
@@ -171,7 +182,19 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 		return s.processJSONFile(header, namespace, comment)
 	}
 
-	return s.processGenericFile(header, namespace)
+	// For generic files, check if unrecognized
+	result, err := s.processGenericFile(header, namespace)
+	if err != nil {
+		return result, err
+	}
+
+	// Mark as unrecognized if needed
+	if isUnrecognized {
+		result.Unrecognized = true
+		result.RequiresRouting = true
+	}
+
+	return result, nil
 }
 
 // processMediaFile handles images, videos, audio.
