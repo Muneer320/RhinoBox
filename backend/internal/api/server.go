@@ -18,6 +18,7 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -50,6 +51,13 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return s, nil
 }
 
+// setupValidation configures and applies validation middleware
+func (s *Server) setupValidation() {
+	validator := validationmw.NewValidator(s.logger)
+	validationmw.RegisterAllSchemas(validator, s.cfg.MaxUploadBytes)
+	s.router.Use(validator.Validate)
+}
+
 func (s *Server) routes() {
 	r := s.router
 
@@ -59,6 +67,9 @@ func (s *Server) routes() {
 	r.Use(s.customLogger)       // Custom lightweight logger
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
+
+	// Setup validation middleware (must be after other middleware but before routes)
+	s.setupValidation()
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)
