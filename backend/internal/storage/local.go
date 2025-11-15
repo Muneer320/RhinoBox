@@ -72,6 +72,16 @@ func (m *Manager) Root() string {
 	return m.root
 }
 
+// GetIndex returns the metadata index for duplicate scanning.
+func (m *Manager) GetIndex() *MetadataIndex {
+	return m.index
+}
+
+// GetStorageRoot returns the storage root directory.
+func (m *Manager) GetStorageRoot() string {
+	return m.storageRoot
+}
+
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.
 func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {

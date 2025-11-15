@@ -59,6 +59,12 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Duplicate detection and management endpoints
+	r.Post("/files/duplicates/scan", s.handleDuplicatesScan)
+	r.Get("/files/duplicates", s.handleDuplicatesList)
+	r.Post("/files/duplicates/verify", s.handleDuplicatesVerify)
+	r.Post("/files/duplicates/merge", s.handleDuplicatesMerge)
 }
 
 // Router exposes the HTTP router for testing.

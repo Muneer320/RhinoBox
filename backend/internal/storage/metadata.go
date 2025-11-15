@@ -97,3 +97,29 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
 }
+
+// GetAll returns all metadata entries. Used for duplicate detection.
+func (idx *MetadataIndex) GetAll() []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    items := make([]FileMetadata, 0, len(idx.data))
+    for _, meta := range idx.data {
+        items = append(items, meta)
+    }
+    return items
+}
+
+// Count returns the number of files in the index.
+func (idx *MetadataIndex) Count() int {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    return len(idx.data)
+}
+
+// Remove deletes a file entry from the index by hash.
+func (idx *MetadataIndex) Remove(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    delete(idx.data, hash)
+    return idx.persistLocked()
+}
