@@ -4,13 +4,13 @@
  */
 
 // API Configuration
-const API_CONFIG = {
-  baseURL: 'http://localhost:8090', // RhinoBox backend URL - change this to your backend URL
+export const API_CONFIG = {
+  baseURL: "http://localhost:8090", // RhinoBox backend URL - change this to your backend URL
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
-  }
-}
+    "Content-Type": "application/json",
+  },
+};
 
 // Get auth token from localStorage or session
 function getAuthToken() {
@@ -246,26 +246,38 @@ export async function getFiles(type, category = '', params = {}) {
 
 /**
  * Get a single file by ID
- * Note: This endpoint may not exist in the backend yet
  * @param {string} fileId - File ID
  */
 export async function getFile(fileId) {
   return apiRequest(`/files/${fileId}`, {
-    method: 'GET',
-  })
+    method: "GET",
+  });
 }
 
 /**
- * Search files
- * Note: This endpoint may not exist in the backend yet
- * @param {string} query - Search query
- * @param {object} filters - Additional filters
+ * Get file metadata by hash
+ * @param {string} hash - File hash
+ * @returns {Promise<Object>} File metadata object
+ */
+export async function getFileMetadata(hash) {
+  if (!hash) {
+    throw new Error("Hash is required to fetch file metadata");
+  }
+  return apiRequest(`/files/metadata?hash=${encodeURIComponent(hash)}`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Search files by name
+ * @param {string} query - Search query (file name)
+ * @param {object} filters - Additional filters (not currently used by backend)
  */
 export async function searchFiles(query, filters = {}) {
-  return apiRequest('/files/search', {
-    method: 'POST',
-    body: JSON.stringify({ query, ...filters }),
-  })
+  const params = new URLSearchParams({ name: query });
+  return apiRequest(`/files/search?${params.toString()}`, {
+    method: "GET",
+  });
 }
 
 // ==================== File Management API ====================
