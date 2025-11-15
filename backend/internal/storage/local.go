@@ -20,13 +20,16 @@ import (
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
 type Manager struct {
-	root        string
-	storageRoot string
-	classifier  *Classifier
-	rulesMgr    *RoutingRulesManager
-	index       *MetadataIndex
-	hashIndex   *cache.HashIndex
-	mu          sync.Mutex
+	root           string
+	storageRoot    string
+	classifier     *Classifier
+	rulesMgr       *RoutingRulesManager
+	index          *MetadataIndex
+	versionIndex   *VersionIndex
+	hashIndex      *cache.HashIndex
+	referenceIndex *ReferenceIndex
+	mu             sync.Mutex
+	scanState      scanState
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.
@@ -73,6 +76,11 @@ func NewManager(root string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize routing rules manager: %w", err)
 	}
 
+	versionIndex, err := NewVersionIndex(filepath.Join(root, "metadata", "versions.json"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize version index: %w", err)
+	}
+
 	// Initialize cache for deduplication
 	cacheConfig := cache.DefaultConfig()
 	cacheConfig.L3Path = filepath.Join(root, "cache")
@@ -84,12 +92,14 @@ func NewManager(root string) (*Manager, error) {
 	hashIndex := cache.NewHashIndex(cacheInstance)
 
 	return &Manager{
-		root:        root,
-		storageRoot: storageRoot,
-		classifier:  classifier,
-		rulesMgr:    rulesMgr,
-		index:       index,
-		hashIndex:   hashIndex,
+		root:           root,
+		storageRoot:    storageRoot,
+		classifier:     classifier,
+		rulesMgr:       rulesMgr,
+		index:          index,
+		versionIndex:   versionIndex,
+		hashIndex:      hashIndex,
+		referenceIndex: nil, // Lazily initialized when needed
 	}, nil
 }
 
@@ -316,4 +326,151 @@ var storageLayout = map[string][]string{
 	"archives":      {"zip", "tar", "gz", "rar"},
 	"code":          {"py", "js", "go", "java", "cpp"},
 	"other":         {"unknown"},
+}
+
+// VersionRequest contains parameters for creating a new version
+type VersionRequest struct {
+	FileID      string
+	Reader      io.Reader
+	Filename    string
+	MimeType    string
+	Size        int64
+	Comment     string
+	UploadedBy  string
+	MaxVersions int // 0 = unlimited
+}
+
+// VersionResult contains the result of a version operation
+type VersionResult struct {
+	Version   VersionMetadata `json:"version"`
+	FileID    string          `json:"file_id"`
+	IsNewFile bool            `json:"is_new_file"` // True if this is the first version
+}
+
+// CreateVersion creates a new version of a file
+func (m *Manager) CreateVersion(req VersionRequest) (*VersionResult, error) {
+	if req.FileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+	if req.Reader == nil {
+		return nil, errors.New("reader is required")
+	}
+
+	// Store the new file version
+	storeReq := StoreRequest{
+		Reader:       req.Reader,
+		Filename:     req.Filename,
+		MimeType:     req.MimeType,
+		Size:         req.Size,
+		CategoryHint: "",
+	}
+	if req.Comment != "" {
+		storeReq.Metadata = map[string]string{"comment": req.Comment}
+	}
+
+	storeResult, err := m.StoreFile(storeReq)
+	if err != nil {
+		return nil, fmt.Errorf("store file: %w", err)
+	}
+
+	newHash := storeResult.Metadata.Hash
+	newSize := storeResult.Metadata.Size
+
+	// Check if version chain exists for this file_id
+	chain, err := m.versionIndex.GetVersionChain(req.FileID)
+	isNewFile := false
+
+	if err != nil {
+		// Version chain doesn't exist - create one
+		// Check if file_id exists in metadata (it's a hash of an existing file)
+		m.mu.Lock()
+		existingMeta := m.index.FindByHash(req.FileID)
+		m.mu.Unlock()
+
+		if existingMeta != nil {
+			// File exists - create chain with original file as version 1, then add new version as version 2
+			// Extract comment from metadata if available
+			originalComment := ""
+			if existingMeta.Metadata != nil {
+				if comment, ok := existingMeta.Metadata["comment"]; ok {
+					originalComment = comment
+				}
+			}
+			_, err = m.versionIndex.CreateVersionChain(req.FileID, existingMeta.Hash, existingMeta.Size, "", originalComment)
+			if err != nil {
+				return nil, fmt.Errorf("create version chain: %w", err)
+			}
+			// Add the new version
+			version, err := m.versionIndex.AddVersion(req.FileID, newHash, newSize, req.UploadedBy, req.Comment, req.MaxVersions)
+			if err != nil {
+				return nil, fmt.Errorf("add version: %w", err)
+			}
+			return &VersionResult{
+				Version:   *version,
+				FileID:    req.FileID,
+				IsNewFile: false,
+			}, nil
+		} else {
+			// File doesn't exist - this is the first version, use file_id as logical ID
+			_, err = m.versionIndex.CreateVersionChain(req.FileID, newHash, newSize, req.UploadedBy, req.Comment)
+			if err != nil {
+				return nil, fmt.Errorf("create version chain: %w", err)
+			}
+			isNewFile = true
+			chain, _ = m.versionIndex.GetVersionChain(req.FileID)
+		}
+	} else {
+		// Version chain exists - add new version
+		version, err := m.versionIndex.AddVersion(req.FileID, newHash, newSize, req.UploadedBy, req.Comment, req.MaxVersions)
+		if err != nil {
+			return nil, fmt.Errorf("add version: %w", err)
+		}
+		return &VersionResult{
+			Version:   *version,
+			FileID:    req.FileID,
+			IsNewFile: false,
+		}, nil
+	}
+
+	// Return first version (only reached for new files)
+	if chain != nil && len(chain.Versions) > 0 {
+		return &VersionResult{
+			Version:   chain.Versions[0],
+			FileID:    chain.FileID,
+			IsNewFile: isNewFile,
+		}, nil
+	}
+
+	return nil, errors.New("failed to create version")
+}
+
+// ListVersions returns all versions for a file
+func (m *Manager) ListVersions(fileID string) ([]VersionMetadata, error) {
+	return m.versionIndex.ListVersions(fileID)
+}
+
+// GetVersion retrieves a specific version
+func (m *Manager) GetVersion(fileID string, versionNumber int) (*VersionMetadata, error) {
+	return m.versionIndex.GetVersion(fileID, versionNumber)
+}
+
+// GetVersionFile retrieves the file content for a specific version
+func (m *Manager) GetVersionFile(fileID string, versionNumber int) (*FileRetrievalResult, error) {
+	version, err := m.versionIndex.GetVersion(fileID, versionNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// Retrieve file by hash
+	return m.GetFileByHash(version.Hash)
+}
+
+// RevertVersion reverts a file to a previous version
+func (m *Manager) RevertVersion(fileID string, versionNumber int, comment string) (*VersionMetadata, error) {
+	return m.versionIndex.RevertToVersion(fileID, versionNumber, comment)
+}
+
+// GetVersionDiff returns differences between two versions
+func (m *Manager) GetVersionDiff(fileID string, fromVersion, toVersion int) (map[string]any, error) {
+	return m.versionIndex.GetVersionDiff(fileID, fromVersion, toVersion)
 }
