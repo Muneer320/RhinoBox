@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
+	"github.com/Muneer320/RhinoBox/internal/database"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
 	"github.com/Muneer320/RhinoBox/internal/queue"
@@ -33,6 +34,10 @@ type Server struct {
 	storage     *storage.Manager
 	jobQueue    *queue.JobQueue
 	server      *http.Server
+	
+	// Database connections (optional - may be nil if not configured)
+	postgres    *database.PostgresDB
+	mongodb     *database.MongoDB
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -58,8 +63,57 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		storage:     store,
 		jobQueue:    jobQueue,
 	}
+	
+	// Initialize database connections if configured
+	ctx := context.Background()
+	if cfg.PostgresURL != "" {
+		logger.Info("connecting to PostgreSQL", "url", maskPassword(cfg.PostgresURL))
+		pg, err := database.NewPostgresDB(ctx, cfg.PostgresURL)
+		if err != nil {
+			return nil, fmt.Errorf("postgres connection failed: %w", err)
+		}
+		s.postgres = pg
+		logger.Info("PostgreSQL connected", "max_conns", pg.Stats().MaxConns())
+	} else {
+		logger.Info("PostgreSQL not configured (using NDJSON only)")
+	}
+	
+	if cfg.MongoURL != "" {
+		logger.Info("connecting to MongoDB", "url", maskPassword(cfg.MongoURL))
+		mg, err := database.NewMongoDB(ctx, cfg.MongoURL)
+		if err != nil {
+			return nil, fmt.Errorf("mongodb connection failed: %w", err)
+		}
+		s.mongodb = mg
+		logger.Info("MongoDB connected")
+	} else {
+		logger.Info("MongoDB not configured (using NDJSON only)")
+	}
+	
 	s.routes()
 	return s, nil
+}
+
+// maskPassword hides password in connection strings for logging
+func maskPassword(connStr string) string {
+	if strings.Contains(connStr, "@") {
+		parts := strings.Split(connStr, "@")
+		if len(parts) == 2 {
+			// Find the password portion (after :// and before @)
+			beforeAt := parts[0]
+			if strings.Contains(beforeAt, "://") {
+				schemeParts := strings.Split(beforeAt, "://")
+				if len(schemeParts) == 2 {
+					userPass := schemeParts[1]
+					if strings.Contains(userPass, ":") {
+						userParts := strings.Split(userPass, ":")
+						return schemeParts[0] + "://" + userParts[0] + ":****@" + parts[1]
+					}
+				}
+			}
+		}
+	}
+	return connStr
 }
 
 func (s *Server) routes() {
@@ -148,6 +202,45 @@ func (s *Server) Stop() {
 		s.jobQueue.Stop()
 		s.logger.Info("job queue stopped")
 	}
+	
+	// Close database connections
+	if s.postgres != nil {
+		s.logger.Info("closing PostgreSQL connection...")
+		s.postgres.Close()
+		s.logger.Info("PostgreSQL closed")
+	}
+	
+	if s.mongodb != nil {
+		s.logger.Info("closing MongoDB connection...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.mongodb.Close(ctx); err != nil {
+			s.logger.Error("MongoDB close error", "error", err)
+		} else {
+			s.logger.Info("MongoDB closed")
+		}
+	}
+}
+
+// createTableAndInsert creates a PostgreSQL table from the decision schema and inserts documents
+func (s *Server) createTableAndInsert(ctx context.Context, table string, columns map[string]jsonschema.ColumnDef, docs []map[string]any) error {
+	// Convert ColumnDef to SQL types map
+	schema := make(map[string]string)
+	for colName, colDef := range columns {
+		schema[colName] = colDef.Type
+	}
+	
+	// Create table if not exists
+	if err := s.postgres.CreateTableFromSchema(ctx, table, schema); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
+	
+	// Batch insert documents
+	if err := s.postgres.BatchInsertJSON(ctx, table, docs); err != nil {
+		return fmt.Errorf("batch insert: %w", err)
+	}
+	
+	return nil
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +463,27 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	analysis = jsonschema.IncorporateCommentHints(analysis, req.Comment)
 	decision := jsonschema.DecideStorage(req.Namespace, docs, summary, analysis)
 
+	// Write to actual database if configured
+	ctx := r.Context()
+	if decision.Engine == "sql" && s.postgres != nil {
+		// Create table from schema and insert documents
+		if err := s.createTableAndInsert(ctx, decision.Table, decision.Columns, docs); err != nil {
+			s.logger.Error("postgres insert failed", "error", err, "table", decision.Table)
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("postgres insert failed: %v", err))
+			return
+		}
+		s.logger.Info("postgres insert successful", "table", decision.Table, "documents", len(docs))
+	} else if decision.Engine == "nosql" && s.mongodb != nil {
+		// Insert documents into MongoDB collection
+		if err := s.mongodb.BulkInsert(ctx, "rhinobox", req.Namespace, docs); err != nil {
+			s.logger.Error("mongodb insert failed", "error", err, "collection", req.Namespace)
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("mongodb insert failed: %v", err))
+			return
+		}
+		s.logger.Info("mongodb insert successful", "collection", req.Namespace, "documents", len(docs))
+	}
+
+	// Also save to NDJSON as backup/audit trail
 	batchRel := s.storage.NextJSONBatchPath(decision.Engine, req.Namespace)
 	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
 		httpError(w, http.StatusInternalServerError, fmt.Sprintf("store batch: %v", err))
