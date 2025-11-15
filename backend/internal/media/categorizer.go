@@ -39,6 +39,22 @@ func classifyByMime(mime string) string {
 		return "audio"
 	case strings.HasPrefix(mime, "text/"):
 		return "documents"
+	case strings.Contains(mime, "pdf"), 
+		 strings.Contains(mime, "msword"),
+		 strings.Contains(mime, "wordprocessingml"),
+		 strings.Contains(mime, "spreadsheet"),
+		 strings.Contains(mime, "presentation"),
+		 strings.Contains(mime, "opendocument"):
+		return "documents"
+	case strings.Contains(mime, "zip"),
+		 strings.Contains(mime, "compressed"),
+		 strings.Contains(mime, "archive"),
+		 mime == "application/x-rar-compressed",
+		 mime == "application/x-7z-compressed",
+		 mime == "application/x-tar",
+		 mime == "application/gzip",
+		 mime == "application/x-bzip2":
+		return "archives"
 	default:
 		return inferFromExt(mime)
 	}
@@ -47,12 +63,26 @@ func classifyByMime(mime string) string {
 func inferFromExt(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
+	// Image formats
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif", 
+		 ".heic", ".heif", ".avif", ".jfif", ".pjpeg", ".pjp", ".apng", ".raw", ".cr2", 
+		 ".nef", ".orf", ".sr2", ".dng":
 		return "images"
-	case ".mp4", ".mov", ".avi", ".mkv", ".webm":
+	// Video formats
+	case ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", 
+		 ".3gp", ".3g2", ".ogv", ".ts", ".mts", ".m2ts", ".vob", ".divx", ".xvid", ".f4v":
 		return "videos"
-	case ".mp3", ".wav", ".flac", ".aac":
+	// Audio formats
+	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".oga", ".opus", ".m4a", ".wma", ".aiff", 
+		 ".aif", ".ape", ".alac", ".amr", ".mid", ".midi", ".ra", ".rm":
 		return "audio"
+	// Document formats
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp",
+		 ".rtf", ".tex", ".txt", ".md", ".csv", ".tsv", ".epub", ".mobi":
+		return "documents"
+	// Archive formats
+	case ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso", ".dmg", ".pkg":
+		return "archives"
 	default:
 		return "other"
 	}

@@ -17,12 +17,104 @@ import {
   API_CONFIG,
 } from "./api.js";
 
+// Import code editor
+import {
+  initCodeEditor,
+  getEditorValue,
+  getCurrentLanguage,
+  setEditorValue,
+  submitCode,
+} from "./codeEditor.js";
+
 const root = document.documentElement;
 const THEME_KEY = "rhinobox-theme";
 let currentCollectionType = null;
 let modeToggle = null;
 let toast = null;
 let selectedFileType = "auto";
+
+// Detect touch device
+function isTouchDevice() {
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    navigator.msMaxTouchPoints > 0
+  );
+}
+
+// Update UI for touch devices
+function initTouchOptimizations() {
+  if (isTouchDevice()) {
+    document.body.classList.add("touch-device");
+
+    // Change dropzone text
+    const dropzoneTitle = document.getElementById("dropzone-title");
+    if (dropzoneTitle) {
+      dropzoneTitle.textContent = "Tap to select files or take a photo";
+    }
+
+    // Add camera option for mobile
+    const fileInput = document.getElementById("file-input") || document.getElementById("fileInput");
+    if (fileInput) {
+      fileInput.setAttribute(
+        "accept",
+        "image/*,video/*,audio/*,.pdf,.txt,.json"
+      );
+      // Add capture attribute for camera on mobile
+      if (fileInput.type === "file") {
+        fileInput.setAttribute("capture", "environment");
+      }
+    }
+  }
+}
+
+// Initialize hamburger menu
+function initHamburgerMenu() {
+  const btn = document.getElementById("hamburger-btn");
+  const nav = document.getElementById("mobile-nav");
+  const mobileNavLinks = document.querySelectorAll(".mobile-nav-link");
+
+  if (!btn || !nav) return;
+
+  btn.addEventListener("click", () => {
+    const isOpen = btn.getAttribute("aria-expanded") === "true";
+
+    btn.setAttribute("aria-expanded", !isOpen);
+    nav.classList.toggle("is-open");
+    document.body.style.overflow = isOpen ? "" : "hidden";
+  });
+
+  // Close on link click
+  mobileNavLinks.forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const target = link.dataset.target;
+      if (target) {
+        // Navigate to the target page
+        const sidebarButton = document.querySelector(`[data-target="${target}"]`);
+        if (sidebarButton) {
+          sidebarButton.click();
+        }
+      }
+      btn.setAttribute("aria-expanded", "false");
+      nav.classList.remove("is-open");
+      document.body.style.overflow = "";
+    });
+  });
+
+  // Close on outside click
+  document.addEventListener("click", (e) => {
+    if (
+      nav.classList.contains("is-open") &&
+      !nav.contains(e.target) &&
+      !btn.contains(e.target)
+    ) {
+      btn.setAttribute("aria-expanded", "false");
+      nav.classList.remove("is-open");
+      document.body.style.overflow = "";
+    }
+  });
+}
 
 // Initialize dropzone and form when DOM is ready
 function initHomePageFeatures() {
@@ -115,20 +207,28 @@ function initHomePageFeatures() {
     quickAddTrigger.addEventListener("click", () => {
       quickAddPanel.classList.add("is-open");
       document.body.style.overflow = "hidden";
-      const textarea = document.getElementById("quickAdd");
-      if (textarea) {
-        setTimeout(() => textarea.focus(), 100);
-      }
+      // Initialize code editor if not already initialized (has guard inside)
+      setTimeout(() => {
+        initCodeEditor();
+        // Focus the editor
+        const codePreview = document.getElementById("code-preview");
+        if (codePreview) {
+          codePreview.focus();
+        }
+      }, 100);
     });
 
     // Close panel handlers
     const closePanel = () => {
       quickAddPanel.classList.remove("is-open");
       document.body.style.overflow = "";
-      const textarea = document.getElementById("quickAdd");
-      const typeSelect = document.getElementById("quickAddType");
-      if (textarea) textarea.value = "";
-      if (typeSelect) typeSelect.value = "text";
+      // Clear editor
+      setEditorValue("");
+      // Reset language selector
+      const languageSelector = document.getElementById("language-selector");
+      if (languageSelector) {
+        languageSelector.value = "json";
+      }
     };
 
     if (quickAddClose) {
@@ -155,14 +255,13 @@ function initHomePageFeatures() {
   if (quickAddForm) {
     quickAddForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const textarea = document.getElementById("quickAdd");
-      const typeSelect = document.getElementById("quickAddType");
-      const value = textarea?.value.trim() || "";
-      const selectedType = typeSelect?.value || "text";
+      
+      // Get value from code editor
+      const value = getEditorValue().trim();
+      const selectedType = getCurrentLanguage() || "json";
 
       if (!value) {
         showToast("Provide a link, query, or description first");
-        if (textarea) textarea.focus();
         return;
       }
 
@@ -197,8 +296,13 @@ function initHomePageFeatures() {
           quickAddPanel.classList.remove("is-open");
           document.body.style.overflow = "";
         }
-        if (textarea) textarea.value = "";
-        if (typeSelect) typeSelect.value = "text";
+        setEditorValue("");
+        
+        // Reset language selector
+        const languageSelector = document.getElementById("language-selector");
+        if (languageSelector) {
+          languageSelector.value = "json";
+        }
 
         // Reload current collection if viewing one
         if (currentCollectionType) {
@@ -1738,16 +1842,25 @@ function showToast(message, type = "info", duration = 2400) {
   }, duration);
 }
 
+// Make showToast available globally for code editor
+window.showToast = showToast;
+
 // Initialize all features when DOM is ready
 function initAll() {
   try {
     toast = document.getElementById("toast");
+
+    // Initialize touch optimizations FIRST
+    initTouchOptimizations();
 
     // Initialize theme toggle FIRST so modeToggle is available
     initThemeToggle();
 
     // Then initialize theme (which uses modeToggle)
     initTheme();
+
+    // Initialize hamburger menu
+    initHamburgerMenu();
 
     // Initialize all other features
     initHomePageFeatures();
@@ -1760,6 +1873,16 @@ function initAll() {
     initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
+    
+    // Initialize code editor (will be initialized when Quick Add panel opens)
+    // But we can pre-initialize it for better UX
+    setTimeout(() => {
+      try {
+        initCodeEditor();
+      } catch (error) {
+        console.warn("Code editor initialization deferred:", error);
+      }
+    }, 500);
 
     // Load collections if on files page
     if (

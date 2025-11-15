@@ -130,6 +130,7 @@ func (s *Server) routes() {
 
 	// Endpoints
 	r.Get("/healthz", s.handleHealth)
+	r.Get("/api/config", s.handleConfig)
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)

@@ -73,10 +73,6 @@ services:
       - "mongod"
       - "--wiredTigerCacheSizeGB"
       - "1"
-      - "--wiredTigerConcurrentReadTransactions"
-      - "128"
-      - "--wiredTigerConcurrentWriteTransactions"
-      - "128"
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
