@@ -14,12 +14,13 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
 ## Endpoints Overview
 
-| Method | Endpoint        | Purpose                                        |
-| ------ | --------------- | ---------------------------------------------- |
-| GET    | `/healthz`      | Health check probe                             |
-| POST   | `/ingest`       | **Unified ingestion** - handles all data types |
-| POST   | `/ingest/media` | Media-specific ingestion                       |
-| POST   | `/ingest/json`  | JSON-specific ingestion                        |
+| Method | Endpoint          | Purpose                                        |
+| ------ | ----------------- | ---------------------------------------------- |
+| GET    | `/healthz`        | Health check probe                             |
+| POST   | `/ingest`         | **Unified ingestion** - handles all data types |
+| POST   | `/ingest/media`   | Media-specific ingestion                       |
+| POST   | `/ingest/json`    | JSON-specific ingestion                        |
+| PATCH  | `/files/rename`   | Rename files (metadata and/or disk)            |
 
 ---
 
