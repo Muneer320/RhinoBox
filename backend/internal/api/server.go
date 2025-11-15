@@ -59,6 +59,11 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// File deletion endpoints
+	r.Delete("/files/{hash}", s.handleDeleteFile)
+	r.Post("/files/{hash}/restore", s.handleRestoreFile)
+	r.Delete("/files/batch", s.handleBatchDelete)
 }
 
 // Router exposes the HTTP router for testing.

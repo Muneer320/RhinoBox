@@ -281,3 +281,131 @@ var storageLayout = map[string][]string{
 	"code":          {"py", "js", "go", "java", "cpp"},
 	"other":         {"unknown"},
 }
+
+// DeleteFileResult captures the outcome of a deletion operation.
+type DeleteFileResult struct {
+	Hash           string `json:"hash"`
+	Success        bool   `json:"success"`
+	SpaceReclaimed int64  `json:"space_reclaimed,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+// SoftDeleteFile marks a file as deleted without removing it from disk.
+func (m *Manager) SoftDeleteFile(hash string) (*DeleteFileResult, error) {
+	meta := m.index.FindByHash(hash)
+	if meta == nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   "file not found",
+		}, errors.New("file not found")
+	}
+
+	if err := m.index.SoftDelete(hash); err != nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &DeleteFileResult{
+		Hash:    hash,
+		Success: true,
+	}, nil
+}
+
+// HardDeleteFile permanently removes a file from disk and the index.
+func (m *Manager) HardDeleteFile(hash string) (*DeleteFileResult, error) {
+	meta := m.index.FindByHash(hash)
+	if meta == nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   "file not found",
+		}, errors.New("file not found")
+	}
+
+	// Remove from disk
+	fullPath := filepath.Join(m.root, meta.StoredPath)
+	var spaceReclaimed int64
+	if info, err := os.Stat(fullPath); err == nil {
+		spaceReclaimed = info.Size()
+		if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+			return &DeleteFileResult{
+				Hash:    hash,
+				Success: false,
+				Error:   fmt.Sprintf("failed to remove file: %v", err),
+			}, err
+		}
+	}
+
+	// Remove from index
+	if err := m.index.HardDelete(hash); err != nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &DeleteFileResult{
+		Hash:           hash,
+		Success:        true,
+		SpaceReclaimed: spaceReclaimed,
+	}, nil
+}
+
+// RestoreFile restores a soft-deleted file.
+func (m *Manager) RestoreFile(hash string) (*DeleteFileResult, error) {
+	meta := m.index.FindByHash(hash)
+	if meta == nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   "file not found",
+		}, errors.New("file not found")
+	}
+
+	if err := m.index.Restore(hash); err != nil {
+		return &DeleteFileResult{
+			Hash:    hash,
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &DeleteFileResult{
+		Hash:    hash,
+		Success: true,
+	}, nil
+}
+
+// BatchDelete deletes multiple files in a single operation.
+func (m *Manager) BatchDelete(hashes []string, soft bool) []DeleteFileResult {
+	results := make([]DeleteFileResult, len(hashes))
+	
+	for i, hash := range hashes {
+		var result *DeleteFileResult
+		var err error
+		
+		if soft {
+			result, err = m.SoftDeleteFile(hash)
+		} else {
+			result, err = m.HardDeleteFile(hash)
+		}
+		
+		if err != nil {
+			results[i] = *result
+		} else {
+			results[i] = *result
+		}
+	}
+	
+	return results
+}
+
+// GetMetadataIndex returns the metadata index for internal use.
+func (m *Manager) GetMetadataIndex() *MetadataIndex {
+	return m.index
+}

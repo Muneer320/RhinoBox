@@ -224,16 +224,31 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		category = namespace
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{"files", category}, header.Filename, file)
+	mimeType := detectMIMEType(header)
+	
+	metadata := map[string]string{}
+	if namespace != "" {
+		metadata["namespace"] = namespace
+	}
+
+	result, err := s.storage.StoreFile(storage.StoreRequest{
+		Reader:       file,
+		Filename:     header.Filename,
+		MimeType:     mimeType,
+		Size:         header.Size,
+		Metadata:     metadata,
+		CategoryHint: category,
+	})
 	if err != nil {
 		return GenericResult{}, err
 	}
 
 	return GenericResult{
 		OriginalName: header.Filename,
-		StoredPath:   relPath,
-		FileType:     detectMIMEType(header),
-		Size:         header.Size,
+		StoredPath:   result.Metadata.StoredPath,
+		FileType:     mimeType,
+		Size:         result.Metadata.Size,
+		Hash:         result.Metadata.Hash,
 	}, nil
 }
 

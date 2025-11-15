@@ -18,6 +18,7 @@ type FileMetadata struct {
     MimeType     string            `json:"mime_type"`
     Size         int64             `json:"size"`
     UploadedAt   time.Time         `json:"uploaded_at"`
+    DeletedAt    *time.Time        `json:"deleted_at,omitempty"`
     Metadata     map[string]string `json:"metadata"`
 }
 
@@ -96,4 +97,82 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     defer idx.mu.Unlock()
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
+}
+
+// SoftDelete marks a file as deleted without removing the entry.
+func (idx *MetadataIndex) SoftDelete(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    
+    meta, exists := idx.data[hash]
+    if !exists {
+        return errors.New("file not found")
+    }
+    if meta.DeletedAt != nil {
+        return errors.New("file already deleted")
+    }
+    
+    now := time.Now().UTC()
+    meta.DeletedAt = &now
+    idx.data[hash] = meta
+    return idx.persistLocked()
+}
+
+// HardDelete permanently removes a file entry from the index.
+func (idx *MetadataIndex) HardDelete(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    
+    if _, exists := idx.data[hash]; !exists {
+        return errors.New("file not found")
+    }
+    
+    delete(idx.data, hash)
+    return idx.persistLocked()
+}
+
+// Restore undeletes a soft-deleted file.
+func (idx *MetadataIndex) Restore(hash string) error {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    
+    meta, exists := idx.data[hash]
+    if !exists {
+        return errors.New("file not found")
+    }
+    if meta.DeletedAt == nil {
+        return errors.New("file is not deleted")
+    }
+    
+    meta.DeletedAt = nil
+    idx.data[hash] = meta
+    return idx.persistLocked()
+}
+
+// ListAll returns all files, optionally including deleted ones.
+func (idx *MetadataIndex) ListAll(includeDeleted bool) []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    result := make([]FileMetadata, 0, len(idx.data))
+    for _, meta := range idx.data {
+        if includeDeleted || meta.DeletedAt == nil {
+            result = append(result, meta)
+        }
+    }
+    return result
+}
+
+// CountDeleted returns the number of soft-deleted files.
+func (idx *MetadataIndex) CountDeleted() int {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    count := 0
+    for _, meta := range idx.data {
+        if meta.DeletedAt != nil {
+            count++
+        }
+    }
+    return count
 }
