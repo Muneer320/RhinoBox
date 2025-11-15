@@ -19,11 +19,12 @@ import (
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
 type Manager struct {
-	root        string
-	storageRoot string
-	classifier  *Classifier
-	index       *MetadataIndex
-	mu          sync.Mutex
+	root         string
+	storageRoot  string
+	classifier   *Classifier
+	index        *MetadataIndex
+	rulesManager *RoutingRulesManager
+	mu           sync.Mutex
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.
@@ -64,12 +65,47 @@ func NewManager(root string) (*Manager, error) {
 		return nil, err
 	}
 
-	return &Manager{root: root, storageRoot: storageRoot, classifier: classifier, index: index}, nil
+	// Initialize routing rules manager
+	rulesManager, err := NewRoutingRulesManager(root)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Attach rules manager to classifier
+	classifier.SetRoutingRulesManager(rulesManager)
+
+	return &Manager{
+		root:         root,
+		storageRoot:  storageRoot,
+		classifier:   classifier,
+		index:        index,
+		rulesManager: rulesManager,
+	}, nil
 }
 
 // Root returns the configured base directory.
 func (m *Manager) Root() string {
 	return m.root
+}
+
+// AddRoutingRule adds a custom routing rule.
+func (m *Manager) AddRoutingRule(rule RoutingRule) error {
+	return m.rulesManager.AddRule(rule)
+}
+
+// ListRoutingRules returns all custom routing rules.
+func (m *Manager) ListRoutingRules() []RoutingRule {
+	return m.rulesManager.ListRules()
+}
+
+// DeleteRoutingRule removes a routing rule by identifier.
+func (m *Manager) DeleteRoutingRule(identifier string) error {
+	return m.rulesManager.DeleteRule(identifier)
+}
+
+// IsUnrecognizedFileFormat checks if a file format is unrecognized.
+func (m *Manager) IsUnrecognizedFileFormat(mimeType, filename string) bool {
+	return m.classifier.IsUnrecognized(mimeType, filename)
 }
 
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.

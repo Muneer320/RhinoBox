@@ -24,11 +24,19 @@ type UnifiedIngestRequest struct {
 
 // UnifiedIngestResponse combines results from all processing pipelines.
 type UnifiedIngestResponse struct {
-	JobID   string               `json:"job_id"`
-	Status  string               `json:"status"` // "completed", "processing", "queued"
-	Results UnifiedIngestResults `json:"results"`
-	Timing  map[string]int64     `json:"timing"`
-	Errors  []string             `json:"errors,omitempty"`
+	JobID                string                    `json:"job_id"`
+	Status               string                    `json:"status"` // "completed", "processing", "queued"
+	Results              UnifiedIngestResults      `json:"results"`
+	Timing               map[string]int64          `json:"timing"`
+	Errors               []string                  `json:"errors,omitempty"`
+	UnrecognizedFormats  []UnrecognizedFormat      `json:"unrecognized_formats,omitempty"`
+}
+
+type UnrecognizedFormat struct {
+	Filename    string `json:"filename"`
+	Extension   string `json:"extension"`
+	MimeType    string `json:"mime_type"`
+	Suggestion  string `json:"suggestion"`
 }
 
 type UnifiedIngestResults struct {
@@ -46,6 +54,7 @@ type MediaResult struct {
 	Hash         string         `json:"hash,omitempty"`
 	Duplicates   bool           `json:"duplicates"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
+	Unrecognized bool           `json:"unrecognized,omitempty"`
 }
 
 type JSONResult struct {
@@ -65,6 +74,7 @@ type GenericResult struct {
 	FileType     string `json:"file_type"`
 	Size         int64  `json:"size"`
 	Hash         string `json:"hash,omitempty"`
+	Unrecognized bool   `json:"unrecognized,omitempty"`
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
@@ -98,6 +108,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 			JSON:  []JSONResult{},
 			Files: []GenericResult{},
 		},
+		UnrecognizedFormats: []UnrecognizedFormat{},
 	}
 
 	// Process files (media, JSON, or generic)
@@ -105,6 +116,18 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 		processingStart := time.Now()
 		for fieldName, headers := range r.MultipartForm.File {
 			for _, header := range headers {
+				// Check if format is unrecognized before processing
+				mimeType := detectMIMEType(header)
+				if s.storage.IsUnrecognizedFileFormat(mimeType, header.Filename) {
+					ext := filepath.Ext(header.Filename)
+					response.UnrecognizedFormats = append(response.UnrecognizedFormats, UnrecognizedFormat{
+						Filename:   header.Filename,
+						Extension:  ext,
+						MimeType:   mimeType,
+						Suggestion: "Please add a routing rule using POST /routing-rules to specify how to handle this file type",
+					})
+				}
+
 				result, err := s.routeFile(header, fieldName, comment, namespace)
 				if err != nil {
 					response.Errors = append(response.Errors, fmt.Sprintf("%s: %v", header.Filename, err))
@@ -200,6 +223,8 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		return MediaResult{}, err
 	}
 
+	isUnrecognized := s.storage.IsUnrecognizedFileFormat(mimeType, header.Filename)
+
 	return MediaResult{
 		OriginalName: header.Filename,
 		StoredPath:   result.Metadata.StoredPath,
@@ -208,6 +233,7 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 		Size:         result.Metadata.Size,
 		Hash:         result.Metadata.Hash,
 		Duplicates:   result.Duplicate,
+		Unrecognized: isUnrecognized,
 	}, nil
 }
 
@@ -229,11 +255,15 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace stri
 		return GenericResult{}, err
 	}
 
+	mimeType := detectMIMEType(header)
+	isUnrecognized := s.storage.IsUnrecognizedFileFormat(mimeType, header.Filename)
+
 	return GenericResult{
 		OriginalName: header.Filename,
 		StoredPath:   relPath,
-		FileType:     detectMIMEType(header),
+		FileType:     mimeType,
 		Size:         header.Size,
+		Unrecognized: isUnrecognized,
 	}, nil
 }
 

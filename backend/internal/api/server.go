@@ -59,6 +59,11 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// Routing rules management
+	r.Get("/routing-rules", s.handleListRoutingRules)
+	r.Post("/routing-rules", s.handleAddRoutingRule)
+	r.Delete("/routing-rules/{identifier}", s.handleDeleteRoutingRule)
 }
 
 // Router exposes the HTTP router for testing.
@@ -376,6 +381,66 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(payload)
 }
+
+// handleListRoutingRules returns all custom routing rules
+func (s *Server) handleListRoutingRules(w http.ResponseWriter, r *http.Request) {
+	rules := s.storage.ListRoutingRules()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules": rules,
+		"count": len(rules),
+	})
+}
+
+// handleAddRoutingRule adds a new custom routing rule
+func (s *Server) handleAddRoutingRule(w http.ResponseWriter, r *http.Request) {
+	var req storage.RoutingRule
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
+		return
+	}
+
+	// Validate required fields
+	if req.Extension == "" && req.MimeType == "" {
+		httpError(w, http.StatusBadRequest, "either extension or mime_type is required")
+		return
+	}
+	if req.Category == "" {
+		httpError(w, http.StatusBadRequest, "category is required")
+		return
+	}
+
+	// Set timestamp
+	req.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	if err := s.storage.AddRoutingRule(req); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add rule: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"message": "routing rule added successfully",
+		"rule":    req,
+	})
+}
+
+// handleDeleteRoutingRule removes a routing rule
+func (s *Server) handleDeleteRoutingRule(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "identifier")
+	if identifier == "" {
+		httpError(w, http.StatusBadRequest, "identifier is required")
+		return
+	}
+
+	if err := s.storage.DeleteRoutingRule(identifier); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete rule: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message": "routing rule deleted successfully",
+	})
+}
+
 
 func init() {
 	if tr, ok := http.DefaultTransport.(*http.Transport); ok {

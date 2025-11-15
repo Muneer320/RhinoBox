@@ -7,8 +7,9 @@ import (
 
 // Classifier groups files into the directory structure defined for RhinoBox storage.
 type Classifier struct {
-    mimeMap map[string][]string
-    extMap  map[string][]string
+    mimeMap     map[string][]string
+    extMap      map[string][]string
+    rulesManager *RoutingRulesManager
 }
 
 func NewClassifier() *Classifier {
@@ -135,6 +136,25 @@ func NewClassifier() *Classifier {
 }
 
 func (c *Classifier) Classify(mimeType, filename, hint string) []string {
+    // First, check custom routing rules
+    if c.rulesManager != nil {
+        // Try by MIME type first
+        if mimeType != "" && mimeType != "application/octet-stream" {
+            if rule, ok := c.rulesManager.GetRuleByMimeType(mimeType); ok {
+                return c.buildPathFromRule(rule, hint)
+            }
+        }
+        
+        // Try by extension
+        ext := strings.ToLower(filepath.Ext(filename))
+        if ext != "" {
+            if rule, ok := c.rulesManager.GetRuleByExtension(ext); ok {
+                return c.buildPathFromRule(rule, hint)
+            }
+        }
+    }
+
+    // Fall back to built-in mappings
     if path, ok := c.mimeMap[mimeType]; ok {
         return appendPathWithHint(path, hint)
     }
@@ -145,6 +165,51 @@ func (c *Classifier) Classify(mimeType, filename, hint string) []string {
     }
 
     return appendPathWithHint([]string{"other", "unknown"}, hint)
+}
+
+// buildPathFromRule constructs the path components from a routing rule.
+func (c *Classifier) buildPathFromRule(rule RoutingRule, hint string) []string {
+    path := []string{rule.Category}
+    if rule.Subcategory != "" {
+        path = append(path, rule.Subcategory)
+    }
+    return appendPathWithHint(path, hint)
+}
+
+// IsUnrecognized returns true if the file would be routed to "other/unknown".
+func (c *Classifier) IsUnrecognized(mimeType, filename string) bool {
+    // Check custom rules first
+    if c.rulesManager != nil {
+        if mimeType != "" && mimeType != "application/octet-stream" {
+            if _, ok := c.rulesManager.GetRuleByMimeType(mimeType); ok {
+                return false
+            }
+        }
+        
+        ext := strings.ToLower(filepath.Ext(filename))
+        if ext != "" {
+            if _, ok := c.rulesManager.GetRuleByExtension(ext); ok {
+                return false
+            }
+        }
+    }
+
+    // Check built-in mappings
+    if _, ok := c.mimeMap[mimeType]; ok {
+        return false
+    }
+
+    ext := strings.ToLower(filepath.Ext(filename))
+    if _, ok := c.extMap[ext]; ok {
+        return false
+    }
+
+    return true
+}
+
+// SetRoutingRulesManager attaches a routing rules manager to this classifier.
+func (c *Classifier) SetRoutingRulesManager(mgr *RoutingRulesManager) {
+    c.rulesManager = mgr
 }
 
 func appendPathWithHint(path []string, hint string) []string {
