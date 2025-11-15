@@ -19,11 +19,12 @@ import (
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
 type Manager struct {
-	root        string
-	storageRoot string
-	classifier  *Classifier
-	index       *MetadataIndex
-	mu          sync.Mutex
+	root         string
+	storageRoot  string
+	classifier   *Classifier
+	index        *MetadataIndex
+	versionIndex *VersionIndex
+	mu           sync.Mutex
 }
 
 // StoreRequest captures parameters for the high-throughput storage path.
@@ -34,12 +35,15 @@ type StoreRequest struct {
 	Size         int64
 	Metadata     map[string]string
 	CategoryHint string
+	Versioned    bool   // If true, create a versioned file entry
+	UploadedBy   string // User who uploaded the file
 }
 
 // StoreResult surfaces the outcome of a storage operation.
 type StoreResult struct {
 	Metadata  FileMetadata
 	Duplicate bool
+	FileID    string // ID for versioned files
 }
 
 // NewManager bootstraps the directory structure RhinoBox expects.
@@ -64,7 +68,12 @@ func NewManager(root string) (*Manager, error) {
 		return nil, err
 	}
 
-	return &Manager{root: root, storageRoot: storageRoot, classifier: classifier, index: index}, nil
+	versionIndex, err := NewVersionIndex(filepath.Join(root, "metadata", "versions.json"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &Manager{root: root, storageRoot: storageRoot, classifier: classifier, index: index, versionIndex: versionIndex}, nil
 }
 
 // Root returns the configured base directory.
@@ -110,7 +119,18 @@ func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if existing := m.index.FindByHash(checksum); existing != nil {
 		m.mu.Unlock()
 		_ = os.Remove(tmpPath)
-		return &StoreResult{Metadata: *existing, Duplicate: true}, nil
+		
+		result := &StoreResult{Metadata: *existing, Duplicate: true}
+		
+		// If versioned, check if this hash belongs to an existing versioned file
+		if req.Versioned {
+			fileID := m.versionIndex.FindFileByHash(checksum)
+			if fileID != "" {
+				result.FileID = fileID
+			}
+		}
+		
+		return result, nil
 	}
 
 	filename := fmt.Sprintf("%s_%s%s", checksum[:12], base, ext)
@@ -154,9 +174,40 @@ func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 		m.mu.Unlock()
 		return nil, err
 	}
+
+	result := &StoreResult{Metadata: metadata, Duplicate: false}
+
+	// If versioned, create a new versioned file entry
+	if req.Versioned {
+		fileID := uuid.NewString()
+		uploadedBy := req.UploadedBy
+		if uploadedBy == "" {
+			uploadedBy = "anonymous"
+		}
+
+		version := FileVersion{
+			Hash:         metadata.Hash,
+			Size:         metadata.Size,
+			UploadedAt:   metadata.UploadedAt,
+			UploadedBy:   uploadedBy,
+			Comment:      req.Metadata["comment"],
+			StoredPath:   metadata.StoredPath,
+			MimeType:     metadata.MimeType,
+			OriginalName: metadata.OriginalName,
+			Metadata:     metaCopy,
+		}
+
+		if err := m.versionIndex.CreateFile(fileID, version, metadata.Category); err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("create versioned file: %w", err)
+		}
+
+		result.FileID = fileID
+	}
+
 	m.mu.Unlock()
 
-	return &StoreResult{Metadata: metadata, Duplicate: false}, nil
+	return result, nil
 }
 
 // StoreMedia streams the reader contents into the categorized folder and returns the relative path.
@@ -281,3 +332,83 @@ var storageLayout = map[string][]string{
 	"code":          {"py", "js", "go", "java", "cpp"},
 	"other":         {"unknown"},
 }
+
+// VersionIndex returns the version index for direct access.
+func (m *Manager) VersionIndex() *VersionIndex {
+	return m.versionIndex
+}
+
+// StoreFileVersion stores a new version of an existing file.
+func (m *Manager) StoreFileVersion(fileID, uploadedBy string, req StoreRequest) (*FileVersion, error) {
+	// Store the file using the regular StoreFile method
+	result, err := m.StoreFile(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the version object
+	version := FileVersion{
+		Hash:         result.Metadata.Hash,
+		Size:         result.Metadata.Size,
+		UploadedAt:   result.Metadata.UploadedAt,
+		UploadedBy:   uploadedBy,
+		Comment:      req.Metadata["comment"],
+		StoredPath:   result.Metadata.StoredPath,
+		MimeType:     result.Metadata.MimeType,
+		OriginalName: result.Metadata.OriginalName,
+		Metadata:     req.Metadata,
+	}
+
+	// Add the version to the version index
+	if err := m.versionIndex.AddVersion(fileID, version); err != nil {
+		return nil, fmt.Errorf("add version: %w", err)
+	}
+
+	// Get the updated version with correct version number
+	file, err := m.versionIndex.GetFile(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the latest version
+	for i := range file.Versions {
+		if file.Versions[i].IsCurrent {
+			v := file.Versions[i]
+			return &v, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to retrieve new version")
+}
+
+// GetFileVersion retrieves a specific version of a file.
+func (m *Manager) GetFileVersion(fileID string, versionNum int) (*FileVersion, error) {
+	return m.versionIndex.GetVersion(fileID, versionNum)
+}
+
+// ListFileVersions lists all versions of a file.
+func (m *Manager) ListFileVersions(fileID string) ([]FileVersion, error) {
+	return m.versionIndex.ListVersions(fileID)
+}
+
+// GetVersionedFile retrieves the complete versioned file metadata.
+func (m *Manager) GetVersionedFile(fileID string) (*VersionedFile, error) {
+	return m.versionIndex.GetFile(fileID)
+}
+
+// RevertFileToVersion reverts a file to a specific version.
+func (m *Manager) RevertFileToVersion(fileID string, targetVersion int, comment, uploadedBy string) (*FileVersion, error) {
+	return m.versionIndex.RevertToVersion(fileID, targetVersion, comment, uploadedBy)
+}
+
+// ReadFileVersion reads the content of a specific file version.
+func (m *Manager) ReadFileVersion(fileID string, versionNum int) ([]byte, error) {
+	version, err := m.versionIndex.GetVersion(fileID, versionNum)
+	if err != nil {
+		return nil, err
+	}
+
+	fullPath := filepath.Join(m.root, version.StoredPath)
+	return os.ReadFile(fullPath)
+}
+

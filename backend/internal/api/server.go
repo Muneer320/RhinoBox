@@ -59,6 +59,9 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	
+	// File versioning routes
+	s.setupVersionRoutes(r)
 }
 
 // Router exposes the HTTP router for testing.
