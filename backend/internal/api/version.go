@@ -20,12 +20,12 @@ import (
 func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
 
@@ -39,13 +39,13 @@ func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fileHeader == nil {
-		httpError(w, r, http.StatusBadRequest, "file is required")
+		httpError(w, http.StatusBadRequest, "file is required")
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("open file: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("open file: %v", err))
 		return
 	}
 	defer file.Close()
@@ -82,11 +82,11 @@ func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 	result, err := s.storage.CreateVersion(versionReq)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 		} else if errors.Is(err, storage.ErrVersionLimitReached) {
-			httpError(w, r, http.StatusBadRequest, err.Error())
+			httpError(w, http.StatusBadRequest, err.Error())
 		} else {
-			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("create version failed: %v", err))
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("create version failed: %v", err))
 		}
 		return
 	}
@@ -103,23 +103,23 @@ func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 		slog.String("hash", result.Version.Hash),
 	)
 
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleListVersions handles GET /files/{file_id}/versions
 func (s *Server) handleListVersions(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	versions, err := s.storage.ListVersions(fileID)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 		} else {
-			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("list versions failed: %v", err))
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("list versions failed: %v", err))
 		}
 		return
 	}
@@ -144,21 +144,21 @@ func (s *Server) handleListVersions(w http.ResponseWriter, r *http.Request) {
 		"count":    len(versionList),
 	}
 
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleGetVersion handles GET /files/{file_id}/versions/{version_number}
 func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	versionStr := chi.URLParam(r, "version_number")
 	versionNumber, err := strconv.Atoi(versionStr)
 	if err != nil || versionNumber < 1 {
-		httpError(w, r, http.StatusBadRequest, "invalid version number")
+		httpError(w, http.StatusBadRequest, "invalid version number")
 		return
 	}
 
@@ -170,9 +170,9 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 		result, err := s.storage.GetVersionFile(fileID, versionNumber)
 		if err != nil {
 			if errors.Is(err, storage.ErrFileNotFound) || errors.Is(err, storage.ErrVersionNotFound) {
-				httpError(w, r, http.StatusNotFound, err.Error())
+				httpError(w, http.StatusNotFound, err.Error())
 			} else {
-				httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("get version file failed: %v", err))
+				httpError(w, http.StatusInternalServerError, fmt.Sprintf("get version file failed: %v", err))
 			}
 			return
 		}
@@ -193,9 +193,9 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 		version, err := s.storage.GetVersion(fileID, versionNumber)
 		if err != nil {
 			if errors.Is(err, storage.ErrFileNotFound) || errors.Is(err, storage.ErrVersionNotFound) {
-				httpError(w, r, http.StatusNotFound, err.Error())
+				httpError(w, http.StatusNotFound, err.Error())
 			} else {
-				httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("get version failed: %v", err))
+				httpError(w, http.StatusInternalServerError, fmt.Sprintf("get version failed: %v", err))
 			}
 			return
 		}
@@ -213,7 +213,7 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 
-		writeJSON(w, r, http.StatusOK, response)
+		writeJSON(w, http.StatusOK, response)
 	}
 }
 
@@ -221,7 +221,7 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRevertVersion(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
@@ -231,21 +231,21 @@ func (s *Server) handleRevertVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 		return
 	}
 
 	if req.Version < 1 {
-		httpError(w, r, http.StatusBadRequest, "version must be >= 1")
+		httpError(w, http.StatusBadRequest, "version must be >= 1")
 		return
 	}
 
 	version, err := s.storage.RevertVersion(fileID, req.Version, req.Comment)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) || errors.Is(err, storage.ErrVersionNotFound) {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 		} else {
-			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("revert version failed: %v", err))
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("revert version failed: %v", err))
 		}
 		return
 	}
@@ -268,14 +268,14 @@ func (s *Server) handleRevertVersion(w http.ResponseWriter, r *http.Request) {
 		slog.Int("version", version.Version),
 	)
 
-	writeJSON(w, r, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleVersionDiff handles GET /files/{file_id}/versions/diff
 func (s *Server) handleVersionDiff(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
@@ -283,32 +283,32 @@ func (s *Server) handleVersionDiff(w http.ResponseWriter, r *http.Request) {
 	toStr := r.URL.Query().Get("to")
 
 	if fromStr == "" || toStr == "" {
-		httpError(w, r, http.StatusBadRequest, "from and to query parameters are required")
+		httpError(w, http.StatusBadRequest, "from and to query parameters are required")
 		return
 	}
 
 	fromVersion, err := strconv.Atoi(fromStr)
 	if err != nil || fromVersion < 1 {
-		httpError(w, r, http.StatusBadRequest, "invalid from version number")
+		httpError(w, http.StatusBadRequest, "invalid from version number")
 		return
 	}
 
 	toVersion, err := strconv.Atoi(toStr)
 	if err != nil || toVersion < 1 {
-		httpError(w, r, http.StatusBadRequest, "invalid to version number")
+		httpError(w, http.StatusBadRequest, "invalid to version number")
 		return
 	}
 
 	diff, err := s.storage.GetVersionDiff(fileID, fromVersion, toVersion)
 	if err != nil {
 		if errors.Is(err, storage.ErrFileNotFound) || errors.Is(err, storage.ErrVersionNotFound) {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 		} else {
-			httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("get version diff failed: %v", err))
+			httpError(w, http.StatusInternalServerError, fmt.Sprintf("get version diff failed: %v", err))
 		}
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, diff)
+	writeJSON(w, http.StatusOK, diff)
 }
 
