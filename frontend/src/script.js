@@ -139,6 +139,80 @@ function applyTheme(theme) {
       ? '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364 8.318l-1.591 1.591M21 12h-2.25M7.5 12H5.25m13.5-6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>'
       : '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>';
   }
+  // Update NoSQL diagram colors when theme changes
+  updateNosqlDiagramColors();
+}
+
+// Update NoSQL diagram SVG colors based on current theme
+function updateNosqlDiagramColors() {
+  const nosqlSvg = document.querySelector(".nosql-svg");
+  if (!nosqlSvg) return;
+
+  const computedStyle = getComputedStyle(document.documentElement);
+  const surface = computedStyle.getPropertyValue("--surface").trim();
+  const surfaceMuted = computedStyle.getPropertyValue("--surface-muted").trim();
+  const border = computedStyle.getPropertyValue("--border").trim();
+  const borderStrong = computedStyle.getPropertyValue("--border-strong").trim();
+  const accent = computedStyle.getPropertyValue("--accent").trim();
+  const textPrimary = computedStyle.getPropertyValue("--text-primary").trim();
+  const textSecondary = computedStyle.getPropertyValue("--text-secondary").trim();
+
+  // Update all collection box rectangles
+  nosqlSvg.querySelectorAll(".collection-box rect").forEach((rect, index) => {
+    // First rect is the main box, second is the header
+    if (index % 2 === 0) {
+      rect.setAttribute("fill", surface);
+      rect.setAttribute("stroke", border);
+    } else {
+      rect.setAttribute("fill", accent);
+    }
+  });
+
+  // Update embedded box rectangles
+  nosqlSvg.querySelectorAll(".embedded-box rect").forEach((rect) => {
+    rect.setAttribute("fill", surfaceMuted);
+    rect.setAttribute("stroke", border);
+  });
+
+  // Update collection box text - first text in each box is the title (white), rest are fields
+  nosqlSvg.querySelectorAll(".collection-box").forEach((box) => {
+    const texts = box.querySelectorAll("text");
+    texts.forEach((text, index) => {
+      if (index === 0) {
+        text.setAttribute("fill", "white");
+      } else {
+        text.setAttribute("fill", textPrimary);
+      }
+    });
+  });
+
+  // Update embedded box text - first text is the title (secondary), rest are fields
+  nosqlSvg.querySelectorAll(".embedded-box").forEach((box) => {
+    const texts = box.querySelectorAll("text");
+    texts.forEach((text, index) => {
+      if (index === 0) {
+        text.setAttribute("fill", textSecondary);
+      } else {
+        text.setAttribute("fill", textPrimary);
+      }
+    });
+  });
+
+  // Update relationship lines
+  nosqlSvg.querySelectorAll("line").forEach((line) => {
+    const strokeAttr = line.getAttribute("stroke");
+    if (strokeAttr && strokeAttr.includes("border-strong")) {
+      line.setAttribute("stroke", borderStrong);
+    } else if (strokeAttr && strokeAttr.includes("accent")) {
+      line.setAttribute("stroke", accent);
+    }
+  });
+
+  // Update arrow marker
+  const marker = nosqlSvg.querySelector("marker#arrowhead polygon");
+  if (marker) {
+    marker.setAttribute("fill", accent);
+  }
 }
 
 function getStoredTheme() {
@@ -250,6 +324,11 @@ function initSidebarNavigation() {
       } else if (target === "files") {
         // Load collections when switching to files page
         await loadCollections();
+      } else if (target === "data") {
+        // Initialize data tabs when switching to data page
+        initDataTabs();
+        // Update diagram colors
+        setTimeout(updateNosqlDiagramColors, 100);
       }
 
       showToast(
@@ -1318,6 +1397,7 @@ function initAll() {
     initLayoutToggle();
     initCommentsModal();
     initGhostButton();
+    initDataTabs();
     ensureButtonsClickable();
 
     // Load collections if on files page
@@ -1356,6 +1436,64 @@ function initLayoutToggle() {
           collectionCards.classList.remove("list-layout");
         }
         showToast(`Switched to ${layout} layout`);
+      }
+    });
+  });
+}
+
+// Initialize data tabs (SQL/NoSQL)
+let dataTabsInitialized = false;
+function initDataTabs() {
+  const dataTabs = document.querySelectorAll(".data-tab");
+  const sqlSection = document.getElementById("data-sql");
+  const nosqlSection = document.getElementById("data-nosql");
+
+  if (!dataTabs.length || !sqlSection || !nosqlSection) {
+    // Elements not found, try again after a short delay (max 10 retries)
+    if (!dataTabsInitialized) {
+      if (typeof initDataTabs.retryCount === "undefined") {
+        initDataTabs.retryCount = 0;
+      }
+      if (initDataTabs.retryCount < 10) {
+        initDataTabs.retryCount++;
+        setTimeout(initDataTabs, 100);
+      } else {
+        console.warn("Data tabs elements not found after 10 retries");
+      }
+    }
+    return;
+  }
+
+  // Only initialize once
+  if (dataTabsInitialized) return;
+  dataTabsInitialized = true;
+
+  dataTabs.forEach((tab) => {
+    // Remove any existing listeners by cloning
+    const newTab = tab.cloneNode(true);
+    tab.parentNode.replaceChild(newTab, tab);
+    
+    newTab.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const tabType = newTab.dataset.tab;
+
+      // Remove active class from all tabs
+      document
+        .querySelectorAll(".data-tab")
+        .forEach((t) => t.classList.remove("is-active"));
+      // Add active class to clicked tab
+      newTab.classList.add("is-active");
+
+      // Show/hide sections
+      if (tabType === "sql") {
+        sqlSection.style.display = "flex";
+        nosqlSection.style.display = "none";
+      } else if (tabType === "nosql") {
+        sqlSection.style.display = "none";
+        nosqlSection.style.display = "flex";
+        // Update diagram colors when switching to NoSQL tab
+        setTimeout(updateNosqlDiagramColors, 100);
       }
     });
   });
