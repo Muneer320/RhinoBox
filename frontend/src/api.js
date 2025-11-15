@@ -337,7 +337,7 @@ export async function getCollectionStats(collectionType) {
 
 /**
  * Get dashboard statistics
- * Note: This endpoint may not exist in the backend yet
+ * Returns total files, storage used, collection count, and collection details
  */
 export async function getStatistics() {
   return apiRequest('/statistics')

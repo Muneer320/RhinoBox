@@ -73,6 +73,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/statistics", s.handleStatistics)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -894,6 +895,29 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleStatistics returns dashboard statistics.
+func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.storage.GetStatistics()
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get statistics: %v", err))
+		return
+	}
+
+	// Format response to match frontend expectations
+	response := map[string]any{
+		"totalFiles":   stats.TotalFiles,
+		"files":        stats.TotalFiles, // Alias for compatibility
+		"storageUsed":  stats.StorageUsedFormatted,
+		"storage":      stats.StorageUsedFormatted, // Alias for compatibility
+		"collections":  stats.CollectionCount,
+		"collectionCount": stats.CollectionCount, // Alias for compatibility
+		"storageUsedBytes": stats.StorageUsed,
+		"collectionDetails": stats.Collections,
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Helper structs

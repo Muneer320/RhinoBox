@@ -108,3 +108,14 @@ func (idx *MetadataIndex) Delete(hash string) error {
     delete(idx.data, hash)
     return idx.persistLocked()
 }
+
+// GetAllMetadata returns a copy of all metadata entries.
+func (idx *MetadataIndex) GetAllMetadata() []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    result := make([]FileMetadata, 0, len(idx.data))
+    for _, meta := range idx.data {
+        result = append(result, meta)
+    }
+    return result
+}

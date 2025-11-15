@@ -334,3 +334,115 @@ func newJSONRequest(t *testing.T, path string, payload any) *http.Request {
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
+
+func TestStatisticsEndpointEmpty(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/statistics", nil)
+	resp := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Verify response structure
+	if totalFiles, ok := payload["totalFiles"].(float64); !ok || totalFiles != 0 {
+		t.Fatalf("expected totalFiles=0, got %v", payload["totalFiles"])
+	}
+	if storageUsed, ok := payload["storageUsed"].(string); !ok || storageUsed == "" {
+		t.Fatalf("expected storageUsed to be a non-empty string, got %v", payload["storageUsed"])
+	}
+	if collections, ok := payload["collections"].(float64); !ok || collections != 0 {
+		t.Fatalf("expected collections=0, got %v", payload["collections"])
+	}
+}
+
+func TestStatisticsEndpointWithFiles(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Upload a few files first
+	files := []struct {
+		name    string
+		content []byte
+		category string
+	}{
+		{"test1.jpg", []byte("fake image content 1"), "wildlife"},
+		{"test2.png", []byte("fake image content 2 longer"), "nature"},
+		{"document.pdf", []byte("fake pdf content"), "documents"},
+	}
+
+	for _, file := range files {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		fileWriter, err := writer.CreateFormFile("file", file.name)
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		fileWriter.Write(file.content)
+		writer.WriteField("category", file.category)
+		writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/ingest/media", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp := httptest.NewRecorder()
+		srv.router.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for upload, got %d: %s", resp.Code, resp.Body.String())
+		}
+	}
+
+	// Now get statistics
+	req := httptest.NewRequest(http.MethodGet, "/statistics", nil)
+	resp := httptest.NewRecorder()
+	srv.router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Verify response structure
+	totalFiles, ok := payload["totalFiles"].(float64)
+	if !ok {
+		t.Fatalf("expected totalFiles to be a number, got %T: %v", payload["totalFiles"], payload["totalFiles"])
+	}
+	if totalFiles != 3 {
+		t.Fatalf("expected totalFiles=3, got %.0f", totalFiles)
+	}
+
+	storageUsed, ok := payload["storageUsed"].(string)
+	if !ok || storageUsed == "" {
+		t.Fatalf("expected storageUsed to be a non-empty string, got %v", payload["storageUsed"])
+	}
+
+	collections, ok := payload["collections"].(float64)
+	if !ok {
+		t.Fatalf("expected collections to be a number, got %T: %v", payload["collections"], payload["collections"])
+	}
+	if collections < 1 {
+		t.Fatalf("expected at least 1 collection, got %.0f", collections)
+	}
+
+	// Verify aliases for compatibility
+	if files, ok := payload["files"].(float64); !ok || files != totalFiles {
+		t.Fatalf("expected files alias to match totalFiles, got %v", payload["files"])
+	}
+	if storage, ok := payload["storage"].(string); !ok || storage != storageUsed {
+		t.Fatalf("expected storage alias to match storageUsed, got %v", payload["storage"])
+	}
+	if collectionCount, ok := payload["collectionCount"].(float64); !ok || collectionCount != collections {
+		t.Fatalf("expected collectionCount alias to match collections, got %v", payload["collectionCount"])
+	}
+}
