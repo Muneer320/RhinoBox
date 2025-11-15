@@ -59,6 +59,7 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
 }
 
 // Router exposes the HTTP router for testing.
@@ -375,6 +376,154 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(payload)
+}
+
+// handleMetadataUpdate handles PATCH /files/{file_id}/metadata requests
+func (s *Server) handleMetadataUpdate(w http.ResponseWriter, r *http.Request) {
+	fileID := chi.URLParam(r, "file_id")
+	if fileID == "" {
+		httpError(w, http.StatusBadRequest, "file_id is required")
+		return
+	}
+
+	var req metadataUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return
+	}
+
+	// Validate action
+	action := req.Action
+	if action == "" {
+		action = "replace" // default action
+	}
+	if action != "replace" && action != "merge" && action != "remove" {
+		httpError(w, http.StatusBadRequest, "action must be 'replace', 'merge', or 'remove'")
+		return
+	}
+
+	// Validate metadata size limit (10KB per entry, 100 total fields)
+	if action != "remove" {
+		if len(req.Metadata) > 100 {
+			httpError(w, http.StatusBadRequest, "metadata cannot exceed 100 fields")
+			return
+		}
+		totalSize := 0
+		for k, v := range req.Metadata {
+			if len(k) > 256 {
+				httpError(w, http.StatusBadRequest, fmt.Sprintf("metadata key '%s' exceeds 256 characters", k))
+				return
+			}
+			if len(v) > 10240 {
+				httpError(w, http.StatusBadRequest, fmt.Sprintf("metadata value for '%s' exceeds 10KB", k))
+				return
+			}
+			totalSize += len(k) + len(v)
+		}
+		if totalSize > 102400 { // 100KB total
+			httpError(w, http.StatusBadRequest, "total metadata size exceeds 100KB")
+			return
+		}
+	}
+
+	// Check for protected system fields
+	protectedFields := []string{"hash", "size", "uploaded_at", "mime_type", "original_name", "stored_path", "category"}
+	if action != "remove" {
+		for _, field := range protectedFields {
+			if _, exists := req.Metadata[field]; exists {
+				httpError(w, http.StatusBadRequest, fmt.Sprintf("cannot modify system field '%s'", field))
+				return
+			}
+		}
+	}
+
+	// Find file by ID (file_id can be hash or stored path)
+	var fileMeta *storage.FileMetadata
+	fileMeta = s.storage.Index().FindByHash(fileID)
+	if fileMeta == nil {
+		fileMeta = s.storage.Index().FindByStoredPath(fileID)
+	}
+	if fileMeta == nil {
+		httpError(w, http.StatusNotFound, "file not found")
+		return
+	}
+
+	// Perform the metadata update
+	var updatedMeta *storage.FileMetadata
+	var err error
+
+	switch action {
+	case "replace":
+		updatedMeta, err = s.storage.Index().UpdateMetadata(fileMeta.Hash, func(old map[string]string) map[string]string {
+			return req.Metadata
+		})
+	case "merge":
+		updatedMeta, err = s.storage.Index().UpdateMetadata(fileMeta.Hash, func(old map[string]string) map[string]string {
+			if old == nil {
+				old = make(map[string]string)
+			}
+			for k, v := range req.Metadata {
+				old[k] = v
+			}
+			return old
+		})
+	case "remove":
+		updatedMeta, err = s.storage.Index().UpdateMetadata(fileMeta.Hash, func(old map[string]string) map[string]string {
+			if old == nil {
+				return old
+			}
+			for _, field := range req.Fields {
+				delete(old, field)
+			}
+			return old
+		})
+	}
+
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("update failed: %v", err))
+		return
+	}
+
+	// Log metadata change for audit
+	auditLog := map[string]any{
+		"file_id":     fileID,
+		"hash":        fileMeta.Hash,
+		"stored_path": fileMeta.StoredPath,
+		"action":      action,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+	}
+	if action == "remove" {
+		auditLog["fields_removed"] = req.Fields
+	} else {
+		auditLog["metadata_updated"] = req.Metadata
+	}
+
+	// Append audit log (best effort, don't fail request if logging fails)
+	logPath := filepath.ToSlash(filepath.Join("metadata", "audit_log.ndjson"))
+	if _, err := s.storage.AppendNDJSON(logPath, []map[string]any{auditLog}); err != nil {
+		s.logger.Warn("failed to append metadata audit log", slog.Any("err", err))
+	}
+
+	// Return updated metadata
+	response := map[string]any{
+		"file_id":       fileID,
+		"hash":          updatedMeta.Hash,
+		"original_name": updatedMeta.OriginalName,
+		"stored_path":   updatedMeta.StoredPath,
+		"category":      updatedMeta.Category,
+		"mime_type":     updatedMeta.MimeType,
+		"size":          updatedMeta.Size,
+		"uploaded_at":   updatedMeta.UploadedAt.Format(time.RFC3339),
+		"metadata":      updatedMeta.Metadata,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+type metadataUpdateRequest struct {
+	Action   string            `json:"action"`   // "replace", "merge", or "remove"
+	Metadata map[string]string `json:"metadata"` // for replace/merge
+	Fields   []string          `json:"fields"`   // for remove
 }
 
 func init() {

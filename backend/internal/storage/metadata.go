@@ -97,3 +97,51 @@ func (idx *MetadataIndex) Add(meta FileMetadata) error {
     idx.data[meta.Hash] = meta
     return idx.persistLocked()
 }
+
+// FindByStoredPath searches for a file by its stored path.
+func (idx *MetadataIndex) FindByStoredPath(path string) *FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    for _, meta := range idx.data {
+        if meta.StoredPath == path {
+            clone := meta
+            return &clone
+        }
+    }
+    return nil
+}
+
+// UpdateMetadata updates only the Metadata map of a file, keeping system fields immutable.
+// Returns the updated FileMetadata or an error if the file is not found.
+func (idx *MetadataIndex) UpdateMetadata(hash string, updater func(map[string]string) map[string]string) (*FileMetadata, error) {
+    idx.mu.Lock()
+    defer idx.mu.Unlock()
+    
+    meta, ok := idx.data[hash]
+    if !ok {
+        return nil, errors.New("file not found")
+    }
+    
+    // Update only the mutable Metadata field
+    meta.Metadata = updater(meta.Metadata)
+    idx.data[hash] = meta
+    
+    if err := idx.persistLocked(); err != nil {
+        return nil, err
+    }
+    
+    clone := meta
+    return &clone, nil
+}
+
+// List returns all file metadata entries. Useful for searching and indexing.
+func (idx *MetadataIndex) List() []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    result := make([]FileMetadata, 0, len(idx.data))
+    for _, meta := range idx.data {
+        result = append(result, meta)
+    }
+    return result
+}

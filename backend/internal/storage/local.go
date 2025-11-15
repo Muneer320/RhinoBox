@@ -72,6 +72,11 @@ func (m *Manager) Root() string {
 	return m.root
 }
 
+// Index returns the metadata index for file lookups and updates.
+func (m *Manager) Index() *MetadataIndex {
+	return m.index
+}
+
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.
 func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {
