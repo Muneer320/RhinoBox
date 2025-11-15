@@ -8,23 +8,71 @@ import (
 
 // Decision encapsulates where the JSON payload should live.
 type Decision struct {
-	Engine  string  `json:"engine"`
-	Reason  string  `json:"reason"`
-	Schema  string  `json:"schema_sql,omitempty"`
-	Summary Summary `json:"summary"`
-	Table   string  `json:"table"`
+	Engine     string               `json:"engine"`
+	Reason     string               `json:"reason"`
+	Confidence float64              `json:"confidence"`
+	Schema     string               `json:"schema_sql,omitempty"`
+	Columns    map[string]ColumnDef `json:"columns,omitempty"`
+	Indexes    []MongoIndex         `json:"indexes,omitempty"`
+	Summary    Summary              `json:"summary"`
+	Analysis   SchemaAnalysis       `json:"analysis"`
+	Table      string               `json:"table"`
 }
 
-// DecideStorage picks SQL vs NoSQL and produces optional schema DDL.
-func DecideStorage(namespace string, summary Summary) Decision {
-	score := summary.FieldStability + summary.TypeStability
-	maxDepthOK := summary.MaxDepth <= 4
-	engine := "nosql"
-	reason := "high variance or nested structures"
-	if !summary.HasArrayObjects && maxDepthOK && score >= 1.2 {
-		engine = "sql"
-		reason = fmt.Sprintf("stable schema score %.2f", score)
+// DecideStorage picks SQL vs NoSQL and produces optional schema DDL plus metadata.
+func DecideStorage(namespace string, docs []map[string]any, summary Summary, analysis SchemaAnalysis) Decision {
+	score := 0.0
+	sqlReasons := make([]string, 0)
+	nosqlReasons := make([]string, 0)
+
+	if analysis.HasForeignKeys || analysis.HasRelationships {
+		score += 1.0
+		sqlReasons = append(sqlReasons, "foreign keys/relationships present")
 	}
+	if analysis.RequiresJoins {
+		score += 1.0
+		sqlReasons = append(sqlReasons, "joins hinted")
+	}
+	if analysis.SchemaConsistency > 0.8 {
+		score += 0.5
+		sqlReasons = append(sqlReasons, fmt.Sprintf("schema consistency %.2f", analysis.SchemaConsistency))
+	}
+	if analysis.MaxNestingDepth <= 2 {
+		score += 0.3
+	}
+
+	if analysis.MaxNestingDepth > 3 {
+		score -= 1.0
+		nosqlReasons = append(nosqlReasons, "deep nesting")
+	}
+	if analysis.SchemaConsistency < 0.5 {
+		score -= 1.0
+		nosqlReasons = append(nosqlReasons, "low consistency")
+	}
+	if ratio := float64(analysis.UniqueFieldSets) / float64(max(1, analysis.RecordCount)); ratio > 0.3 {
+		score -= 0.8
+		nosqlReasons = append(nosqlReasons, "high field variation")
+	}
+	if analysis.ExpectedWriteLoad == "high" {
+		score -= 0.5
+		nosqlReasons = append(nosqlReasons, "high write load hint")
+	}
+
+	engine := "nosql"
+	confidence := -score
+	reason := strings.Join(nosqlReasons, "; ")
+	if reason == "" {
+		reason = "optimized for flexible schema"
+	}
+	if score > 0.5 {
+		engine = "sql"
+		confidence = score
+		reason = strings.Join(sqlReasons, "; ")
+		if reason == "" {
+			reason = "stable relational signals"
+		}
+	}
+	reason = fmt.Sprintf("%s (score %.2f)", reason, score)
 
 	table := sanitizeIdentifier(namespace)
 	if table == "" {
@@ -32,14 +80,20 @@ func DecideStorage(namespace string, summary Summary) Decision {
 	}
 
 	decision := Decision{
-		Engine:  engine,
-		Reason:  reason,
-		Summary: summary,
-		Table:   table,
+		Engine:     engine,
+		Reason:     reason,
+		Confidence: confidence,
+		Summary:    summary,
+		Analysis:   analysis,
+		Table:      table,
 	}
 
 	if engine == "sql" {
-		decision.Schema = buildCreateTable(table, summary)
+		schema, cols := GeneratePostgresSchema(table, docs)
+		decision.Schema = schema
+		decision.Columns = cols
+	} else {
+		decision.Indexes = SuggestMongoIndexes(docs)
 	}
 
 	return decision

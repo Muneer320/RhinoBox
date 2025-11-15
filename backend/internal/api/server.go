@@ -65,6 +65,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
+		s.logger.Info("http server listening", slog.String("addr", s.cfg.Addr))
 		errCh <- s.server.ListenAndServe()
 	}()
 
@@ -180,7 +181,9 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	analyzer := jsonschema.NewAnalyzer(4, 256)
 	analyzer.AnalyzeBatch(docs)
 	summary := analyzer.BuildSummary()
-	decision := jsonschema.DecideStorage(req.Namespace, summary)
+	analysis := analyzer.AnalyzeStructure(docs, summary)
+	analysis = jsonschema.IncorporateCommentHints(analysis, req.Comment)
+	decision := jsonschema.DecideStorage(req.Namespace, docs, summary, analysis)
 
 	batchRel := s.storage.NextJSONBatchPath(decision.Engine, req.Namespace)
 	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
@@ -191,9 +194,11 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 	schemaPath := ""
 	if decision.Engine == "sql" {
 		schemaPayload := map[string]any{
-			"table":   decision.Table,
-			"ddl":     decision.Schema,
-			"summary": decision.Summary,
+			"table":    decision.Table,
+			"ddl":      decision.Schema,
+			"columns":  decision.Columns,
+			"summary":  decision.Summary,
+			"analysis": decision.Analysis,
 		}
 		var err error
 		schemaPath, err = s.storage.WriteJSONFile(filepath.Join("json", "sql", decision.Table, "schema.json"), schemaPayload)
@@ -208,6 +213,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		"comment":     req.Comment,
 		"metadata":    req.Metadata,
 		"decision":    decision.Engine,
+		"confidence":  decision.Confidence,
 		"documents":   len(docs),
 		"batch_path":  batchRel,
 		"schema_path": schemaPath,

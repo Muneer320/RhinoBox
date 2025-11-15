@@ -1,0 +1,30 @@
+{
+    "namespace": "orders_sql",
+    "comment": "Structured ecommerce orders with stable columns; should score as SQL",
+    "documents": [
+        {
+            "order_id": 1001,
+            "customer_id": 501,
+            "status": "pending",
+            "total": 129.95,
+            "currency": "USD",
+            "placed_at": "2025-11-12T10:15:00Z"
+        },
+        {
+            "order_id": 1002,
+            "customer_id": 502,
+            "status": "paid",
+            "total": 42.50,
+            "currency": "USD",
+            "placed_at": "2025-11-13T08:05:00Z"
+        },
+        {
+            "order_id": 1003,
+            "customer_id": 503,
+            "status": "refunded",
+            "total": 15.00,
+            "currency": "USD",
+            "placed_at": "2025-11-14T18:30:00Z"
+        }
+    ]
+}

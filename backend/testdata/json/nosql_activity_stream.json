@@ -1,0 +1,56 @@
+{
+    "namespace": "activity_stream",
+    "comment": "User activity stream with nested arrays, polymorphic metadata, and unbounded keys",
+    "documents": [
+        {
+            "user": {
+                "id": "u-100",
+                "plan": "pro",
+                "geo": {
+                    "country": "US",
+                    "region": "CA"
+                }
+            },
+            "events": [
+                {
+                    "type": "login",
+                    "meta": {
+                        "device": "ios",
+                        "ip": "203.0.113.10"
+                    }
+                },
+                {
+                    "type": "view",
+                    "meta": {
+                        "path": "/pricing",
+                        "ab_bucket": "green"
+                    }
+                }
+            ]
+        },
+        {
+            "user": {
+                "id": "u-101",
+                "plan": "free"
+            },
+            "events": [
+                {
+                    "type": "login",
+                    "meta": {
+                        "device": "web"
+                    }
+                },
+                {
+                    "type": "purchase",
+                    "meta": {
+                        "items": [
+                            "notebook",
+                            "pen"
+                        ],
+                        "total": 18.5
+                    }
+                }
+            ]
+        }
+    ]
+}

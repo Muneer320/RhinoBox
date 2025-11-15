@@ -1,0 +1,30 @@
+{
+    "namespace": "inventory_batches",
+    "comment": "Batch-level SKU inventory snapshots with consistent numeric columns",
+    "documents": [
+        {
+            "snapshot_at": "2025-11-15T00:00:00Z",
+            "sku": "SKU-100",
+            "warehouse": "SFO1",
+            "on_hand": 540,
+            "allocated": 120,
+            "safety_stock": 80
+        },
+        {
+            "snapshot_at": "2025-11-15T00:00:00Z",
+            "sku": "SKU-200",
+            "warehouse": "SFO1",
+            "on_hand": 210,
+            "allocated": 50,
+            "safety_stock": 40
+        },
+        {
+            "snapshot_at": "2025-11-15T00:00:00Z",
+            "sku": "SKU-200",
+            "warehouse": "DFW2",
+            "on_hand": 980,
+            "allocated": 200,
+            "safety_stock": 150
+        }
+    ]
+}
