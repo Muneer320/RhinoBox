@@ -24,8 +24,8 @@ These layers sit behind a single deployment artifact (Go binary + optional worke
 | **Async Job Queue** | **Buffer async work, track progress, enable batch processing** | **In-memory channels + disk persistence (Go)**      | **10 workers, 1000 job buffer, 596µs/op enqueue, crash recovery** |
 | Worker Pool         | Execute queued jobs concurrently                               | Go worker goroutines                                | Sized by CPU count / config                                       |
 | File Storage        | Durable blob store organized by type/category                  | Local filesystem (hackathon), S3-compatible in prod | Directory naming uses slug + UUID                                 |
-| PostgreSQL Cluster  | Structured namespace tables + metadata index                   | PostgreSQL 15                                       | JSONB columns allow semi-flexible fields                          |
-| MongoDB Cluster     | Flexible document collections                                  | MongoDB 7                                           | Namespaces map 1:1 to collections                                 |
+| **PostgreSQL Pool** | **SQL-routed data with high-speed bulk inserts**               | **pgx/v5 with COPY protocol**                       | **100K+/sec, 4x CPU connections, 1024 statement cache**           |
+| **MongoDB Pool**    | **NoSQL-routed data with unordered bulk writes**               | **mongo-driver with BulkWrite**                     | **200K+/sec, 100 max connections, snappy/zstd compression**       |
 | Observability       | Metrics, traces, logs                                          | Prometheus, OpenTelemetry                           | Chi middleware emits request spans                                |
 
 ## 3. High-Level Diagram
@@ -81,6 +81,11 @@ flowchart LR
   - Disk persistence for crash recovery
   - Progress tracking with percentage
   - Partial success support (continues even if some items fail)
+- **Database Write Flow** (`internal/api/server.go` → `handleJSONIngest`):
+  - **SQL Route** (`decision.Engine == "sql"`): Creates table from schema → Batch insert using COPY protocol (>100 docs) or multi-value INSERT (<100 docs) → Falls back to NDJSON on error
+  - **NoSQL Route** (`decision.Engine == "nosql"`): BulkWrite with unordered execution → Parallel inserts for maximum throughput → Falls back to NDJSON on error
+  - **Dual Storage**: Database writes complete first, then NDJSON backup for audit trail (continues even if database unavailable)
+  - **Backward Compatible**: Empty database URLs = NDJSON-only mode (no breaking changes)
 - Worker pool pulls jobs from pending channel in FIFO order. Jobs are idempotent via dedupe hash keys.
 - Buffer pooling (sync.Pool) reuses byte slices for streaming copies and JSON flattening.
 
