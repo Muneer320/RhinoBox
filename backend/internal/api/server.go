@@ -18,13 +18,14 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
+	"github.com/Muneer320/RhinoBox/internal/middleware"
 	respmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	validationmw "github.com/Muneer320/RhinoBox/internal/middleware"
 	"github.com/Muneer320/RhinoBox/internal/queue"
 	"github.com/Muneer320/RhinoBox/internal/service"
 	"github.com/Muneer320/RhinoBox/internal/storage"
 	chi "github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	fileService service.FileService
 	jobQueue    *queue.JobQueue
 	server      *http.Server
+	rateLimiter *middleware.RateLimiter
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
@@ -67,6 +69,10 @@ func (s *Server) setupValidation() *validationmw.Validator {
 
 // Stop gracefully stops the server and cleans up resources.
 func (s *Server) Stop() {
+	// Stop rate limiter cleanup goroutine
+	if s.rateLimiter != nil {
+		s.rateLimiter.Stop()
+	}
 	// Job queue shutdown will be implemented when async endpoints are added
 	if s.jobQueue != nil {
 		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
@@ -77,18 +83,38 @@ func (s *Server) routes() {
 	r := s.router
 
 	// Lightweight middleware for performance
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+
+	// Security middleware - order matters!
+	// 1. IP Filter (first - block/allow before processing)
+	ipFilter := middleware.NewIPFilterMiddleware(s.cfg.Security, s.logger)
+	r.Use(ipFilter.Handler)
+
+	// 2. Request Size Limit (early - before body is read)
+	requestSizeLimit := middleware.NewRequestSizeLimitMiddleware(s.cfg.Security, s.logger)
+	r.Use(requestSizeLimit.Handler)
+
+	// 3. Rate Limiting (after IP filter, before processing)
+	s.rateLimiter = middleware.NewRateLimiter(s.cfg.Security, s.logger)
+	r.Use(s.rateLimiter.Handler)
+
+	// 4. CORS (before other headers)
+	cors := middleware.NewCORSMiddleware(s.cfg.Security, s.logger)
+	r.Use(cors.Handler)
+
+	// 5. Security Headers (after CORS)
+	securityHeaders := middleware.NewSecurityHeadersMiddleware(s.cfg.Security, s.logger)
+	r.Use(securityHeaders.Handler)
 	
-	// Response transformation middleware
+	// Response transformation middleware (keep for response formatting)
 	responseConfig := respmw.DefaultResponseConfig(s.logger)
-	responseConfig.EnableCORS = true
-	responseConfig.CORSOrigins = []string{"*"}
+	responseConfig.EnableCORS = false // Disable CORS here since we have dedicated middleware
 	r.Use(respmw.NewResponseMiddleware(responseConfig).Handler)
 	
 	r.Use(s.customLogger)       // Custom lightweight logger
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5)) // gzip level 5 (balance speed/compression)
+	r.Use(chimw.Recoverer)
+	r.Use(chimw.Compress(5)) // gzip level 5 (balance speed/compression)
 
 	// Setup validation as global middleware
 	// Validation will check route context after chi matches routes
@@ -114,7 +140,7 @@ func (s *Server) routes() {
 func (s *Server) customLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 		
 		defer func() {
 			duration := time.Since(start)
@@ -943,7 +969,7 @@ Metadata  map[string]any   `json:"metadata"`
 
 // getRequestID extracts the request ID from the context
 func getRequestID(r *http.Request) string {
-	if id := r.Context().Value(middleware.RequestIDKey); id != nil {
+	if id := r.Context().Value(chimw.RequestIDKey); id != nil {
 		if str, ok := id.(string); ok {
 			return str
 		}
