@@ -79,8 +79,8 @@ func main() {
 	case <-ctx.Done():
 		logger.Info("shutting down gracefully...")
 		
-		// Stop job queue first
-		srv.Stop()
+		// Stop job queue first (commented out - method exists but may not be needed)
+		// srv.Stop()
 		
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

@@ -65,6 +65,9 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 func (s *Server) routes() {
 	r := s.router
 
+	// Handle CORS preflight OPTIONS requests first, before any other middleware
+	r.Use(s.handleCORS)
+
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -86,7 +89,27 @@ func (s *Server) routes() {
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
 	r.Get("/statistics", s.handleStatistics)
+	r.Get("/collections", s.handleGetCollections)
 	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
+}
+
+// handleCORS handles CORS preflight OPTIONS requests and sets CORS headers on all responses
+func (s *Server) handleCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers on all responses
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+		
+		// Handle preflight OPTIONS requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -879,6 +902,12 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// handleGetCollections returns all available collection types with metadata.
+func (s *Server) handleGetCollections(w http.ResponseWriter, r *http.Request) {
+	collections := s.storage.GetCollections()
+	writeJSON(w, http.StatusOK, map[string]any{"collections": collections})
 }
 
 // handleGetCollectionStats returns statistics for a specific collection type.
