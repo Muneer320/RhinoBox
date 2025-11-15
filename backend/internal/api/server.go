@@ -11,12 +11,15 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
+	"github.com/Muneer320/RhinoBox/internal/media"
 	"github.com/Muneer320/RhinoBox/internal/storage"
+	"github.com/google/uuid"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -102,6 +105,19 @@ func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
 	categoryHint := r.FormValue("category")
 	comment := r.FormValue("comment")
 
+	// Count total files
+	totalFiles := 0
+	for _, headers := range r.MultipartForm.File {
+		totalFiles += len(headers)
+	}
+
+	// Use parallel processing for batches > 1 file
+	if totalFiles > 1 {
+		s.handleMediaIngestParallel(w, r, categoryHint, comment, totalFiles)
+		return
+	}
+
+	// Single file - use sequential path for simplicity
 	records := make([]map[string]any, 0)
 	responses := make([]map[string]any, 0)
 
@@ -120,6 +136,89 @@ func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
 	if len(records) > 0 {
 		if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "ingest_log.ndjson")), records); err != nil {
 			// log but don't fail request
+			s.logger.Warn("failed to append media log", slog.Any("err", err))
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"stored": responses})
+}
+
+// handleMediaIngestParallel processes multiple files concurrently using worker pool
+func (s *Server) handleMediaIngestParallel(w http.ResponseWriter, r *http.Request, categoryHint, comment string, totalFiles int) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	// Create worker pool
+	pool := media.NewWorkerPool(ctx, s.storage, 0) // 0 = auto-detect worker count
+	if err := pool.Start(); err != nil {
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("start worker pool: %v", err))
+		return
+	}
+	defer pool.Shutdown()
+
+	// Submit all jobs
+	jobIndex := 0
+	for _, headers := range r.MultipartForm.File {
+		for _, header := range headers {
+			job := &media.ProcessJob{
+				Header:       header,
+				CategoryHint: categoryHint,
+				Comment:      comment,
+				JobID:        uuid.New().String(),
+				Index:        jobIndex,
+			}
+			if err := pool.Submit(job); err != nil {
+				httpError(w, http.StatusInternalServerError, fmt.Sprintf("submit job: %v", err))
+				return
+			}
+			jobIndex++
+		}
+	}
+
+	// Collect results
+	results := make([]*media.ProcessResult, 0, totalFiles)
+	successCount := 0
+	var firstError error
+
+	for i := 0; i < totalFiles; i++ {
+		select {
+		case result := <-pool.Results():
+			results = append(results, result)
+			if result.Success {
+				successCount++
+			} else if firstError == nil {
+				firstError = result.Error
+			}
+		case <-ctx.Done():
+			httpError(w, http.StatusRequestTimeout, "processing timeout")
+			return
+		}
+	}
+
+	// If any failures occurred, return error
+	if firstError != nil {
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("processing error: %v", firstError))
+		return
+	}
+
+	// Sort results by original index to maintain order
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Index < results[j].Index
+	})
+
+	// Build response
+	records := make([]map[string]any, 0, len(results))
+	responses := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		if result.Success && result.Record != nil {
+			records = append(records, result.Record)
+			responses = append(responses, result.Record)
+		}
+	}
+
+	// Log batch processing
+	if len(records) > 0 {
+		if _, err := s.storage.AppendNDJSON(filepath.ToSlash(filepath.Join("media", "ingest_log.ndjson")), records); err != nil {
 			s.logger.Warn("failed to append media log", slog.Any("err", err))
 		}
 	}
