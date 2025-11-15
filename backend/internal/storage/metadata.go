@@ -110,7 +110,6 @@ func (idx *MetadataIndex) Delete(hash string) error {
     return idx.persistLocked()
 }
 
-<<<<<<< HEAD
 // FindByType returns all files matching the given collection type.
 // The type should match the first component of the Category path (e.g., "images", "videos").
 func (idx *MetadataIndex) FindByType(collectionType string) []FileMetadata {
