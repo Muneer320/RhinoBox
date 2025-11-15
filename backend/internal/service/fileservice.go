@@ -36,6 +36,12 @@ type FileService interface {
 	
 	// LogDownload logs a download event
 	LogDownload(log storage.DownloadLog) error
+
+	// Notes operations
+	GetNotes(fileID string) ([]storage.Note, error)
+	AddNote(fileID, text, author string) (*storage.Note, error)
+	UpdateNote(fileID, noteID, text string) (*storage.Note, error)
+	DeleteNote(fileID, noteID string) error
 }
 
 // fileService implements FileService using storage.Manager
@@ -98,5 +104,25 @@ func (s *fileService) SearchFiles(query string) []storage.FileMetadata {
 // LogDownload logs a download event
 func (s *fileService) LogDownload(log storage.DownloadLog) error {
 	return s.storage.LogDownload(log)
+}
+
+// GetNotes retrieves all notes for a file
+func (s *fileService) GetNotes(fileID string) ([]storage.Note, error) {
+	return s.storage.GetNotes(fileID)
+}
+
+// AddNote adds a new note to a file
+func (s *fileService) AddNote(fileID, text, author string) (*storage.Note, error) {
+	return s.storage.AddNote(fileID, text, author)
+}
+
+// UpdateNote updates an existing note
+func (s *fileService) UpdateNote(fileID, noteID, text string) (*storage.Note, error) {
+	return s.storage.UpdateNote(fileID, noteID, text)
+}
+
+// DeleteNote removes a note
+func (s *fileService) DeleteNote(fileID, noteID string) error {
+	return s.storage.DeleteNote(fileID, noteID)
 }
 

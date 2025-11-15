@@ -26,6 +26,7 @@ type Manager struct {
 	rulesMgr       *RoutingRulesManager
 	index          *MetadataIndex
 	versionIndex   *VersionIndex
+	notesIndex     *NotesIndex
 	hashIndex      *cache.HashIndex
 	referenceIndex *ReferenceIndex
 	mu             sync.Mutex
@@ -81,6 +82,11 @@ func NewManager(root string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize version index: %w", err)
 	}
 
+	notesIndex, err := NewNotesIndex(filepath.Join(root, "metadata", "notes.json"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize notes index: %w", err)
+	}
+
 	// Initialize cache for deduplication
 	cacheConfig := cache.DefaultConfig()
 	cacheConfig.L3Path = filepath.Join(root, "cache")
@@ -98,6 +104,7 @@ func NewManager(root string) (*Manager, error) {
 		rulesMgr:       rulesMgr,
 		index:          index,
 		versionIndex:   versionIndex,
+		notesIndex:     notesIndex,
 		hashIndex:      hashIndex,
 		referenceIndex: nil, // Lazily initialized when needed
 	}, nil
@@ -473,4 +480,78 @@ func (m *Manager) RevertVersion(fileID string, versionNumber int, comment string
 // GetVersionDiff returns differences between two versions
 func (m *Manager) GetVersionDiff(fileID string, fromVersion, toVersion int) (map[string]any, error) {
 	return m.versionIndex.GetVersionDiff(fileID, fromVersion, toVersion)
+}
+
+// Notes operations
+
+// GetNotes returns all notes for a file.
+func (m *Manager) GetNotes(fileID string) ([]Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.GetNotes(fileID), nil
+}
+
+// AddNote adds a new note to a file.
+func (m *Manager) AddNote(fileID, text, author string) (*Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.AddNote(fileID, text, author)
+}
+
+// UpdateNote updates an existing note.
+func (m *Manager) UpdateNote(fileID, noteID, text string) (*Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.UpdateNote(fileID, noteID, text)
+}
+
+// DeleteNote removes a note.
+func (m *Manager) DeleteNote(fileID, noteID string) error {
+	if fileID == "" {
+		return errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.DeleteNote(fileID, noteID)
 }
