@@ -163,6 +163,7 @@ function initHomePageFeatures() {
         return;
       }
 
+      let processingToast = null;
       try {
         let documents = [];
         
@@ -184,7 +185,7 @@ function initHomePageFeatures() {
           documents = [{ content: value, type: selectedType }];
         }
 
-        const processingToast = showToast("Processing...", "info", 0);
+        processingToast = showToast("Processing...", "info", 0);
         await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
         dismissToast(processingToast);
         showToast("Successfully added item", "success");
@@ -204,6 +205,9 @@ function initHomePageFeatures() {
         }
       } catch (error) {
         console.error("Quick add error:", error);
+        if (processingToast) {
+          dismissToast(processingToast);
+        }
         let errorMessage = "Unknown error";
         if (error instanceof APIError) {
           errorMessage = error.getUserMessage();
@@ -798,21 +802,18 @@ async function performSearch(query) {
     console.error("Search error:", error);
     if (searchLoading) searchLoading.style.display = "none";
     if (searchEmpty) searchEmpty.style.display = "flex";
-    if (searchResultsList) {
-      let errorMessage = "Error performing search. Please try again.";
-      if (error instanceof APIError) {
-        errorMessage = error.getUserMessage();
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      searchResultsList.innerHTML =
-        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
-    }
-    let errorMessage = "Unknown error";
+    
+    // Extract user-friendly error message
+    let errorMessage = "Error performing search. Please try again.";
     if (error instanceof APIError) {
       errorMessage = error.getUserMessage();
     } else if (error.message) {
       errorMessage = error.message;
+    }
+    
+    if (searchResultsList) {
+      searchResultsList.innerHTML =
+        `<div style="padding: 20px; text-align: center; color: var(--text-secondary);">${escapeHtml(errorMessage)}</div>`;
     }
     showToast(`Search failed: ${errorMessage}`, "error");
   }
@@ -1657,6 +1658,8 @@ const ALL_SUPPORTED_TYPES = [...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_VIDEO_TYPES,
 
 /**
  * Validate file before upload
+ * @param {File} file - File to validate
+ * @returns {Array} Array of validation errors (empty if valid)
  */
 function validateFile(file) {
   const errors = [];
@@ -1671,8 +1674,12 @@ function validateFile(file) {
 
   // Check file type (optional - allow all types but warn)
   if (file.type && ALL_SUPPORTED_TYPES.length > 0 && !ALL_SUPPORTED_TYPES.includes(file.type)) {
-    // Don't block, just note it
-    console.warn(`File type ${file.type} may not be fully supported`);
+    // Show non-blocking warning toast for unsupported types
+    showToast(
+      `File type "${file.type}" may not be fully supported. Upload may fail.`,
+      "warning",
+      4000
+    );
   }
 
   return errors;
@@ -1980,7 +1987,8 @@ function dismissToast(toast) {
  * Dismiss all toasts
  */
 function dismissAllToasts() {
-  activeToasts.forEach((toast) => dismissToast(toast));
+  // Use slice() to avoid mutation during iteration
+  activeToasts.slice().forEach((toast) => dismissToast(toast));
   activeToasts = [];
 }
 

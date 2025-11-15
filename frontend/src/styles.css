@@ -2417,3 +2417,21 @@ html[data-theme='dark'] .toast-warning {
   margin: 0;
   font-size: 14px;
 }
+
+/* Error state styling for existing error containers */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  text-align: center;
+  min-height: 200px;
+}
+
+.error-state p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}

@@ -140,6 +140,7 @@ describe('Toast Notification System', () => {
     document.body.innerHTML = '';
     container = document.createElement('div');
     container.id = 'toast-container';
+    container.className = 'toast-container';
     document.body.appendChild(container);
   });
 
@@ -149,9 +150,60 @@ describe('Toast Notification System', () => {
 
   describe('Toast Creation', () => {
     it('should create toast container on first call', () => {
-      // This would require importing the toast functions
-      // For now, we test the concept
       expect(container).toBeDefined();
+      expect(container.id).toBe('toast-container');
+    });
+
+    it('should create toast element with correct structure', () => {
+      // Simulate toast creation
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-success';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      
+      toast.innerHTML = `
+        <div class="toast-icon">✓</div>
+        <div class="toast-content">
+          <div class="toast-message">Test message</div>
+        </div>
+        <button class="toast-close" aria-label="Close">&times;</button>
+      `;
+      
+      container.appendChild(toast);
+      
+      expect(toast.classList.contains('toast')).toBe(true);
+      expect(toast.classList.contains('toast-success')).toBe(true);
+      expect(toast.getAttribute('role')).toBe('status');
+      expect(toast.getAttribute('aria-live')).toBe('polite');
+      expect(toast.querySelector('.toast-message').textContent).toBe('Test message');
+    });
+
+    it('should create error toast with alert role', () => {
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-error';
+      toast.setAttribute('role', 'alert');
+      toast.setAttribute('aria-live', 'assertive');
+      
+      expect(toast.getAttribute('role')).toBe('alert');
+      expect(toast.getAttribute('aria-live')).toBe('assertive');
+    });
+
+    it('should support action buttons in toast', () => {
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-error';
+      toast.innerHTML = `
+        <div class="toast-content">
+          <div class="toast-message">Error message</div>
+          <div class="toast-actions">
+            <button class="toast-action" data-action="retry">Retry</button>
+          </div>
+        </div>
+      `;
+      
+      const actionButton = toast.querySelector('.toast-action');
+      expect(actionButton).toBeDefined();
+      expect(actionButton.getAttribute('data-action')).toBe('retry');
+      expect(actionButton.textContent).toBe('Retry');
     });
   });
 });

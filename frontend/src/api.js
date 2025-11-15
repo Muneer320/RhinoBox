@@ -41,9 +41,13 @@ export class APIError extends Error {
 
   /**
    * Get error type based on status code
+   * For status 0 (network errors), falls back to details.type if available
    */
   getErrorType() {
-    if (this.status === 0) return 'network'
+    if (this.status === 0) {
+      // Distinguish timeout vs generic network errors if details.type is provided
+      return this.details.type || 'network'
+    }
     if (this.status >= 500) return 'server'
     if (this.status === 404) return 'not-found'
     if (this.status === 401) return 'unauthorized'
@@ -122,9 +126,13 @@ async function apiRequest(endpoint, options = {}) {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
   
-  // If body is FormData, don't set Content-Type (browser will set it with boundary)
+  // If body is FormData, preserve auth headers but let browser set Content-Type with boundary
   const isFormData = options.body instanceof FormData
-  const defaultHeaders = isFormData ? {} : getHeaders()
+  const defaultHeaders = getHeaders()
+  if (isFormData) {
+    // Let the browser set multipart boundary while preserving auth headers
+    delete defaultHeaders['Content-Type']
+  }
   
   const config = {
     ...options,
