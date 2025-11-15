@@ -108,3 +108,20 @@ func (idx *MetadataIndex) Delete(hash string) error {
     delete(idx.data, hash)
     return idx.persistLocked()
 }
+
+// FindByCategoryPrefix returns all files whose category starts with the given prefix.
+// This is useful for finding all files in a collection type (e.g., "images" matches "images/jpg", "images/png", etc.).
+func (idx *MetadataIndex) FindByCategoryPrefix(prefix string) []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    
+    results := make([]FileMetadata, 0)
+    for _, meta := range idx.data {
+        // Check if category starts with prefix (exact match or prefix with "/")
+        if meta.Category == prefix || 
+           (len(meta.Category) > len(prefix) && meta.Category[:len(prefix)+1] == prefix+"/") {
+            results = append(results, meta)
+        }
+    }
+    return results
+}

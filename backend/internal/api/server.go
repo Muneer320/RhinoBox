@@ -73,6 +73,7 @@ func (s *Server) routes() {
 	r.Get("/files/download", s.handleFileDownload)
 	r.Get("/files/metadata", s.handleFileMetadata)
 	r.Get("/files/stream", s.handleFileStream)
+	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
@@ -894,6 +895,63 @@ func (s *Server) logDownload(r *http.Request, result *storage.FileRetrievalResul
 	}
 
 	return s.storage.LogDownload(log)
+}
+
+// handleCollectionStats returns statistics for a specific collection type.
+func (s *Server) handleCollectionStats(w http.ResponseWriter, r *http.Request) {
+	collectionType := chi.URLParam(r, "collection_type")
+	if collectionType == "" {
+		httpError(w, http.StatusBadRequest, "collection_type is required")
+		return
+	}
+
+	// Get all files for this collection type
+	files := s.storage.FindByCategoryPrefix(collectionType)
+
+	// Calculate statistics
+	fileCount := len(files)
+	var totalSize int64
+	var lastUpdated time.Time
+
+	for _, file := range files {
+		totalSize += file.Size
+		if file.UploadedAt.After(lastUpdated) {
+			lastUpdated = file.UploadedAt
+		}
+	}
+
+	// Format storage size
+	storageUsed := formatBytes(totalSize)
+
+	// Build response
+	stats := map[string]any{
+		"collection_type": collectionType,
+		"file_count":      fileCount,
+		"storage_used":    storageUsed,
+		"storage_bytes":   totalSize,
+		"last_updated":    lastUpdated.Format(time.RFC3339),
+	}
+
+	// If no files, set last_updated to null
+	if fileCount == 0 {
+		stats["last_updated"] = nil
+	}
+
+	writeJSON(w, http.StatusOK, stats)
+}
+
+// formatBytes formats bytes into human-readable format (KB, MB, GB, TB).
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // Helper structs
