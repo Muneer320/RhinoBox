@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -186,15 +187,21 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment string) 
 	}
 	
 	// Use comment as category if provided, else use base filename
-	category := comment
+	category := sanitizePathSegment(comment)
 	if category == "" {
-		category = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
+		category = sanitizePathSegment(strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)))
 	}
 	if category == "" {
 		category = mediaType
 	}
 
-	relPath, err := s.storage.StoreMedia([]string{mediaType, category}, header.Filename, file)
+	// Sanitize filename to prevent path traversal
+	sanitizedFilename := sanitizePathSegment(header.Filename)
+	if sanitizedFilename == "" {
+		sanitizedFilename = "file" + strings.ToLower(filepath.Ext(header.Filename))
+	}
+
+	relPath, err := s.storage.StoreMedia([]string{mediaType, category}, sanitizedFilename, file)
 	if err != nil {
 		return MediaResult{}, err
 	}
@@ -339,4 +346,34 @@ func isMediaType(mime string) bool {
 
 func generateJobID() string {
 	return fmt.Sprintf("job_%d", time.Now().UnixNano())
+}
+
+var pathSegmentPattern = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
+
+// sanitizePathSegment removes path separators, OS-specific characters, and enforces
+// a safe character whitelist to prevent path traversal and invalid filenames.
+func sanitizePathSegment(input string) string {
+	// Trim whitespace
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return ""
+	}
+	
+	// Remove or replace path separators and dangerous characters
+	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, "\\", "")
+	s = strings.ReplaceAll(s, "..", "")
+	
+	// Enforce safe character whitelist (alphanumerics, hyphen, underscore, dot)
+	s = pathSegmentPattern.ReplaceAllString(s, "_")
+	
+	// Trim leading/trailing separators that might have been converted
+	s = strings.Trim(s, "_.-")
+	
+	// Cap length to 100 characters
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	
+	return s
 }

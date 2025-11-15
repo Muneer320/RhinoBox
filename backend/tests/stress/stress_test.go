@@ -99,6 +99,10 @@ func TestStress100FilesBatch(t *testing.T) {
 
 // TestStressSingleFileLatency tests single file processing latency
 func TestStressSingleFileLatency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping latency stress test in short mode (flaky on CI)")
+	}
+	
 	dir := t.TempDir()
 	cfg := config.Config{
 		Addr:           ":8090",
