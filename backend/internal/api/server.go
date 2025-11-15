@@ -19,9 +19,9 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
 	"github.com/Muneer320/RhinoBox/internal/storage"
-	"github.com/google/uuid"
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 )
 
 // Server wires everything together.
