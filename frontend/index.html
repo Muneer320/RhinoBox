@@ -913,43 +913,152 @@
         </div>
         <div class="quick-add-panel-body">
           <form id="quickAddForm" class="quick-add-form">
-            <div class="quick-add-type-selector">
-              <label for="quickAddType" class="visually-hidden">File Type</label>
-              <select id="quickAddType" class="quick-add-select">
-                <option value="text">Text</option>
-                <option value="json">JSON</option>
-                <option value="python">Python</option>
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-                <option value="sql">SQL</option>
-                <option value="html">HTML</option>
-                <option value="css">CSS</option>
-                <option value="markdown">Markdown</option>
-                <option value="yaml">YAML</option>
-                <option value="xml">XML</option>
-                <option value="url">URL/Link</option>
-              </select>
-            </div>
-            <div class="quick-add-input-wrapper">
-              <label for="quickAdd" class="quick-add-input-label">Content</label>
-              <textarea
-                id="quickAdd"
-                class="quick-add-textarea"
-                placeholder="Paste link, query, or data snippet..."
-                rows="12"
-                aria-label="Content input"
-              ></textarea>
-            </div>
-            <div class="quick-add-actions">
-              <button type="button" class="ghost-button" id="quickAdd-cancel">
-                Cancel
-              </button>
-              <button type="submit" class="primary-button" id="quickAdd-submit">
-                Add
-              </button>
+            <div class="code-editor-section">
+              <div class="code-editor-header">
+                <h3>Code / Data Input</h3>
+                <div class="code-editor-actions">
+                  <select id="language-selector" class="language-selector">
+                    <option value="json" selected>📄 JSON</option>
+                    <option value="javascript">🟨 JavaScript</option>
+                    <option value="typescript">🔷 TypeScript</option>
+                    <option value="python">🐍 Python</option>
+                    <option value="java">☕ Java</option>
+                    <option value="go">🐹 Go</option>
+                    <option value="cpp">⚙️ C++</option>
+                    <option value="csharp">🔹 C#</option>
+                    <option value="ruby">💎 Ruby</option>
+                    <option value="php">🐘 PHP</option>
+                    <option value="sql">🗄️ SQL</option>
+                    <option value="html">🌐 HTML</option>
+                    <option value="css">🎨 CSS</option>
+                    <option value="yaml">📋 YAML</option>
+                    <option value="xml">📰 XML</option>
+                    <option value="markdown">📝 Markdown</option>
+                    <option value="text">📝 Text</option>
+                    <option value="url">🔗 URL/Link</option>
+                  </select>
+                  <button
+                    id="format-code"
+                    class="btn-icon"
+                    type="button"
+                    title="Format Code (Ctrl+Shift+F)"
+                    aria-label="Format code"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v7.5m-9 6V21m-6 0h12a2.25 2.25 0 002.25-2.25v-7.5m-9 0V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v7.5" />
+                    </svg>
+                  </button>
+                  <button
+                    id="expand-editor"
+                    class="btn-icon"
+                    type="button"
+                    title="Expand Editor (F11)"
+                    aria-label="Expand editor"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Compact preview (click to expand) -->
+              <div id="code-preview" class="code-preview" tabindex="0">
+                <div id="code-editor-container" style="height: 300px;"></div>
+              </div>
+
+              <div class="code-editor-footer">
+                <div class="code-editor-status">
+                  <span id="editor-line-col">Ln 1, Col 1</span>
+                  <span id="editor-language-display">JSON</span>
+                  <span id="editor-size">0 bytes</span>
+                </div>
+                <div class="code-editor-footer-actions">
+                  <button
+                    id="clear-code"
+                    class="btn btn-secondary"
+                    type="button"
+                    title="Clear Editor (Ctrl+K)"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    id="submit-code"
+                    class="btn btn-primary"
+                    type="submit"
+                    title="Submit Code (Ctrl+Enter)"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    Submit Code
+                  </button>
+                </div>
+              </div>
             </div>
           </form>
         </div>
+      </div>
+    </div>
+
+    <!-- Code Editor Modal -->
+    <div id="editor-modal" class="editor-modal" role="dialog" aria-labelledby="editor-modal-title" aria-modal="true">
+      <div class="editor-modal-background"></div>
+      <div class="editor-modal-card">
+        <header class="editor-modal-head">
+          <p class="editor-modal-title" id="editor-modal-title">Code Editor</p>
+          <div class="editor-modal-header-actions">
+            <select id="modal-language-selector" class="language-selector">
+              <option value="json" selected>📄 JSON</option>
+              <option value="javascript">🟨 JavaScript</option>
+              <option value="typescript">🔷 TypeScript</option>
+              <option value="python">🐍 Python</option>
+              <option value="java">☕ Java</option>
+              <option value="go">🐹 Go</option>
+              <option value="cpp">⚙️ C++</option>
+              <option value="csharp">🔹 C#</option>
+              <option value="ruby">💎 Ruby</option>
+              <option value="php">🐘 PHP</option>
+              <option value="sql">🗄️ SQL</option>
+              <option value="html">🌐 HTML</option>
+              <option value="css">🎨 CSS</option>
+              <option value="yaml">📋 YAML</option>
+              <option value="xml">📰 XML</option>
+              <option value="markdown">📝 Markdown</option>
+              <option value="text">📝 Text</option>
+              <option value="url">🔗 URL/Link</option>
+            </select>
+            <button id="modal-format" class="btn-icon" type="button" title="Format Code">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.5V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v7.5m-9 6V21m-6 0h12a2.25 2.25 0 002.25-2.25v-7.5m-9 0V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v7.5" />
+              </svg>
+            </button>
+            <button id="copy-code" class="btn-icon" type="button" title="Copy to Clipboard">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.6A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.6m5.332 0A2.251 2.251 0 0113.5 4.25h3a2.25 2.25 0 010 4.5h-3a2.25 2.25 0 00-2.166 1.6m5.332 0a2.251 2.251 0 01-.833 2.4m5.332 0A2.251 2.251 0 0118 15.75h-3a2.25 2.25 0 01-2.166-1.6M15.666 3.6a2.25 2.25 0 00-2.166 1.6M15.666 3.6v1.5m-5.332 0V3.6m0 0a2.25 2.25 0 00-2.166 1.6m5.332 0H9.75" />
+              </svg>
+            </button>
+          </div>
+          <button class="editor-modal-close is-large" type="button" aria-label="close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+        <section class="editor-modal-body">
+          <div id="modal-editor" style="height: 60vh;"></div>
+        </section>
+        <footer class="editor-modal-foot">
+          <div class="editor-modal-status-bar">
+            <span id="modal-editor-line-col">Ln 1, Col 1</span>
+            <span id="modal-editor-language">JSON</span>
+            <span id="modal-editor-size">0 bytes</span>
+          </div>
+          <div class="editor-modal-footer-actions">
+            <button id="modal-submit" class="btn btn-primary" type="button">Submit</button>
+            <button class="btn btn-secondary editor-modal-close" type="button">Cancel</button>
+          </div>
+        </footer>
       </div>
     </div>
 
