@@ -337,7 +337,7 @@
                     <table class="sql-table">
                       <thead>
                         <tr>
-                          <th>Table Name</th>
+                          <th>Contents</th>
                           <th>Rows</th>
                           <th>Size</th>
                           <th>Last Updated</th>
@@ -363,38 +363,11 @@
                   <h2>NoSQL Databases</h2>
                 </div>
                 <div class="nosql-container">
-                  <div class="nosql-controls">
-                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-in" aria-label="Zoom in">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                    </button>
-                    <button type="button" class="nosql-zoom-btn" id="nosql-zoom-out" aria-label="Zoom out">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
-                      </svg>
-                    </button>
-                    <button type="button" class="nosql-zoom-btn" id="nosql-reset" aria-label="Reset zoom">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.25 18.75h4.992v-.001M2.25 18.75l4.992-4.992M21.75 5.25l-4.992 4.992" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div class="nosql-diagram" id="nosql-diagram">
-                    <!-- Schema diagram will be dynamically rendered here -->
-                    <svg class="nosql-svg" id="nosql-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-                      <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                          <polygon points="0 0, 10 3, 0 6" fill="var(--border-strong)" />
-                        </marker>
-                      </defs>
-                      <!-- Background -->
-                      <rect width="1200" height="800" fill="transparent" />
-                      <!-- NoSQL collections will be dynamically added here -->
-                      <text x="600" y="400" text-anchor="middle" fill="var(--text-secondary)" font-size="16" id="nosql-empty-message" style="display: none;">
-                        No NoSQL collections available. Upload JSON data to create collections.
-                      </text>
-                    </svg>
+                  <div class="nosql-tiles-grid" id="nosql-tiles-grid">
+                    <!-- NoSQL database tiles will be dynamically loaded here -->
+                    <div id="nosql-empty" class="nosql-empty-state" style="display: none;">
+                      <p>No NoSQL databases available. Upload JSON data to create collections.</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -644,7 +617,7 @@
             <h2 id="quickAdd-panel-title" class="quick-add-panel-title">
               Add New Item
             </h2>
-            <p class="quick-add-subtitle">Paste link, query, or data snippet</p>
+            <p class="quick-add-subtitle">Add code, JSON, or text content to codefiles</p>
           </div>
           <button
             type="button"
@@ -691,7 +664,7 @@
               <textarea
                 id="quickAdd"
                 class="quick-add-textarea"
-                placeholder="Paste link, query, or data snippet..."
+                placeholder="Enter your code, JSON, or text content here..."
                 rows="12"
                 aria-label="Content input"
               ></textarea>
@@ -705,6 +678,29 @@
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- NoSQL Database Full-Screen Modal -->
+    <div id="nosql-modal" class="nosql-modal" style="display: none;">
+      <div class="nosql-modal-overlay" id="nosql-modal-overlay"></div>
+      <div class="nosql-modal-content">
+        <div class="nosql-modal-header">
+          <h2 id="nosql-modal-title" class="nosql-modal-title">NoSQL Database</h2>
+          <button type="button" class="nosql-modal-close" id="nosql-modal-close" aria-label="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="nosql-modal-body">
+          <div class="nosql-modal-info" id="nosql-modal-info">
+            <!-- Database info will be dynamically loaded -->
+          </div>
+          <div class="nosql-modal-data" id="nosql-modal-data">
+            <!-- Database data will be dynamically loaded -->
+          </div>
         </div>
       </div>
     </div>

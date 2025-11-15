@@ -623,8 +623,6 @@ function initSidebarNavigation() {
         // Load SQL and NoSQL data
         loadSQLTables();
         loadNoSQLCollections();
-        // Update diagram colors
-        setTimeout(updateNosqlDiagramColors, 100);
       }
 
       showToast(
@@ -1979,39 +1977,27 @@ async function loadSQLTables() {
 
 // Load NoSQL collections and create tiles
 async function loadNoSQLCollections() {
-  const nosqlDiagram = document.getElementById("nosql-diagram");
-  if (!nosqlDiagram) return;
+  const nosqlTilesGrid = document.getElementById("nosql-tiles-grid");
+  if (!nosqlTilesGrid) return;
 
   try {
-    const svg = nosqlDiagram.querySelector(".nosql-svg");
-    if (!svg) return;
-
-    // Get or create transform group
-    let transformGroup = svg.querySelector("g.nosql-transform-group");
-    if (!transformGroup) {
-      transformGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      transformGroup.classList.add("nosql-transform-group");
-      svg.appendChild(transformGroup);
-    }
-
-    // Clear existing collection tiles
-    const existingTiles = transformGroup.querySelectorAll(".nosql-collection-tile");
+    const emptyState = document.getElementById("nosql-empty");
+    
+    // Clear existing tiles
+    const existingTiles = nosqlTilesGrid.querySelectorAll(".nosql-tile");
     existingTiles.forEach(tile => tile.remove());
     
-    const emptyMessage = document.getElementById("nosql-empty-message");
-    
     // Try to get JSON collections (NoSQL data)
-    // For now, we'll check if there's a json collection type
     try {
       const jsonFiles = await getFiles("json", "", { limit: 100 });
       const files = jsonFiles.files || jsonFiles || [];
       
       if (files.length === 0) {
-        if (emptyMessage) emptyMessage.style.display = "block";
+        if (emptyState) emptyState.style.display = "block";
         return;
       }
       
-      if (emptyMessage) emptyMessage.style.display = "none";
+      if (emptyState) emptyState.style.display = "none";
       
       // Group files by namespace/collection name to create different tiles
       const collectionsMap = new Map();
@@ -2024,14 +2010,6 @@ async function loadNoSQLCollections() {
       });
       
       // Create a tile for each collection/namespace
-      let xPos = 50;
-      let yPos = 50;
-      const tileWidth = 200;
-      const tileSpacing = 250;
-      const maxPerRow = 4;
-      let row = 0;
-      let col = 0;
-      
       collectionsMap.forEach((files, collectionName) => {
         // Analyze the first file to get schema
         const firstFile = files[0];
@@ -2052,39 +2030,29 @@ async function loadNoSQLCollections() {
           console.warn("Could not parse schema for", collectionName, e);
         }
         
-        // Calculate position
-        xPos = 50 + (col % maxPerRow) * tileSpacing;
-        yPos = 50 + Math.floor(col / maxPerRow) * tileSpacing;
-        col++;
-        
         // Create collection tile
-        const tile = createNoSQLCollectionTile(collectionName, schema, xPos, yPos, tileWidth);
-        transformGroup.appendChild(tile);
+        const tile = createNoSQLCollectionTile(collectionName, schema, files);
+        nosqlTilesGrid.appendChild(tile);
       });
-      
-      // Update transform if zoom/pan is initialized
-      if (typeof updateNosqlTransform === 'function') {
-        updateNosqlTransform();
-      }
       
     } catch (error) {
       console.warn("Could not load NoSQL collections:", error);
-      if (emptyMessage) emptyMessage.style.display = "block";
+      if (emptyState) emptyState.style.display = "block";
     }
     
   } catch (error) {
     console.error("Error loading NoSQL collections:", error);
-    const emptyMessage = document.getElementById("nosql-empty-message");
-    if (emptyMessage) emptyMessage.style.display = "block";
+    const emptyState = document.getElementById("nosql-empty");
+    if (emptyState) emptyState.style.display = "block";
   }
 }
 
-// Create a NoSQL collection tile
-function createNoSQLCollectionTile(collectionName, schema, x, y, width) {
-  const ns = "http://www.w3.org/2000/svg";
-  const g = document.createElementNS(ns, "g");
-  g.classList.add("nosql-collection-tile");
-  g.setAttribute("transform", `translate(${x}, ${y})`);
+// Create a NoSQL collection tile (HTML element)
+function createNoSQLCollectionTile(collectionName, schema, files) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "nosql-tile";
+  tile.dataset.collectionName = collectionName;
   
   // Get schema fields
   const fields = [];
@@ -2099,65 +2067,168 @@ function createNoSQLCollectionTile(collectionName, schema, x, y, width) {
     });
   }
   
-  const height = 40 + (fields.length * 20) + 20;
-  const headerHeight = 32;
+  const fileCount = files.length;
+  const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
+  const formattedSize = formatFileSize(totalSize);
   
-  // Create box
-  const box = document.createElementNS(ns, "rect");
-  box.setAttribute("x", "0");
-  box.setAttribute("y", "0");
-  box.setAttribute("width", width);
-  box.setAttribute("height", height);
-  box.setAttribute("rx", "8");
-  box.setAttribute("fill", "var(--surface)");
-  box.setAttribute("stroke", "var(--border)");
-  box.setAttribute("stroke-width", "2");
-  box.setAttribute("class", "collection-box");
-  g.appendChild(box);
+  tile.innerHTML = `
+    <div class="nosql-tile-header">
+      <h3 class="nosql-tile-title">${escapeHtml(collectionName || "collection")}</h3>
+    </div>
+    <div class="nosql-tile-body">
+      <div class="nosql-tile-stats">
+        <span class="nosql-tile-stat">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+          </svg>
+          ${fileCount} document${fileCount !== 1 ? "s" : ""}
+        </span>
+        <span class="nosql-tile-stat">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+          </svg>
+          ${formattedSize}
+        </span>
+      </div>
+      <div class="nosql-tile-fields">
+        ${fields.slice(0, 5).map(field => `
+          <div class="nosql-tile-field">
+            <span class="nosql-field-name">${escapeHtml(field.name)}</span>
+            <span class="nosql-field-type">${escapeHtml(field.type)}</span>
+          </div>
+        `).join("")}
+        ${fields.length > 5 ? `<div class="nosql-tile-field-more">+${fields.length - 5} more fields</div>` : ""}
+      </div>
+    </div>
+  `;
   
-  // Create header
-  const header = document.createElementNS(ns, "rect");
-  header.setAttribute("x", "0");
-  header.setAttribute("y", "0");
-  header.setAttribute("width", width);
-  header.setAttribute("height", headerHeight);
-  header.setAttribute("rx", "8");
-  header.setAttribute("fill", "var(--accent)");
-  header.setAttribute("class", "collection-box");
-  g.appendChild(header);
-  
-  // Collection name
-  const nameText = document.createElementNS(ns, "text");
-  nameText.setAttribute("x", "10");
-  nameText.setAttribute("y", "20");
-  nameText.setAttribute("fill", "white");
-  nameText.setAttribute("font-size", "14");
-  nameText.setAttribute("font-weight", "600");
-  nameText.textContent = collectionName || "collection";
-  g.appendChild(nameText);
-  
-  // Fields
-  fields.slice(0, 10).forEach((field, index) => {
-    const fieldText = document.createElementNS(ns, "text");
-    fieldText.setAttribute("x", "10");
-    fieldText.setAttribute("y", String(headerHeight + 20 + (index * 20)));
-    fieldText.setAttribute("fill", "var(--text-primary)");
-    fieldText.setAttribute("font-size", "12");
-    fieldText.textContent = `${field.name} (${field.type})`;
-    g.appendChild(fieldText);
+  // Add click handler to open modal
+  tile.addEventListener("click", () => {
+    openNoSQLModal(collectionName, schema, files);
   });
   
-  if (fields.length > 10) {
-    const moreText = document.createElementNS(ns, "text");
-    moreText.setAttribute("x", "10");
-    moreText.setAttribute("y", String(headerHeight + 20 + (10 * 20)));
-    moreText.setAttribute("fill", "var(--text-secondary)");
-    moreText.setAttribute("font-size", "11");
-    moreText.textContent = `... and ${fields.length - 10} more`;
-    g.appendChild(moreText);
+  return tile;
+}
+
+// Open NoSQL database modal
+function openNoSQLModal(collectionName, schema, files) {
+  const modal = document.getElementById("nosql-modal");
+  const overlay = document.getElementById("nosql-modal-overlay");
+  const closeBtn = document.getElementById("nosql-modal-close");
+  const title = document.getElementById("nosql-modal-title");
+  const info = document.getElementById("nosql-modal-info");
+  const data = document.getElementById("nosql-modal-data");
+  
+  if (!modal || !title || !info || !data) return;
+  
+  // Set title
+  title.textContent = collectionName || "NoSQL Database";
+  
+  // Get schema fields
+  const fields = [];
+  if (schema && typeof schema === 'object') {
+    Object.keys(schema).forEach(key => {
+      const value = schema[key];
+      let type = typeof value;
+      if (Array.isArray(value)) type = "array";
+      else if (value === null) type = "null";
+      else if (typeof value === 'object') type = "object";
+      fields.push({ name: key, type, sample: value });
+    });
   }
   
-  return g;
+  const fileCount = files.length;
+  const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
+  const formattedSize = formatFileSize(totalSize);
+  
+  // Set info
+  info.innerHTML = `
+    <div class="nosql-modal-stat">
+      <span class="nosql-modal-stat-label">Documents</span>
+      <span class="nosql-modal-stat-value">${fileCount}</span>
+    </div>
+    <div class="nosql-modal-stat">
+      <span class="nosql-modal-stat-label">Total Size</span>
+      <span class="nosql-modal-stat-value">${formattedSize}</span>
+    </div>
+    <div class="nosql-modal-stat">
+      <span class="nosql-modal-stat-label">Fields</span>
+      <span class="nosql-modal-stat-value">${fields.length}</span>
+    </div>
+  `;
+  
+  // Set data - show schema and sample documents
+  data.innerHTML = `
+    <div class="nosql-modal-schema">
+      <h3>Schema</h3>
+      <div class="nosql-schema-fields">
+        ${fields.map(field => `
+          <div class="nosql-schema-field">
+            <span class="nosql-schema-field-name">${escapeHtml(field.name)}</span>
+            <span class="nosql-schema-field-type">${escapeHtml(field.type)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <div class="nosql-modal-documents">
+      <h3>Sample Documents</h3>
+      <div class="nosql-documents-list">
+        ${files.slice(0, 10).map((file, index) => {
+          let content = {};
+          try {
+            if (file.content) {
+              content = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
+            } else if (file.data) {
+              content = typeof file.data === 'string' ? JSON.parse(file.data) : file.data;
+            }
+          } catch (e) {
+            content = { error: "Could not parse" };
+          }
+          return `
+            <div class="nosql-document-item">
+              <div class="nosql-document-header">
+                <span class="nosql-document-index">Document ${index + 1}</span>
+                ${file.name ? `<span class="nosql-document-name">${escapeHtml(file.name)}</span>` : ""}
+              </div>
+              <pre class="nosql-document-content">${escapeHtml(JSON.stringify(content, null, 2))}</pre>
+            </div>
+          `;
+        }).join("")}
+        ${files.length > 10 ? `<div class="nosql-documents-more">... and ${files.length - 10} more documents</div>` : ""}
+      </div>
+    </div>
+  `;
+  
+  // Show modal
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  
+  // Close handlers - remove existing listeners first
+  const closeModal = () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "";
+  };
+  
+  // Remove old listeners by cloning elements
+  if (closeBtn) {
+    const newCloseBtn = closeBtn.cloneNode(true);
+    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+    newCloseBtn.addEventListener("click", closeModal);
+  }
+  if (overlay) {
+    const newOverlay = overlay.cloneNode(true);
+    overlay.parentNode.replaceChild(newOverlay, overlay);
+    newOverlay.addEventListener("click", closeModal);
+  }
+  
+  // Close on Escape key
+  const escapeHandler = (e) => {
+    if (e.key === "Escape" && modal.style.display === "flex") {
+      closeModal();
+      document.removeEventListener("keydown", escapeHandler);
+    }
+  };
+  document.addEventListener("keydown", escapeHandler);
 }
 
 // Initialize data tabs (SQL/NoSQL)
@@ -2214,10 +2285,6 @@ function initDataTabs() {
         nosqlSection.style.display = "flex";
         // Load NoSQL collections when switching to NoSQL tab
         loadNoSQLCollections();
-        // Update diagram colors when switching to NoSQL tab
-        setTimeout(updateNosqlDiagramColors, 100);
-        // Initialize zoom and pan when switching to NoSQL tab
-        setTimeout(initNosqlZoomPan, 100);
       }
     });
   });
