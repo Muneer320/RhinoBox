@@ -14,7 +14,7 @@ import (
 // handleAsyncIngest queues a unified ingest job for async processing
 func (s *Server) handleAsyncIngest(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max
-		httpError(w, http.StatusBadRequest, "invalid multipart form")
+		httpError(w, r, http.StatusBadRequest, "invalid multipart form")
 		return
 	}
 
@@ -38,7 +38,7 @@ func (s *Server) handleAsyncIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(items) == 0 {
-		httpError(w, http.StatusBadRequest, "no files provided")
+		httpError(w, r, http.StatusBadRequest, "no files provided")
 		return
 	}
 
@@ -53,12 +53,12 @@ func (s *Server) handleAsyncIngest(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue job
 	if err := s.jobQueue.Enqueue(job); err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
+		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
 		return
 	}
 
 	// Return job ID immediately
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	writeJSON(w, r, http.StatusAccepted, map[string]interface{}{
 		"job_id":           job.ID,
 		"status":           string(job.Status),
 		"total_items":      len(items),
@@ -70,7 +70,7 @@ func (s *Server) handleAsyncIngest(w http.ResponseWriter, r *http.Request) {
 // handleMediaIngestAsync queues media files for async processing
 func (s *Server) handleMediaIngestAsync(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(512 << 20); err != nil { // 512MB max for large batches
-		httpError(w, http.StatusBadRequest, "invalid multipart form")
+		httpError(w, r, http.StatusBadRequest, "invalid multipart form")
 		return
 	}
 
@@ -96,7 +96,7 @@ func (s *Server) handleMediaIngestAsync(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if len(items) == 0 {
-		httpError(w, http.StatusBadRequest, "no files provided")
+		httpError(w, r, http.StatusBadRequest, "no files provided")
 		return
 	}
 
@@ -108,11 +108,11 @@ func (s *Server) handleMediaIngestAsync(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := s.jobQueue.Enqueue(job); err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
+		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	writeJSON(w, r, http.StatusAccepted, map[string]interface{}{
 		"job_id":           job.ID,
 		"status":           string(job.Status),
 		"total_items":      len(items),
@@ -130,12 +130,12 @@ func (s *Server) handleJSONIngestAsync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		httpError(w, http.StatusBadRequest, "invalid JSON payload")
+		httpError(w, r, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
 
 	if len(payload.Documents) == 0 {
-		httpError(w, http.StatusBadRequest, "no documents provided")
+		httpError(w, r, http.StatusBadRequest, "no documents provided")
 		return
 	}
 
@@ -158,11 +158,11 @@ func (s *Server) handleJSONIngestAsync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.jobQueue.Enqueue(job); err != nil {
-		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
+		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to queue job: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+	writeJSON(w, r, http.StatusAccepted, map[string]interface{}{
 		"job_id":           job.ID,
 		"status":           string(job.Status),
 		"total_items":      len(items),
@@ -177,7 +177,7 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 
 	job, found := s.jobQueue.Get(jobID)
 	if !found {
-		httpError(w, http.StatusNotFound, "job not found")
+		httpError(w, r, http.StatusNotFound, "job not found")
 		return
 	}
 
@@ -208,7 +208,7 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		response["progress_pct"] = float64(job.Progress) / float64(job.Total) * 100
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, r, http.StatusOK, response)
 }
 
 // handleJobResult returns the detailed result of a completed job
@@ -220,20 +220,20 @@ func (s *Server) handleJobResult(w http.ResponseWriter, r *http.Request) {
 		// Try getting job status instead
 		job, jobFound := s.jobQueue.Get(jobID)
 		if !jobFound {
-			httpError(w, http.StatusNotFound, "job not found")
+			httpError(w, r, http.StatusNotFound, "job not found")
 			return
 		}
 
 		if job.Status != queue.StatusCompleted && job.Status != queue.StatusFailed {
-			httpError(w, http.StatusConflict, fmt.Sprintf("job not completed yet (status: %s)", job.Status))
+			httpError(w, r, http.StatusConflict, fmt.Sprintf("job not completed yet (status: %s)", job.Status))
 			return
 		}
 
-		httpError(w, http.StatusNotFound, "job result not available")
+		httpError(w, r, http.StatusNotFound, "job result not available")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, r, http.StatusOK, result)
 }
 
 // handleListJobs returns all active and recent jobs
@@ -270,7 +270,7 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, r, http.StatusOK, map[string]interface{}{
 		"jobs":  response,
 		"count": len(response),
 	})
@@ -282,18 +282,18 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 
 	job, found := s.jobQueue.Get(jobID)
 	if !found {
-		httpError(w, http.StatusNotFound, "job not found")
+		httpError(w, r, http.StatusNotFound, "job not found")
 		return
 	}
 
 	if job.Status == queue.StatusCompleted || job.Status == queue.StatusFailed {
-		httpError(w, http.StatusConflict, "cannot cancel completed job")
+		httpError(w, r, http.StatusConflict, "cannot cancel completed job")
 		return
 	}
 
 	// TODO: Implement actual cancellation logic
 	// For now, just return the current status
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, r, http.StatusOK, map[string]interface{}{
 		"job_id":  job.ID,
 		"status":  string(job.Status),
 		"message": "cancellation not yet implemented",
@@ -303,5 +303,5 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 // handleJobStats returns queue statistics
 func (s *Server) handleJobStats(w http.ResponseWriter, r *http.Request) {
 	stats := s.jobQueue.Stats()
-	writeJSON(w, http.StatusOK, stats)
+	writeJSON(w, r, http.StatusOK, stats)
 }
