@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,7 @@ func (s *Server) routes() {
 	r.Post("/ingest", s.handleUnifiedIngest)
 	r.Post("/ingest/media", s.handleMediaIngest)
 	r.Post("/ingest/json", s.handleJSONIngest)
+	r.Get("/files/search", s.handleFileSearch)
 }
 
 // Router exposes the HTTP router for testing.
@@ -375,6 +377,81 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(payload)
+}
+
+func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	query := storage.SearchQuery{
+		Name:      q.Get("name"),
+		Extension: q.Get("extension"),
+		Category:  q.Get("category"),
+		MimeType:  q.Get("mime_type"),
+		Hash:      q.Get("hash"),
+		SortBy:    q.Get("sort"),
+		SortOrder: q.Get("order"),
+	}
+
+	// Parse size filters
+	if minSize := q.Get("min_size"); minSize != "" {
+		if val, err := strconv.ParseInt(minSize, 10, 64); err == nil && val > 0 {
+			query.MinSize = val
+		}
+	}
+	if maxSize := q.Get("max_size"); maxSize != "" {
+		if val, err := strconv.ParseInt(maxSize, 10, 64); err == nil && val > 0 {
+			query.MaxSize = val
+		}
+	}
+
+	// Parse date filters
+	if dateFrom := q.Get("date_from"); dateFrom != "" {
+		if t, err := time.Parse(time.RFC3339, dateFrom); err == nil {
+			query.DateFrom = t
+		} else if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+			query.DateFrom = t
+		}
+	}
+	if dateTo := q.Get("date_to"); dateTo != "" {
+		if t, err := time.Parse(time.RFC3339, dateTo); err == nil {
+			query.DateTo = t
+		} else if t, err := time.Parse("2006-01-02", dateTo); err == nil {
+			// Set to end of day
+			query.DateTo = t.Add(24*time.Hour - time.Second)
+		}
+	}
+
+	// Parse pagination
+	if limit := q.Get("limit"); limit != "" {
+		if val, err := strconv.Atoi(limit); err == nil && val > 0 {
+			query.Limit = val
+		}
+	}
+	if query.Limit == 0 {
+		query.Limit = 50 // Default limit
+	}
+	if offset := q.Get("offset"); offset != "" {
+		if val, err := strconv.Atoi(offset); err == nil && val >= 0 {
+			query.Offset = val
+		}
+	}
+
+	// Alternative pagination with page parameter
+	if page := q.Get("page"); page != "" {
+		if val, err := strconv.Atoi(page); err == nil && val > 0 {
+			query.Offset = (val - 1) * query.Limit
+		}
+	}
+
+	// Default sort order if not specified
+	if query.SortBy == "" {
+		query.SortBy = "date"
+		query.SortOrder = "desc"
+	}
+
+	result := s.storage.SearchFiles(query)
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func init() {

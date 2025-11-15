@@ -72,6 +72,11 @@ func (m *Manager) Root() string {
 	return m.root
 }
 
+// SearchFiles searches for files matching the given query.
+func (m *Manager) SearchFiles(query SearchQuery) *SearchResult {
+	return m.index.Search(query)
+}
+
 // StoreFile writes a file to the organized storage tree and records metadata for deduplication.
 func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {
