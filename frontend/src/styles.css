@@ -2622,7 +2622,6 @@ html[data-theme='dark'] .toast-warning {
   font-size: 14px;
 }
 
-<<<<<<< HEAD
 /* Upload Queue Styles */
 .upload-queue {
   position: fixed;
@@ -2992,7 +2991,6 @@ html[data-theme='dark'] .toast-warning {
   height: 18px;
   cursor: pointer;
   accent-color: var(--accent);
-=======
 /* Error state styling for existing error containers */
 .error-state {
   display: flex;
@@ -3009,7 +3007,6 @@ html[data-theme='dark'] .toast-warning {
   margin: 0;
   font-size: 14px;
   color: var(--text-secondary);
->>>>>>> origin/main
 
 /* About Modal Styles */
 .about-modal {
