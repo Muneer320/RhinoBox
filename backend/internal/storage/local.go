@@ -26,6 +26,7 @@ type Manager struct {
 	rulesMgr       *RoutingRulesManager
 	index          *MetadataIndex
 	versionIndex   *VersionIndex
+	notesIndex     *NotesIndex
 	hashIndex      *cache.HashIndex
 	referenceIndex *ReferenceIndex
 	mu             sync.Mutex
@@ -81,6 +82,11 @@ func NewManager(root string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize version index: %w", err)
 	}
 
+	notesIndex, err := NewNotesIndex(filepath.Join(root, "metadata", "notes.json"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize notes index: %w", err)
+	}
+
 	// Initialize cache for deduplication
 	cacheConfig := cache.DefaultConfig()
 	cacheConfig.L3Path = filepath.Join(root, "cache")
@@ -98,6 +104,7 @@ func NewManager(root string) (*Manager, error) {
 		rulesMgr:       rulesMgr,
 		index:          index,
 		versionIndex:   versionIndex,
+		notesIndex:     notesIndex,
 		hashIndex:      hashIndex,
 		referenceIndex: nil, // Lazily initialized when needed
 	}, nil
@@ -291,6 +298,66 @@ func (m *Manager) NextJSONBatchPath(engine, namespace string) string {
 	return filepath.ToSlash(filepath.Join("json", engine, slug, fmt.Sprintf("batch_%s.ndjson", ts)))
 }
 
+// StatisticsResult contains aggregated statistics about stored files.
+type StatisticsResult struct {
+	TotalFiles   int64  `json:"total_files"`
+	StorageUsed  int64  `json:"storage_used_bytes"`
+	StorageUsedFormatted string `json:"storage_used"`
+	CollectionCount int `json:"collection_count"`
+	Collections map[string]int64 `json:"collections"`
+}
+
+// GetStatistics calculates and returns dashboard statistics.
+func (m *Manager) GetStatistics() (*StatisticsResult, error) {
+	m.mu.Lock()
+	allMetadata := m.index.GetAllMetadata()
+	m.mu.Unlock()
+
+	var totalFiles int64
+	var totalStorage int64
+	collectionMap := make(map[string]int64)
+	collectionSet := make(map[string]bool)
+
+	for _, meta := range allMetadata {
+		totalFiles++
+		totalStorage += meta.Size
+
+		// Extract collection/category from category path
+		// Category format is like "images/jpg" or "documents/pdf"
+		categoryParts := strings.Split(meta.Category, "/")
+		if len(categoryParts) > 0 {
+			collection := categoryParts[0]
+			collectionSet[collection] = true
+			collectionMap[collection]++
+		}
+	}
+
+	// Format storage size
+	storageFormatted := formatBytes(totalStorage)
+
+	return &StatisticsResult{
+		TotalFiles:          totalFiles,
+		StorageUsed:         totalStorage,
+		StorageUsedFormatted: storageFormatted,
+		CollectionCount:    len(collectionSet),
+		Collections:        collectionMap,
+	}, nil
+}
+
+// formatBytes converts bytes to human-readable format.
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
 var invalidChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 func sanitize(input string) string {
@@ -473,4 +540,78 @@ func (m *Manager) RevertVersion(fileID string, versionNumber int, comment string
 // GetVersionDiff returns differences between two versions
 func (m *Manager) GetVersionDiff(fileID string, fromVersion, toVersion int) (map[string]any, error) {
 	return m.versionIndex.GetVersionDiff(fileID, fromVersion, toVersion)
+}
+
+// Notes operations
+
+// GetNotes returns all notes for a file.
+func (m *Manager) GetNotes(fileID string) ([]Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.GetNotes(fileID), nil
+}
+
+// AddNote adds a new note to a file.
+func (m *Manager) AddNote(fileID, text, author string) (*Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.AddNote(fileID, text, author)
+}
+
+// UpdateNote updates an existing note.
+func (m *Manager) UpdateNote(fileID, noteID, text string) (*Note, error) {
+	if fileID == "" {
+		return nil, errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.UpdateNote(fileID, noteID, text)
+}
+
+// DeleteNote removes a note.
+func (m *Manager) DeleteNote(fileID, noteID string) error {
+	if fileID == "" {
+		return errors.New("file_id is required")
+	}
+
+	// Verify file exists
+	m.mu.Lock()
+	metadata := m.index.FindByHash(fileID)
+	m.mu.Unlock()
+
+	if metadata == nil {
+		return fmt.Errorf("%w: file not found", ErrFileNotFound)
+	}
+
+	return m.notesIndex.DeleteNote(fileID, noteID)
 }

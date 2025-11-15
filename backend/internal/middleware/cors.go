@@ -47,6 +47,8 @@ func (c *CORSMiddleware) Handler(next http.Handler) http.Handler {
 			if c.config.CORSAllowCreds {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
+			// Set exposed headers on actual responses (not just preflight)
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type, X-Request-ID")
 		}
 
 		// Continue with the request
@@ -108,14 +110,13 @@ func (c *CORSMiddleware) getAllowedOrigin(origin string) string {
 	for _, allowed := range c.config.CORSOrigins {
 		if allowed == "*" {
 			// Wildcard allows all origins, but credentials can't be used with wildcard
+			// Never reflect arbitrary origins when credentials are enabled (security issue)
 			if !c.config.CORSAllowCreds {
 				return "*"
 			}
-			// If credentials are required, return the actual origin
-			if origin != "" {
-				return origin
-			}
-			return "*"
+			// If credentials are enabled, we should never reach here due to config validation,
+			// but as a safety measure, return empty string to reject the request
+			return ""
 		}
 		if allowed == origin {
 			return origin

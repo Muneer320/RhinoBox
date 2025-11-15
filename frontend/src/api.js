@@ -4,13 +4,13 @@
  */
 
 // API Configuration
-const API_CONFIG = {
-  baseURL: 'http://localhost:8090', // RhinoBox backend URL - change this to your backend URL
+export const API_CONFIG = {
+  baseURL: "http://localhost:8090", // RhinoBox backend URL - change this to your backend URL
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
-  }
-}
+    "Content-Type": "application/json",
+  },
+};
 
 // Get auth token from localStorage or session
 function getAuthToken() {
@@ -54,19 +54,39 @@ async function apiRequest(endpoint, options = {}) {
     clearTimeout(timeoutId)
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      throw new Error(error.message || `HTTP error! status: ${response.status}`)
+      let errorMessage = `HTTP error! status: ${response.status}`
+      let errorData = null
+      
+      try {
+        errorData = await response.json()
+        errorMessage = errorData.message || errorData.error || errorMessage
+      } catch {
+        // If response is not JSON, use status text
+        errorMessage = response.statusText || errorMessage
+      }
+      
+      // Create error with status code for better handling
+      const error = new Error(errorMessage)
+      error.status = response.status
+      error.statusText = response.statusText
+      error.data = errorData
+      throw error
     }
 
     return await response.json()
   } catch (error) {
     clearTimeout(timeoutId)
+    
+    // Handle timeout errors
     if (error.name === 'AbortError') {
       console.error('API Request Timeout:', endpoint)
-      throw new Error('Request timeout. Please try again.')
+      const timeoutError = new Error('Request timeout. Please try again.')
+      timeoutError.name = 'AbortError'
+      timeoutError.type = 'timeout'
+      throw timeoutError
     }
     
-    // Provide more helpful error messages
+    // Handle network errors
     if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
       console.error('API Request Failed:', {
         endpoint,
@@ -79,7 +99,15 @@ async function apiRequest(endpoint, options = {}) {
           'Incorrect backend URL'
         ]
       })
-      throw new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
+      const networkError = new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
+      networkError.name = 'NetworkError'
+      networkError.type = 'network'
+      throw networkError
+    }
+    
+    // Re-throw if already has status (HTTP error)
+    if (error.status) {
+      throw error
     }
     
     console.error('API Request Error:', error)
@@ -218,29 +246,164 @@ export async function getFiles(type, category = '', params = {}) {
 
 /**
  * Get a single file by ID
- * Note: This endpoint may not exist in the backend yet
  * @param {string} fileId - File ID
  */
 export async function getFile(fileId) {
   return apiRequest(`/files/${fileId}`, {
-    method: 'GET',
-  })
+    method: "GET",
+  });
 }
 
 /**
- * Search files
- * Note: This endpoint may not exist in the backend yet
- * @param {string} query - Search query
- * @param {object} filters - Additional filters
+ * Get file metadata by hash
+ * @param {string} hash - File hash
+ * @returns {Promise<Object>} File metadata object
+ */
+export async function getFileMetadata(hash) {
+  if (!hash) {
+    throw new Error("Hash is required to fetch file metadata");
+  }
+  return apiRequest(`/files/metadata?hash=${encodeURIComponent(hash)}`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Search files by name
+ * @param {string} query - Search query (file name)
+ * @param {object} filters - Additional filters (not currently used by backend)
  */
 export async function searchFiles(query, filters = {}) {
-  return apiRequest('/files/search', {
-    method: 'POST',
-    body: JSON.stringify({ query, ...filters }),
-  })
+  const params = new URLSearchParams({ name: query });
+  return apiRequest(`/files/search?${params.toString()}`, {
+    method: "GET",
+  });
 }
 
 // ==================== File Management API ====================
+
+/**
+ * Download a file using the backend download endpoint
+ * Supports multiple methods: hash (preferred), path, or file ID
+ * @param {string} hash - File hash (preferred method)
+ * @param {string} path - File path (fallback if hash not available)
+ * @param {string} fileId - File ID (will fetch metadata to get hash)
+ * @param {string} fileName - File name for download
+ * @param {Function} onProgress - Optional progress callback (bytesLoaded, bytesTotal)
+ * @param {string} method - Download method: 'blob' (default) or 'direct'
+ * @returns {Promise<Blob|string>} - File blob for download or direct download URL
+ */
+export async function downloadFile(hash, path, fileId, fileName = 'download', onProgress = null, method = 'blob') {
+  // If fileId is provided but no hash, fetch file metadata first
+  if (fileId && !hash && !path) {
+    try {
+      const fileMetadata = await getFile(fileId)
+      hash = fileMetadata.hash || fileMetadata.fileHash
+      path = fileMetadata.path || fileMetadata.storedPath || fileMetadata.stored_path
+      
+      if (!hash && !path) {
+        throw new Error('File metadata does not contain hash or path')
+      }
+      
+      // Use fileName from metadata if not provided
+      if (!fileName || fileName === 'download') {
+        fileName = fileMetadata.name || fileMetadata.original_name || fileMetadata.originalName || 'download'
+      }
+    } catch (error) {
+      throw new Error(`Failed to fetch file metadata: ${error.message}`)
+    }
+  }
+  
+  const queryParams = new URLSearchParams()
+  
+  if (hash) {
+    queryParams.append('hash', hash)
+  } else if (path) {
+    queryParams.append('path', path)
+  } else {
+    throw new Error('Either hash, path, or fileId must be provided for download')
+  }
+  
+  const endpoint = `/files/download?${queryParams.toString()}`
+  const url = `${API_CONFIG.baseURL}${endpoint}`
+  
+  // For direct download, return the URL
+  if (method === 'direct') {
+    const headers = getHeaders()
+    const authToken = headers['Authorization']
+    // Return URL with auth token if available (for same-origin requests)
+    // Note: For cross-origin, token should be in header, not URL
+    return url
+  }
+  
+  // Use fetch directly for blob response (not JSON)
+  const headers = getHeaders()
+  // Remove Content-Type for download requests
+  delete headers['Content-Type']
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: headers,
+  })
+  
+  if (!response.ok) {
+    let errorMessage = `Download failed with status: ${response.status}`
+    try {
+      const errorData = await response.json()
+      errorMessage = errorData.message || errorData.error || errorMessage
+    } catch {
+      // If response is not JSON, use status text
+      errorMessage = response.statusText || errorMessage
+    }
+    
+    const error = new Error(errorMessage)
+    error.status = response.status
+    error.statusText = response.statusText
+    throw error
+  }
+  
+  // Handle progress tracking if callback provided
+  if (onProgress && typeof onProgress === 'function') {
+    const contentLength = response.headers.get('Content-Length')
+    const total = contentLength ? parseInt(contentLength, 10) : null
+    
+    if (!response.body) {
+      // Fallback: read entire blob if streaming not supported
+      const blob = await response.blob()
+      onProgress(blob.size, blob.size)
+      return blob
+    }
+    
+    const reader = response.body.getReader()
+    const chunks = []
+    let loaded = 0
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      
+      if (done) {
+        break
+      }
+      
+      chunks.push(value)
+      loaded += value.length
+      
+      // Call progress callback
+      if (total) {
+        onProgress(loaded, total)
+      } else {
+        onProgress(loaded, null)
+      }
+    }
+    
+    // Combine chunks into blob
+    const blob = new Blob(chunks)
+    return blob
+  }
+  
+  // Standard blob download without progress
+  return await response.blob()
+}
 
 /**
  * Delete a file

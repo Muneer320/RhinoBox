@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -79,6 +80,26 @@ func LoadSecurityConfig() SecurityConfig {
 		// IP filtering defaults
 		IPWhitelistEnabled: getBoolEnv("RHINOBOX_IP_WHITELIST_ENABLED", false),
 		IPBlacklistEnabled: getBoolEnv("RHINOBOX_IP_BLACKLIST_ENABLED", false),
+	}
+
+	// Security validation: CORS wildcard with credentials is insecure
+	// Check if CORSOrigins contains "*" and CORSAllowCreds is true
+	hasWildcard := false
+	for _, origin := range cfg.CORSOrigins {
+		if origin == "*" {
+			hasWildcard = true
+			break
+		}
+	}
+
+	if hasWildcard && cfg.CORSAllowCreds {
+		// Option (a): Automatically disable credentials and log warning
+		// Using slog.Default() since we don't have a logger passed in
+		slog.Warn("CORS security: wildcard origin '*' with credentials enabled is insecure. Disabling credentials.",
+			"cors_origins", cfg.CORSOrigins,
+			"cors_allow_creds", cfg.CORSAllowCreds,
+		)
+		cfg.CORSAllowCreds = false
 	}
 
 	// Parse IP whitelist

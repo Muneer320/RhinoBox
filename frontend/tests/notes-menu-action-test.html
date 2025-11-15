@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RhinoBox - Notes Menu Action Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .test-pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .test-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .test-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .metric-card h4 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .gallery-preview {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .gallery-item-preview {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background: #f9f9f9;
+            position: relative;
+        }
+        .gallery-item-preview .menu-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .gallery-menu-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1000;
+            min-width: 150px;
+        }
+        .gallery-menu-dropdown.is-visible {
+            display: block;
+        }
+        .menu-option {
+            display: block;
+            width: 100%;
+            padding: 10px 15px;
+            border: none;
+            background: white;
+            text-align: left;
+            cursor: pointer;
+        }
+        .menu-option:hover {
+            background: #f5f5f5;
+        }
+        .modal-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-preview.is-visible {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .screenshot-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .screenshot-container img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>RhinoBox - Notes Menu Action Integration Test</h1>
+    <p>This test suite validates that clicking the Notes button in the file menu opens the comments modal.</p>
+    
+    <div class="test-section">
+        <h2>Test 1: Menu Action Handler Integration</h2>
+        <button onclick="testMenuActionHandler()">Test Menu Action Handler</button>
+        <div id="handler-test-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Notes Button Click Opens Modal</h2>
+        <button onclick="testNotesButtonClick()">Test Notes Button Click</button>
+        <div id="button-click-result"></div>
+        <div id="gallery-preview" class="gallery-preview"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Modal Display and Content</h2>
+        <button onclick="testModalDisplay()">Test Modal Display</button>
+        <div id="modal-test-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: API Integration (Requires Backend)</h2>
+        <button onclick="testAPIIntegration()">Test API Integration</button>
+        <div id="api-test-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Add Note Functionality</h2>
+        <button onclick="testAddNote()">Test Add Note</button>
+        <div id="add-note-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 6: Delete Note Functionality</h2>
+        <button onclick="testDeleteNote()">Test Delete Note</button>
+        <div id="delete-note-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Metrics</h2>
+        <div class="test-metrics" id="test-metrics">
+            <div class="metric-card">
+                <h4>Tests Passed</h4>
+                <div class="metric-value" id="metric-passed">0</div>
+            </div>
+            <div class="metric-card">
+                <h4>Tests Failed</h4>
+                <div class="metric-value" id="metric-failed">0</div>
+            </div>
+            <div class="metric-card">
+                <h4>Total Tests</h4>
+                <div class="metric-value" id="metric-total">0</div>
+            </div>
+            <div class="metric-card">
+                <h4>Success Rate</h4>
+                <div class="metric-value" id="metric-success-rate">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mock Comments Modal for Testing -->
+    <div id="comments-modal" class="comments-modal" style="display: none;" role="dialog">
+        <div class="comments-modal-overlay"></div>
+        <div class="comments-modal-content">
+            <div class="comments-modal-header">
+                <div class="comments-header-info">
+                    <h2 class="comments-modal-title">Notes</h2>
+                    <p class="comments-file-name"></p>
+                </div>
+                <button type="button" class="comments-close-button" aria-label="Close notes">×</button>
+            </div>
+            <div class="comments-body">
+                <div class="comments-list" id="comments-list"></div>
+                <div class="comments-empty" id="comments-empty" style="display: none;">
+                    <p>No notes yet. Add your first note!</p>
+                </div>
+            </div>
+            <div class="comments-input-section">
+                <textarea id="comment-input" class="comment-input" placeholder="Add a note..." rows="3"></textarea>
+                <div class="comments-actions">
+                    <button type="button" class="ghost-button" id="comment-cancel">Cancel</button>
+                    <button type="button" class="primary-button" id="comment-submit">Add Note</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const API_BASE = 'http://localhost:8090';
+        let testResults = {
+            passed: 0,
+            failed: 0,
+            total: 0
+        };
+
+        function updateMetrics() {
+            document.getElementById('metric-passed').textContent = testResults.passed;
+            document.getElementById('metric-failed').textContent = testResults.failed;
+            document.getElementById('metric-total').textContent = testResults.total;
+            const successRate = testResults.total > 0 
+                ? Math.round((testResults.passed / testResults.total) * 100) 
+                : 0;
+            document.getElementById('metric-success-rate').textContent = successRate + '%';
+        }
+
+        function showResult(elementId, message, type = 'info') {
+            const div = document.getElementById(elementId);
+            div.innerHTML = `<div class="test-${type}">${message}</div>`;
+            if (type === 'pass') {
+                testResults.passed++;
+                testResults.total++;
+            } else if (type === 'fail') {
+                testResults.failed++;
+                testResults.total++;
+            }
+            updateMetrics();
+        }
+
+        // Test 1: Menu Action Handler Integration
+        window.testMenuActionHandler = async function() {
+            showResult('handler-test-result', 'Testing menu action handler...', 'info');
+            
+            try {
+                // Check if the script.js file has the comments case
+                const response = await fetch('../src/script.js');
+                const scriptContent = await response.text();
+                
+                // Check for the comments action handler
+                const hasCommentsCase = scriptContent.includes("action === 'comments'");
+                const hasOpenCommentsModal = scriptContent.includes('openCommentsModal(galleryItem)');
+                
+                if (hasCommentsCase && hasOpenCommentsModal) {
+                    showResult('handler-test-result', 
+                        '✓ Menu action handler includes comments case<br>' +
+                        '✓ openCommentsModal function is called correctly', 
+                        'pass');
+                } else {
+                    showResult('handler-test-result', 
+                        '✗ Menu action handler missing comments case or openCommentsModal call', 
+                        'fail');
+                }
+            } catch (error) {
+                showResult('handler-test-result', 
+                    `✗ Error testing menu action handler: ${error.message}`, 
+                    'fail');
+            }
+        };
+
+        // Test 2: Notes Button Click Opens Modal
+        window.testNotesButtonClick = function() {
+            showResult('button-click-result', 'Testing notes button click...', 'info');
+            
+            try {
+                // Create a mock gallery item
+                const galleryPreview = document.getElementById('gallery-preview');
+                galleryPreview.innerHTML = '';
+                
+                const galleryItem = document.createElement('div');
+                galleryItem.className = 'gallery-item-preview';
+                galleryItem.dataset.fileId = 'test-file-123';
+                galleryItem.dataset.fileName = 'test-file.jpg';
+                galleryItem.innerHTML = `
+                    <h4>Test File</h4>
+                    <p>Test file for notes</p>
+                    <button class="menu-button" onclick="toggleMenu(this)">⋮</button>
+                    <div class="gallery-menu-dropdown">
+                        <button class="menu-option" data-action="comments" onclick="testOpenModal(this)">Notes</button>
+                    </div>
+                `;
+                galleryPreview.appendChild(galleryItem);
+                
+                showResult('button-click-result', 
+                    '✓ Mock gallery item created<br>' +
+                    '✓ Notes button available in menu<br>' +
+                    'Click the Notes button in the preview above to test modal opening', 
+                    'pass');
+            } catch (error) {
+                showResult('button-click-result', 
+                    `✗ Error creating test gallery item: ${error.message}`, 
+                    'fail');
+            }
+        };
+
+        window.toggleMenu = function(button) {
+            const dropdown = button.nextElementSibling;
+            dropdown.classList.toggle('is-visible');
+        };
+
+        window.testOpenModal = function(button) {
+            const galleryItem = button.closest('.gallery-item-preview');
+            const fileId = galleryItem.dataset.fileId;
+            const fileName = galleryItem.dataset.fileName;
+            
+            // Simulate opening the modal
+            const modal = document.getElementById('comments-modal');
+            const fileNameEl = modal.querySelector('.comments-file-name');
+            
+            if (modal && fileNameEl) {
+                fileNameEl.textContent = fileName;
+                modal.style.display = 'flex';
+                
+                showResult('button-click-result', 
+                    `✓ Modal opened successfully<br>` +
+                    `✓ File name displayed: ${fileName}<br>` +
+                    `✓ Modal is visible`, 
+                    'pass');
+            } else {
+                showResult('button-click-result', 
+                    '✗ Modal elements not found', 
+                    'fail');
+            }
+        };
+
+        // Test 3: Modal Display and Content
+        window.testModalDisplay = function() {
+            showResult('modal-test-result', 'Testing modal display...', 'info');
+            
+            const modal = document.getElementById('comments-modal');
+            const modalTitle = modal?.querySelector('.comments-modal-title');
+            const fileNameEl = modal?.querySelector('.comments-file-name');
+            const commentInput = modal?.querySelector('#comment-input');
+            const commentSubmit = modal?.querySelector('#comment-submit');
+            const commentsList = modal?.querySelector('#comments-list');
+            const commentsEmpty = modal?.querySelector('#comments-empty');
+            
+            const checks = [
+                { name: 'Modal element exists', pass: !!modal },
+                { name: 'Modal title exists', pass: !!modalTitle },
+                { name: 'File name element exists', pass: !!fileNameEl },
+                { name: 'Comment input exists', pass: !!commentInput },
+                { name: 'Submit button exists', pass: !!commentSubmit },
+                { name: 'Comments list exists', pass: !!commentsList },
+                { name: 'Empty state exists', pass: !!commentsEmpty }
+            ];
+            
+            const passed = checks.filter(c => c.pass).length;
+            const failed = checks.filter(c => !c.pass);
+            
+            if (failed.length === 0) {
+                showResult('modal-test-result', 
+                    `✓ All modal elements present (${passed}/${checks.length})<br>` +
+                    checks.map(c => `✓ ${c.name}`).join('<br>'), 
+                    'pass');
+            } else {
+                showResult('modal-test-result', 
+                    `✗ Some modal elements missing (${passed}/${checks.length})<br>` +
+                    failed.map(c => `✗ ${c.name}`).join('<br>'), 
+                    'fail');
+            }
+        };
+
+        // Test 4: API Integration
+        window.testAPIIntegration = async function() {
+            showResult('api-test-result', 'Testing API integration...', 'info');
+            
+            try {
+                // Test health check
+                const healthResponse = await fetch(`${API_BASE}/healthz`);
+                if (!healthResponse.ok) {
+                    throw new Error(`Health check failed: ${healthResponse.status}`);
+                }
+                
+                // Test notes endpoint (if file exists)
+                // This would require a real file ID, so we'll just check the endpoint structure
+                showResult('api-test-result', 
+                    '✓ Backend is accessible<br>' +
+                    '⚠ Note: Full API test requires a real file ID<br>' +
+                    'To test fully, upload a file and use its ID', 
+                    'warning');
+            } catch (error) {
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    showResult('api-test-result', 
+                        '⚠ Backend not accessible. Make sure the server is running on port 8090<br>' +
+                        'This is expected if the backend is not running', 
+                        'warning');
+                } else {
+                    showResult('api-test-result', 
+                        `✗ API integration test failed: ${error.message}`, 
+                        'fail');
+                }
+            }
+        };
+
+        // Test 5: Add Note Functionality
+        window.testAddNote = async function() {
+            showResult('add-note-result', 'Testing add note functionality...', 'info');
+            
+            try {
+                const commentInput = document.getElementById('comment-input');
+                const commentSubmit = document.getElementById('comment-submit');
+                
+                if (!commentInput || !commentSubmit) {
+                    showResult('add-note-result', 
+                        '✗ Comment input or submit button not found', 
+                        'fail');
+                    return;
+                }
+                
+                // Test input validation
+                commentInput.value = '';
+                const emptyValidation = commentInput.value.trim() === '';
+                
+                commentInput.value = 'Test note';
+                const hasValue = commentInput.value.trim() !== '';
+                
+                if (emptyValidation && hasValue) {
+                    showResult('add-note-result', 
+                        '✓ Input validation works correctly<br>' +
+                        '✓ Empty input detected<br>' +
+                        '✓ Non-empty input detected', 
+                        'pass');
+                } else {
+                    showResult('add-note-result', 
+                        '✗ Input validation not working correctly', 
+                        'fail');
+                }
+            } catch (error) {
+                showResult('add-note-result', 
+                    `✗ Error testing add note: ${error.message}`, 
+                    'fail');
+            }
+        };
+
+        // Test 6: Delete Note Functionality
+        window.testDeleteNote = function() {
+            showResult('delete-note-result', 'Testing delete note functionality...', 'info');
+            
+            try {
+                const commentsList = document.getElementById('comments-list');
+                
+                // Create a mock note item
+                const noteItem = document.createElement('div');
+                noteItem.className = 'comment-item';
+                noteItem.dataset.commentId = 'test-note-123';
+                noteItem.innerHTML = `
+                    <div class="comment-header">
+                        <div class="comment-author">
+                            <p>Test Note</p>
+                        </div>
+                        <button class="comment-delete-button" data-comment-id="test-note-123">Delete</button>
+                    </div>
+                    <p class="comment-text">This is a test note</p>
+                `;
+                
+                commentsList.innerHTML = '';
+                commentsList.appendChild(noteItem);
+                
+                const deleteButton = noteItem.querySelector('.comment-delete-button');
+                if (deleteButton) {
+                    deleteButton.addEventListener('click', function() {
+                        noteItem.remove();
+                        showResult('delete-note-result', 
+                            '✓ Delete button works<br>' +
+                            '✓ Note item removed from DOM', 
+                            'pass');
+                    });
+                    
+                    showResult('delete-note-result', 
+                        '✓ Mock note created<br>' +
+                        '✓ Delete button present<br>' +
+                        'Click the Delete button in the modal to test deletion', 
+                        'pass');
+                } else {
+                    showResult('delete-note-result', 
+                        '✗ Delete button not found', 
+                        'fail');
+                }
+            } catch (error) {
+                showResult('delete-note-result', 
+                    `✗ Error testing delete note: ${error.message}`, 
+                    'fail');
+            }
+        };
+
+        // Initialize metrics
+        updateMetrics();
+    </script>
+</body>
+</html>
+

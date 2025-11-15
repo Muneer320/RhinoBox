@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
 )
@@ -24,7 +25,7 @@ func TestCORSMiddleware_Handler(t *testing.T) {
 				CORSOrigins:      []string{"*"},
 				CORSAllowMethods: []string{"GET", "POST"},
 				CORSAllowHeaders: []string{"Content-Type"},
-				CORSMaxAge:       3600,
+				CORSMaxAge:       3600 * time.Second,
 				CORSAllowCreds:   false,
 			},
 			requestOrigin:  "https://example.com",
@@ -39,7 +40,7 @@ func TestCORSMiddleware_Handler(t *testing.T) {
 				CORSOrigins:      []string{"https://example.com"},
 				CORSAllowMethods: []string{"GET", "POST"},
 				CORSAllowHeaders: []string{"Content-Type"},
-				CORSMaxAge:       3600,
+				CORSMaxAge:       3600 * time.Second,
 				CORSAllowCreds:   true,
 			},
 			requestOrigin:  "https://example.com",
@@ -54,7 +55,7 @@ func TestCORSMiddleware_Handler(t *testing.T) {
 				CORSOrigins:      []string{"https://example.com"},
 				CORSAllowMethods: []string{"GET", "POST"},
 				CORSAllowHeaders: []string{"Content-Type"},
-				CORSMaxAge:       3600,
+				CORSMaxAge:       3600 * time.Second,
 				CORSAllowCreds:   true,
 			},
 			requestOrigin:  "https://example.com",
@@ -79,7 +80,7 @@ func TestCORSMiddleware_Handler(t *testing.T) {
 				CORSOrigins:      []string{"https://allowed.com"},
 				CORSAllowMethods: []string{"GET", "POST"},
 				CORSAllowHeaders: []string{"Content-Type"},
-				CORSMaxAge:       3600,
+				CORSMaxAge:       3600 * time.Second,
 				CORSAllowCreds:   false,
 			},
 			requestOrigin:  "https://example.com",

@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -15,9 +14,9 @@ type CollectionInfo struct {
 
 // CollectionStats represents statistics for a collection.
 type CollectionStats struct {
-	Type        string `json:"type"`
-	FileCount   int    `json:"file_count"`
-	StorageUsed int64  `json:"storage_used"`
+	Type                string `json:"type"`
+	FileCount           int    `json:"file_count"`
+	StorageUsed         int64  `json:"storage_used"`
 	StorageUsedFormatted string `json:"storage_used_formatted"`
 }
 
@@ -109,18 +108,3 @@ func matchesCollectionType(category, collectionType string) bool {
 
 	return false
 }
-
-// formatBytes formats bytes into human-readable format.
-func formatBytes(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
