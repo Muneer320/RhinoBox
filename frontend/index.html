@@ -415,6 +415,43 @@
       </div>
     </div>
 
+    <!-- File Info Modal -->
+    <div id="info-modal" class="info-modal" style="display: none;" role="dialog" aria-labelledby="info-modal-title" aria-modal="true">
+      <div class="info-modal-overlay"></div>
+      <div class="info-modal-content">
+        <div class="info-modal-header">
+          <div class="info-header-info">
+            <h2 id="info-modal-title" class="info-modal-title">File Information</h2>
+            <p class="info-file-name"></p>
+          </div>
+          <button type="button" class="info-close-button" aria-label="Close file information">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="info-body" id="info-body">
+          <div class="info-loading" id="info-loading">
+            <div class="ui-loading-spinner ui-loading-medium">
+              <svg class="spinner-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle class="spinner-circle" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="32" stroke-dashoffset="32">
+                  <animate attributeName="stroke-dasharray" dur="2s" values="0 32;16 16;0 32;0 32" repeatCount="indefinite"/>
+                  <animate attributeName="stroke-dashoffset" dur="2s" values="0;-16;-32;-32" repeatCount="indefinite"/>
+                </circle>
+              </svg>
+            </div>
+            <p>Loading file information...</p>
+          </div>
+          <div class="info-content" id="info-content" style="display: none;">
+            <!-- File information will be dynamically inserted here -->
+          </div>
+          <div class="info-error" id="info-error" style="display: none;">
+            <!-- Error message will be displayed here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="./src/script.js"></script>
   </body>
 </html>

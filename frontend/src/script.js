@@ -5,13 +5,15 @@ import {
   ingestJSON, 
   getFiles,
   getFile,
+  downloadFile as apiDownloadFile,
   deleteFile, 
   renameFile,
   getNotes,
   addNote,
   deleteNote,
   getStatistics,
-  getCollectionStats
+  getCollectionStats,
+  getFileMetadata
 } from './api.js'
 
 const root = document.documentElement
@@ -287,8 +289,12 @@ async function loadAllCollectionStats() {
       updateCollectionCardStats(type, stats)
     } catch (error) {
       console.error(`Error loading stats for ${type}:`, error)
-      // Set error state on the card
-      updateCollectionCardStats(type, { file_count: 0, storage_used: 'Error' })
+      // Set error state on the card with user-friendly message
+      const errorMessage = getUserFriendlyErrorMessage(error)
+      updateCollectionCardStats(type, { 
+        file_count: 0, 
+        storage_used: errorMessage.includes('connect') ? 'Offline' : 'Error' 
+      })
     }
   })
   
@@ -313,18 +319,16 @@ function updateCollectionCardStats(collectionType, stats) {
 }
 
 // Load files for a collection from API
-async function loadCollectionFiles(collectionType) {
+async function loadCollectionFiles(collectionType, retryCount = 0) {
   const gallery = document.getElementById('files-gallery')
-  const loadingState = document.getElementById('gallery-loading')
-  const emptyState = document.getElementById('gallery-empty')
   
   if (!gallery) return
   
   try {
     // Show loading state
     gallery.innerHTML = ''
-    if (loadingState) loadingState.style.display = 'block'
-    if (emptyState) emptyState.style.display = 'none'
+    const loadingComponent = createLoadingState('Loading files...', 'medium')
+    gallery.appendChild(loadingComponent)
     
     // Map collection types to API types
     const apiTypeMap = {
@@ -344,15 +348,25 @@ async function loadCollectionFiles(collectionType) {
     const response = await getFiles(apiType)
     const files = response.files || response || []
     
-    // Hide loading state
-    if (loadingState) loadingState.style.display = 'none'
+    // Clear loading state
+    gallery.innerHTML = ''
     
     if (files.length === 0) {
-      if (emptyState) emptyState.style.display = 'block'
+      const emptyComponent = createEmptyState(
+        'No files found',
+        `This collection doesn't have any files yet. Upload some files to get started!`,
+        'files',
+        {
+          label: 'Upload Files',
+          onClick: () => {
+            const fileInput = document.getElementById('fileInput')
+            if (fileInput) fileInput.click()
+          }
+        }
+      )
+      gallery.appendChild(emptyComponent)
       return
     }
-    
-    if (emptyState) emptyState.style.display = 'none'
     
     // Render files
     files.forEach(file => {
@@ -365,11 +379,20 @@ async function loadCollectionFiles(collectionType) {
     
   } catch (error) {
     console.error('Error loading files:', error)
-    if (loadingState) loadingState.style.display = 'none'
-    if (emptyState) {
-      emptyState.innerHTML = '<p>Error loading files. Please try again.</p>'
-      emptyState.style.display = 'block'
-    }
+    
+    // Clear gallery and show error state
+    gallery.innerHTML = ''
+    
+    const errorType = getErrorType(error)
+    const errorMessage = getUserFriendlyErrorMessage(error)
+    
+    const errorComponent = createErrorState(
+      errorMessage,
+      retryCount < 3 ? () => loadCollectionFiles(collectionType, retryCount + 1) : null,
+      errorType
+    )
+    gallery.appendChild(errorComponent)
+    
     showToast('Failed to load files')
   }
 }
@@ -380,8 +403,9 @@ function createFileElement(file, collectionType) {
   div.className = 'gallery-item'
   div.dataset.fileId = file.id || file.fileId || `file-${Date.now()}`
   div.dataset.fileName = file.name || file.fileName || 'Untitled'
-  div.dataset.filePath = file.path || file.filePath || ''
+  div.dataset.filePath = file.path || file.filePath || file.storedPath || ''
   div.dataset.fileUrl = file.url || file.downloadUrl || file.path || ''
+  div.dataset.fileHash = file.hash || ''
   div.dataset.fileDate = file.date || file.uploadedAt || new Date().toISOString()
   div.dataset.fileSize = file.size || file.fileSize || 'Unknown'
   div.dataset.fileType = file.type || file.fileType || 'Unknown'
@@ -543,8 +567,8 @@ function initGalleryMenus() {
       if (action === 'download') {
         e.preventDefault()
         try {
-          await downloadFile(fileId, fileName, fileUrl, filePath)
-          showToast(`Downloading "${fileName}"...`)
+          const fileHash = galleryItem.dataset.fileHash
+          await downloadFile(fileId, fileName, fileHash, filePath)
         } catch (error) {
           console.error('Download error:', error)
           showToast(`Failed to download: ${error.message || 'Unknown error'}`)
@@ -593,6 +617,14 @@ function initGalleryMenus() {
           document.body.removeChild(textArea)
           showToast('Path copied to clipboard')
         })
+      } else if (action === 'info') {
+        e.preventDefault()
+        try {
+          await openInfoModal(galleryItem)
+        } catch (error) {
+          console.error('Info modal error:', error)
+          showToast(`Failed to open file information: ${error.message || 'Unknown error'}`)
+        }
       }
     })
   })
@@ -673,62 +705,30 @@ function initGhostButton() {
 }
 
 // Download file function
-async function downloadFile(fileId, fileName, fileUrl, filePath) {
+async function downloadFile(fileId, fileName, fileHash, filePath) {
   try {
-    // Try to get file from API first to get download URL
-    let downloadUrl = fileUrl
+    // Show download progress
+    showToast(`Downloading "${fileName}"...`)
     
-    // If no direct URL, try to construct download URL from backend
-    if (!downloadUrl || downloadUrl === '') {
-      // Try to fetch file info from API to get download URL
-      try {
-        const fileInfo = await getFile(fileId)
-        downloadUrl = fileInfo.url || fileInfo.downloadUrl || fileInfo.path || downloadUrl
-      } catch (error) {
-        console.warn('Could not fetch file info, trying direct download:', error)
-        // Construct download URL from backend
-        downloadUrl = `http://localhost:8090/files/${fileId}/download`
-      }
-    }
+    // Fetch file blob from backend using proper download endpoint
+    const blob = await apiDownloadFile(fileHash, filePath, fileName)
     
-    // If still no URL, use the file path or construct from fileId
-    if (!downloadUrl || downloadUrl === '') {
-      downloadUrl = filePath || `http://localhost:8090/files/${fileId}/download`
-    }
-    
-    // Create a temporary anchor element to trigger download
+    // Create blob URL and trigger download
+    const blobUrl = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = downloadUrl
+    link.href = blobUrl
     link.download = fileName || 'download'
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     
-    // If direct link doesn't work, try fetching as blob
-    setTimeout(async () => {
-      try {
-        const response = await fetch(downloadUrl, {
-          method: 'GET',
-          headers: getHeaders(),
-        })
-        
-        if (response.ok) {
-          const blob = await response.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = blobUrl
-          link.download = fileName || 'download'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(blobUrl)
-        }
-      } catch (error) {
-        console.error('Blob download failed:', error)
-      }
+    // Clean up blob URL after a short delay
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl)
     }, 100)
     
+    showToast(`Downloaded "${fileName}"`)
   } catch (error) {
     console.error('Download error:', error)
     throw error
@@ -833,6 +833,7 @@ function initAll() {
     initGalleryMenus()
     initLayoutToggle()
     initCommentsModal()
+    initInfoModal()
     initGhostButton()
     ensureButtonsClickable()
     
@@ -1148,6 +1149,223 @@ function closeCommentsModal() {
 }
 
 // Comments modal initialization moved to initCommentsModal()
+
+// Info modal functionality
+let infoModal = null
+let infoModalInitialized = false
+
+function initInfoModal() {
+  if (infoModalInitialized) return
+  
+  infoModal = document.getElementById('info-modal')
+  const infoCloseButton = document.querySelector('.info-close-button')
+  const infoFileName = document.querySelector('.info-file-name')
+  
+  if (infoCloseButton && !infoCloseButton.hasAttribute('data-listener-attached')) {
+    infoCloseButton.setAttribute('data-listener-attached', 'true')
+    infoCloseButton.addEventListener('click', () => {
+      closeInfoModal()
+    })
+  }
+  
+  if (infoModal) {
+    const overlay = infoModal.querySelector('.info-modal-overlay')
+    if (overlay && !overlay.hasAttribute('data-listener-attached')) {
+      overlay.setAttribute('data-listener-attached', 'true')
+      overlay.addEventListener('click', () => {
+        closeInfoModal()
+      })
+    }
+    
+    // Add escape key listener for info modal
+    if (!window.infoEscapeKeyListenerAdded) {
+      window.infoEscapeKeyListenerAdded = true
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && infoModal && infoModal.style.display === 'flex') {
+          closeInfoModal()
+        }
+      })
+    }
+    
+    const modalContent = infoModal.querySelector('.info-modal-content')
+    if (modalContent && !modalContent.hasAttribute('data-listener-attached')) {
+      modalContent.setAttribute('data-listener-attached', 'true')
+      modalContent.addEventListener('click', (e) => {
+        e.stopPropagation()
+      })
+    }
+  }
+  
+  infoModalInitialized = true
+}
+
+// Format file size
+function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+}
+
+// Format date
+function formatDate(dateString) {
+  if (!dateString) return 'N/A'
+  try {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return dateString
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch (e) {
+    return dateString
+  }
+}
+
+// Open info modal and fetch file metadata
+async function openInfoModal(galleryItem) {
+  const fileHash = galleryItem.dataset.fileHash
+  const fileName = galleryItem.dataset.fileName
+  
+  if (!fileHash) {
+    throw new Error('File hash is required to fetch metadata')
+  }
+  
+  if (!infoModal) {
+    initInfoModal()
+  }
+  
+  const infoFileName = document.querySelector('.info-file-name')
+  const infoLoading = document.getElementById('info-loading')
+  const infoContent = document.getElementById('info-content')
+  const infoError = document.getElementById('info-error')
+  
+  if (!infoModal || !infoFileName) return
+  
+  // Set file name
+  infoFileName.textContent = fileName || 'Unknown File'
+  
+  // Show modal and loading state
+  infoModal.style.display = 'flex'
+  document.body.style.overflow = 'hidden'
+  infoLoading.style.display = 'flex'
+  infoContent.style.display = 'none'
+  infoError.style.display = 'none'
+  
+  try {
+    // Fetch file metadata from backend
+    const metadata = await getFileMetadata(fileHash)
+    
+    // Hide loading, show content
+    infoLoading.style.display = 'none'
+    infoContent.style.display = 'block'
+    
+    // Render file information
+    renderFileInfo(metadata)
+  } catch (error) {
+    console.error('Error fetching file metadata:', error)
+    
+    // Hide loading, show error
+    infoLoading.style.display = 'none'
+    infoError.style.display = 'block'
+    
+    const errorMessage = error.message || 'Failed to load file information'
+    infoError.innerHTML = `
+      <div class="ui-error-state">
+        <div class="ui-error-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h3 class="ui-error-title">Error Loading File Information</h3>
+        <p class="ui-error-message">${escapeHtml(errorMessage)}</p>
+        <button type="button" class="ui-retry-button primary-button" onclick="location.reload()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px; margin-right: 8px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 5h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+          Retry
+        </button>
+      </div>
+    `
+  }
+}
+
+// Render file information in the modal
+function renderFileInfo(metadata) {
+  const infoContent = document.getElementById('info-content')
+  if (!infoContent) return
+  
+  // Extract dimensions from metadata if available
+  const dimensions = metadata.metadata?.dimensions || 
+                     metadata.metadata?.width && metadata.metadata?.height 
+                       ? `${metadata.metadata.width} × ${metadata.metadata.height}` 
+                       : 'N/A'
+  
+  // Build metadata HTML
+  const metadataItems = [
+    { label: 'File Name', value: metadata.original_name || 'N/A' },
+    { label: 'File Size', value: formatFileSize(metadata.size) },
+    { label: 'File Type', value: metadata.mime_type || 'N/A' },
+    { label: 'Category', value: metadata.category || 'N/A' },
+    { label: 'Stored Path', value: metadata.stored_path || 'N/A' },
+    { label: 'Hash', value: metadata.hash || 'N/A' },
+    { label: 'Uploaded At', value: formatDate(metadata.uploaded_at) },
+    { label: 'Dimensions', value: dimensions }
+  ]
+  
+  // Add custom metadata fields if they exist
+  if (metadata.metadata && typeof metadata.metadata === 'object') {
+    Object.entries(metadata.metadata).forEach(([key, value]) => {
+      // Skip dimensions as it's already shown
+      if (key !== 'dimensions' && key !== 'width' && key !== 'height') {
+        const displayKey = key.split('_').map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ')
+        metadataItems.push({ label: displayKey, value: String(value) })
+      }
+    })
+  }
+  
+  infoContent.innerHTML = `
+    <div class="info-grid">
+      ${metadataItems.map(item => `
+        <div class="info-item">
+          <div class="info-item-label">${escapeHtml(item.label)}</div>
+          <div class="info-item-value">${escapeHtml(item.value)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `
+}
+
+// Close info modal
+function closeInfoModal() {
+  if (infoModal) {
+    infoModal.style.display = 'none'
+  }
+  document.body.style.overflow = ''
+  
+  // Reset modal state
+  const infoLoading = document.getElementById('info-loading')
+  const infoContent = document.getElementById('info-content')
+  const infoError = document.getElementById('info-error')
+  
+  if (infoLoading) infoLoading.style.display = 'flex'
+  if (infoContent) infoContent.style.display = 'none'
+  if (infoError) infoError.style.display = 'none'
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  if (text === null || text === undefined) return ''
+  const div = document.createElement('div')
+  div.textContent = String(text)
+  return div.innerHTML
+}
 
 // Load statistics from API
 async function loadStatistics() {

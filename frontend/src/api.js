@@ -54,19 +54,39 @@ async function apiRequest(endpoint, options = {}) {
     clearTimeout(timeoutId)
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      throw new Error(error.message || `HTTP error! status: ${response.status}`)
+      let errorMessage = `HTTP error! status: ${response.status}`
+      let errorData = null
+      
+      try {
+        errorData = await response.json()
+        errorMessage = errorData.message || errorData.error || errorMessage
+      } catch {
+        // If response is not JSON, use status text
+        errorMessage = response.statusText || errorMessage
+      }
+      
+      // Create error with status code for better handling
+      const error = new Error(errorMessage)
+      error.status = response.status
+      error.statusText = response.statusText
+      error.data = errorData
+      throw error
     }
 
     return await response.json()
   } catch (error) {
     clearTimeout(timeoutId)
+    
+    // Handle timeout errors
     if (error.name === 'AbortError') {
       console.error('API Request Timeout:', endpoint)
-      throw new Error('Request timeout. Please try again.')
+      const timeoutError = new Error('Request timeout. Please try again.')
+      timeoutError.name = 'AbortError'
+      timeoutError.type = 'timeout'
+      throw timeoutError
     }
     
-    // Provide more helpful error messages
+    // Handle network errors
     if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
       console.error('API Request Failed:', {
         endpoint,
@@ -79,7 +99,15 @@ async function apiRequest(endpoint, options = {}) {
           'Incorrect backend URL'
         ]
       })
-      throw new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
+      const networkError = new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
+      networkError.name = 'NetworkError'
+      networkError.type = 'network'
+      throw networkError
+    }
+    
+    // Re-throw if already has status (HTTP error)
+    if (error.status) {
+      throw error
     }
     
     console.error('API Request Error:', error)
@@ -228,6 +256,20 @@ export async function getFile(fileId) {
 }
 
 /**
+ * Get file metadata by hash
+ * @param {string} hash - File hash
+ * @returns {Promise<Object>} File metadata object
+ */
+export async function getFileMetadata(hash) {
+  if (!hash) {
+    throw new Error('Hash is required to fetch file metadata')
+  }
+  return apiRequest(`/files/metadata?hash=${encodeURIComponent(hash)}`, {
+    method: 'GET',
+  })
+}
+
+/**
  * Search files
  * Note: This endpoint may not exist in the backend yet
  * @param {string} query - Search query
@@ -241,6 +283,45 @@ export async function searchFiles(query, filters = {}) {
 }
 
 // ==================== File Management API ====================
+
+/**
+ * Download a file using the backend download endpoint
+ * @param {string} hash - File hash (preferred method)
+ * @param {string} path - File path (fallback if hash not available)
+ * @param {string} fileName - File name for download
+ * @returns {Promise<Blob>} - File blob for download
+ */
+export async function downloadFile(hash, path, fileName = 'download') {
+  const queryParams = new URLSearchParams()
+  
+  if (hash) {
+    queryParams.append('hash', hash)
+  } else if (path) {
+    queryParams.append('path', path)
+  } else {
+    throw new Error('Either hash or path must be provided for download')
+  }
+  
+  const endpoint = `/files/download?${queryParams.toString()}`
+  const url = `${API_CONFIG.baseURL}${endpoint}`
+  
+  // Use fetch directly for blob response (not JSON)
+  const headers = getHeaders()
+  // Remove Content-Type for download requests
+  delete headers['Content-Type']
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: headers,
+  })
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Download failed' }))
+    throw new Error(error.message || `Download failed with status: ${response.status}`)
+  }
+  
+  return await response.blob()
+}
 
 /**
  * Delete a file
