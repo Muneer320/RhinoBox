@@ -46,6 +46,7 @@ backend/
 | POST   | `/ingest`       | **Unified endpoint**: handles media, JSON, and generic files in single or mixed batches (see `docs/UNIFIED_INGEST.md`) |
 | POST   | `/ingest/media` | Multipart upload with one or more `file` parts, optional `category` + `comment`                                        |
 | POST   | `/ingest/json`  | JSON body containing `document` or `documents`, `namespace`, optional `comment`, `metadata`                            |
+| PATCH  | `/files/{file_id}/metadata` | Update file metadata with replace, merge, or remove operations (see `docs/METADATA_API.md`)                   |
 
 ### Sample Requests
 
