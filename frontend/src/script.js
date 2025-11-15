@@ -32,6 +32,89 @@ let currentCollectionType = null;
 let modeToggle = null;
 let toast = null;
 
+// Detect touch device
+function isTouchDevice() {
+  return (
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0 ||
+    navigator.msMaxTouchPoints > 0
+  );
+}
+
+// Update UI for touch devices
+function initTouchOptimizations() {
+  if (isTouchDevice()) {
+    document.body.classList.add("touch-device");
+
+    // Change dropzone text
+    const dropzoneTitle = document.getElementById("dropzone-title");
+    if (dropzoneTitle) {
+      dropzoneTitle.textContent = "Tap to select files or take a photo";
+    }
+
+    // Add camera option for mobile
+    const fileInput = document.getElementById("file-input") || document.getElementById("fileInput");
+    if (fileInput) {
+      fileInput.setAttribute(
+        "accept",
+        "image/*,video/*,audio/*,.pdf,.txt,.json"
+      );
+      // Add capture attribute for camera on mobile
+      if (fileInput.type === "file") {
+        fileInput.setAttribute("capture", "environment");
+      }
+    }
+  }
+}
+
+// Initialize hamburger menu
+function initHamburgerMenu() {
+  const btn = document.getElementById("hamburger-btn");
+  const nav = document.getElementById("mobile-nav");
+  const mobileNavLinks = document.querySelectorAll(".mobile-nav-link");
+
+  if (!btn || !nav) return;
+
+  btn.addEventListener("click", () => {
+    const isOpen = btn.getAttribute("aria-expanded") === "true";
+
+    btn.setAttribute("aria-expanded", !isOpen);
+    nav.classList.toggle("is-open");
+    document.body.style.overflow = isOpen ? "" : "hidden";
+  });
+
+  // Close on link click
+  mobileNavLinks.forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const target = link.dataset.target;
+      if (target) {
+        // Navigate to the target page
+        const sidebarButton = document.querySelector(`[data-target="${target}"]`);
+        if (sidebarButton) {
+          sidebarButton.click();
+        }
+      }
+      btn.setAttribute("aria-expanded", "false");
+      nav.classList.remove("is-open");
+      document.body.style.overflow = "";
+    });
+  });
+
+  // Close on outside click
+  document.addEventListener("click", (e) => {
+    if (
+      nav.classList.contains("is-open") &&
+      !nav.contains(e.target) &&
+      !btn.contains(e.target)
+    ) {
+      btn.setAttribute("aria-expanded", "false");
+      nav.classList.remove("is-open");
+      document.body.style.overflow = "";
+    }
+  });
+}
+
 // Initialize dropzone and form when DOM is ready
 function initHomePageFeatures() {
   const dropzone = document.getElementById("dropzone");
@@ -1670,11 +1753,17 @@ function initAll() {
   try {
     toast = document.getElementById("toast");
 
+    // Initialize touch optimizations FIRST
+    initTouchOptimizations();
+
     // Initialize theme toggle FIRST so modeToggle is available
     initThemeToggle();
 
     // Then initialize theme (which uses modeToggle)
     initTheme();
+
+    // Initialize hamburger menu
+    initHamburgerMenu();
 
     // Initialize all other features
     initHomePageFeatures();
