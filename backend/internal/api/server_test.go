@@ -262,13 +262,19 @@ func TestFileDeleteNotFound(t *testing.T) {
 	}
 
 	var errorPayload struct {
-		Error string `json:"error"`
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(deleteResp.Body).Decode(&errorPayload); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if errorPayload.Error == "" {
+	if errorPayload.Error.Message == "" {
 		t.Fatalf("expected error message")
+	}
+	if errorPayload.Error.Code == "" {
+		t.Fatalf("expected error code")
 	}
 }
 
