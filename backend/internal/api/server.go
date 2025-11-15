@@ -32,6 +32,7 @@ type Server struct {
 	logger      *slog.Logger
 	router      chi.Router
 	storage     *storage.Manager
+	jobQueue    *queue.JobQueue
 	server      *http.Server
 }
 
@@ -43,10 +44,11 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		router:      chi.NewRouter(),
-		storage:     store,
+		cfg:      cfg,
+		logger:   logger,
+		router:   chi.NewRouter(),
+		storage:  store,
+		jobQueue: nil, // TODO: Initialize when async endpoints are needed
 	}
 	s.routes()
 	return s, nil
