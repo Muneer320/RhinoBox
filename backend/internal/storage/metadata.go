@@ -146,3 +146,14 @@ func (idx *MetadataIndex) FindByCategoryPrefix(prefix string) []FileMetadata {
     }
     return results
 }
+
+// GetAllMetadata returns a copy of all metadata entries.
+func (idx *MetadataIndex) GetAllMetadata() []FileMetadata {
+    idx.mu.RLock()
+    defer idx.mu.RUnlock()
+    result := make([]FileMetadata, 0, len(idx.data))
+    for _, meta := range idx.data {
+        result = append(result, meta)
+    }
+    return result
+}

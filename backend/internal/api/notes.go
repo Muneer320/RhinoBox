@@ -14,17 +14,17 @@ import (
 func (s *Server) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	notes, err := s.fileService.GetNotes(fileID)
 	if err != nil {
 		if err.Error() == "file not found" || err.Error() == "file_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to get notes: %v", err))
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get notes: %v", err))
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 		slog.Int("count", len(notes)),
 	)
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"file_id": fileID,
 		"notes":   response,
 		"count":   len(notes),
@@ -57,7 +57,7 @@ func (s *Server) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
@@ -67,26 +67,26 @@ func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 		return
 	}
 
 	if req.Text == "" {
-		httpError(w, r, http.StatusBadRequest, "text is required")
+		httpError(w, http.StatusBadRequest, "text is required")
 		return
 	}
 
 	note, err := s.fileService.AddNote(fileID, req.Text, req.Author)
 	if err != nil {
 		if err.Error() == "file not found" || err.Error() == "file_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		if err.Error() == "note text is required" {
-			httpError(w, r, http.StatusBadRequest, err.Error())
+			httpError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to add note: %v", err))
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to add note: %v", err))
 		return
 	}
 
@@ -95,7 +95,7 @@ func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 		slog.String("note_id", note.ID),
 	)
 
-	writeJSON(w, r, http.StatusCreated, map[string]any{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         note.ID,
 		"file_id":   note.FileID,
 		"text":      note.Text,
@@ -109,13 +109,13 @@ func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	noteID := chi.URLParam(r, "note_id")
 	if noteID == "" {
-		httpError(w, r, http.StatusBadRequest, "note_id is required")
+		httpError(w, http.StatusBadRequest, "note_id is required")
 		return
 	}
 
@@ -124,30 +124,30 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpError(w, r, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
 		return
 	}
 
 	if req.Text == "" {
-		httpError(w, r, http.StatusBadRequest, "text is required")
+		httpError(w, http.StatusBadRequest, "text is required")
 		return
 	}
 
 	note, err := s.fileService.UpdateNote(fileID, noteID, req.Text)
 	if err != nil {
 		if err.Error() == "file not found" || err.Error() == "file_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		if err.Error() == "note not found" || err.Error() == "note_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		if err.Error() == "note text is required" {
-			httpError(w, r, http.StatusBadRequest, err.Error())
+			httpError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to update note: %v", err))
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update note: %v", err))
 		return
 	}
 
@@ -156,7 +156,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		slog.String("note_id", noteID),
 	)
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         note.ID,
 		"file_id":   note.FileID,
 		"text":      note.Text,
@@ -170,27 +170,27 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "file_id")
 	if fileID == "" {
-		httpError(w, r, http.StatusBadRequest, "file_id is required")
+		httpError(w, http.StatusBadRequest, "file_id is required")
 		return
 	}
 
 	noteID := chi.URLParam(r, "note_id")
 	if noteID == "" {
-		httpError(w, r, http.StatusBadRequest, "note_id is required")
+		httpError(w, http.StatusBadRequest, "note_id is required")
 		return
 	}
 
 	err := s.fileService.DeleteNote(fileID, noteID)
 	if err != nil {
 		if err.Error() == "file not found" || err.Error() == "file_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
 		if err.Error() == "note not found" || err.Error() == "note_id is required" {
-			httpError(w, r, http.StatusNotFound, err.Error())
+			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		httpError(w, r, http.StatusInternalServerError, fmt.Sprintf("failed to delete note: %v", err))
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete note: %v", err))
 		return
 	}
 
@@ -199,7 +199,7 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		slog.String("note_id", noteID),
 	)
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "note deleted successfully",
 		"file_id": fileID,
 		"note_id": noteID,

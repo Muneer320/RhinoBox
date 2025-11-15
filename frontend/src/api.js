@@ -4,42 +4,44 @@
  */
 
 // API Configuration
-const API_CONFIG = {
-  baseURL: 'http://localhost:8090', // RhinoBox backend URL - change this to your backend URL
+export const API_CONFIG = {
+  baseURL: "http://localhost:8090", // RhinoBox backend URL - change this to your backend URL
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
-  }
-}
+    "Content-Type": "application/json",
+  },
+};
 
 // Get auth token from localStorage or session
 function getAuthToken() {
-  return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+  return (
+    localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token")
+  );
 }
 
 // Create headers with auth token
 function getHeaders() {
-  const headers = { ...API_CONFIG.headers }
-  const token = getAuthToken()
+  const headers = { ...API_CONFIG.headers };
+  const token = getAuthToken();
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+    headers["Authorization"] = `Bearer ${token}`;
   }
-  return headers
+  return headers;
 }
 
 // Generic API request handler
 async function apiRequest(endpoint, options = {}) {
-  const url = `${API_CONFIG.baseURL}${endpoint}`
-  const timeout = API_CONFIG.timeout || 30000
-  
+  const url = `${API_CONFIG.baseURL}${endpoint}`;
+  const timeout = API_CONFIG.timeout || 30000;
+
   // Create AbortController for timeout
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeout)
-  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
   // If body is FormData, don't set Content-Type (browser will set it with boundary)
-  const isFormData = options.body instanceof FormData
-  const defaultHeaders = isFormData ? {} : getHeaders()
-  
+  const isFormData = options.body instanceof FormData;
+  const defaultHeaders = isFormData ? {} : getHeaders();
+
   const config = {
     ...options,
     headers: {
@@ -47,43 +49,53 @@ async function apiRequest(endpoint, options = {}) {
       ...options.headers,
     },
     signal: controller.signal,
-  }
+  };
 
   try {
-    const response = await fetch(url, config)
-    clearTimeout(timeoutId)
-    
+    const response = await fetch(url, config);
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      throw new Error(error.message || `HTTP error! status: ${response.status}`)
+      const error = await response
+        .json()
+        .catch(() => ({ message: "Request failed" }));
+      throw new Error(
+        error.message || `HTTP error! status: ${response.status}`
+      );
     }
 
-    return await response.json()
-  } catch (error) {
-    clearTimeout(timeoutId)
-    if (error.name === 'AbortError') {
-      console.error('API Request Timeout:', endpoint)
-      throw new Error('Request timeout. Please try again.')
+    // Handle endpoints that legitimately return no content (e.g. DELETE)
+    if (response.status === 204) {
+      return null;
     }
-    
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      console.error("API Request Timeout:", endpoint);
+      throw new Error("Request timeout. Please try again.");
+    }
+
     // Provide more helpful error messages
-    if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
-      console.error('API Request Failed:', {
+    if (error.message === "Failed to fetch" || error.name === "TypeError") {
+      console.error("API Request Failed:", {
         endpoint,
         url,
         error: error.message,
         possibleCauses: [
-          'Backend server is not running',
-          'CORS configuration issue',
-          'Network connectivity problem',
-          'Incorrect backend URL'
-        ]
-      })
-      throw new Error(`Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`)
+          "Backend server is not running",
+          "CORS configuration issue",
+          "Network connectivity problem",
+          "Incorrect backend URL",
+        ],
+      });
+      throw new Error(
+        `Cannot connect to backend at ${url}. Please ensure the backend server is running on port 8090.`
+      );
     }
-    
-    console.error('API Request Error:', error)
-    throw error
+
+    console.error("API Request Error:", error);
+    throw error;
   }
 }
 
@@ -93,9 +105,9 @@ async function apiRequest(endpoint, options = {}) {
  * Health check endpoint
  */
 export async function healthcheck() {
-  return apiRequest('/healthz', {
-    method: 'GET',
-  })
+  return apiRequest("/healthz", {
+    method: "GET",
+  });
 }
 
 // ==================== Unified Ingest API ====================
@@ -106,31 +118,31 @@ export async function healthcheck() {
  * @param {string} namespace - Optional namespace for organization
  * @param {string} comment - Optional comment/description
  */
-export async function ingestFiles(files, namespace = '', comment = '') {
-  const formData = new FormData()
-  
+export async function ingestFiles(files, namespace = "", comment = "") {
+  const formData = new FormData();
+
   // Append all files
   if (Array.isArray(files)) {
-    files.forEach(file => {
-      formData.append('files', file)
-    })
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
   } else {
-    formData.append('files', files)
-  }
-  
-  // Append optional metadata
-  if (namespace) {
-    formData.append('namespace', namespace)
-  }
-  if (comment) {
-    formData.append('comment', comment)
+    formData.append("files", files);
   }
 
-  return apiRequest('/ingest', {
-    method: 'POST',
+  // Append optional metadata
+  if (namespace) {
+    formData.append("namespace", namespace);
+  }
+  if (comment) {
+    formData.append("comment", comment);
+  }
+
+  return apiRequest("/ingest", {
+    method: "POST",
     headers: {}, // Let browser set Content-Type for FormData
     body: formData,
-  })
+  });
 }
 
 // ==================== Media Ingest API ====================
@@ -140,26 +152,26 @@ export async function ingestFiles(files, namespace = '', comment = '') {
  * @param {File|File[]} files - Single file or array of files
  * @param {string} category - Optional category for organization
  */
-export async function ingestMedia(files, category = '') {
-  const formData = new FormData()
-  
+export async function ingestMedia(files, category = "") {
+  const formData = new FormData();
+
   if (Array.isArray(files)) {
-    files.forEach(file => {
-      formData.append('file', file)
-    })
+    files.forEach((file) => {
+      formData.append("file", file);
+    });
   } else {
-    formData.append('file', files)
-  }
-  
-  if (category) {
-    formData.append('category', category)
+    formData.append("file", files);
   }
 
-  return apiRequest('/ingest/media', {
-    method: 'POST',
+  if (category) {
+    formData.append("category", category);
+  }
+
+  return apiRequest("/ingest/media", {
+    method: "POST",
     headers: {}, // Let browser set Content-Type for FormData
     body: formData,
-  })
+  });
 }
 
 // ==================== JSON Ingest API ====================
@@ -170,20 +182,20 @@ export async function ingestMedia(files, category = '') {
  * @param {string} namespace - Namespace for organization
  * @param {string} comment - Optional comment/description
  */
-export async function ingestJSON(documents, namespace, comment = '') {
+export async function ingestJSON(documents, namespace, comment = "") {
   const payload = {
     namespace: namespace,
     documents: Array.isArray(documents) ? documents : [documents],
-  }
-  
+  };
+
   if (comment) {
-    payload.comment = comment
+    payload.comment = comment;
   }
 
-  return apiRequest('/ingest/json', {
-    method: 'POST',
+  return apiRequest("/ingest/json", {
+    method: "POST",
     body: JSON.stringify(payload),
-  })
+  });
 }
 
 // ==================== File Retrieval API ====================
@@ -194,26 +206,30 @@ export async function ingestJSON(documents, namespace, comment = '') {
  * @param {string} category - Optional category filter
  * @param {object} params - Query parameters (page, limit, etc.)
  */
-export async function getFiles(type, category = '', params = {}) {
-  const queryParams = new URLSearchParams()
-  
+export async function getFiles(type, category = "", params = {}) {
+  const queryParams = new URLSearchParams();
+
   if (category) {
-    queryParams.append('category', category)
+    queryParams.append("category", category);
   }
-  
+
   // Add pagination and other params
-  Object.keys(params).forEach(key => {
-    if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
-      queryParams.append(key, params[key])
+  Object.keys(params).forEach((key) => {
+    if (
+      params[key] !== undefined &&
+      params[key] !== null &&
+      params[key] !== ""
+    ) {
+      queryParams.append(key, params[key]);
     }
-  })
-  
-  const queryString = queryParams.toString()
-  const endpoint = `/files/type/${type}${queryString ? `?${queryString}` : ''}`
-  
+  });
+
+  const queryString = queryParams.toString();
+  const endpoint = `/files/type/${type}${queryString ? `?${queryString}` : ""}`;
+
   return apiRequest(endpoint, {
-    method: 'GET',
-  })
+    method: "GET",
+  });
 }
 
 /**
@@ -223,21 +239,20 @@ export async function getFiles(type, category = '', params = {}) {
  */
 export async function getFile(fileId) {
   return apiRequest(`/files/${fileId}`, {
-    method: 'GET',
-  })
+    method: "GET",
+  });
 }
 
 /**
- * Search files
- * Note: This endpoint may not exist in the backend yet
- * @param {string} query - Search query
- * @param {object} filters - Additional filters
+ * Search files by name
+ * @param {string} query - Search query (file name)
+ * @param {object} filters - Additional filters (not currently used by backend)
  */
 export async function searchFiles(query, filters = {}) {
-  return apiRequest('/files/search', {
-    method: 'POST',
-    body: JSON.stringify({ query, ...filters }),
-  })
+  const params = new URLSearchParams({ name: query });
+  return apiRequest(`/files/search?${params.toString()}`, {
+    method: "GET",
+  });
 }
 
 // ==================== File Management API ====================
@@ -249,8 +264,8 @@ export async function searchFiles(query, filters = {}) {
  */
 export async function deleteFile(fileId) {
   return apiRequest(`/files/${fileId}`, {
-    method: 'DELETE',
-  })
+    method: "DELETE",
+  });
 }
 
 /**
@@ -261,9 +276,9 @@ export async function deleteFile(fileId) {
  */
 export async function renameFile(fileId, newName) {
   return apiRequest(`/files/${fileId}/rename`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: JSON.stringify({ name: newName }),
-  })
+  });
 }
 
 // ==================== Notes API ====================
@@ -274,7 +289,7 @@ export async function renameFile(fileId, newName) {
  * @param {string} fileId - File ID
  */
 export async function getNotes(fileId) {
-  return apiRequest(`/files/${fileId}/notes`)
+  return apiRequest(`/files/${fileId}/notes`);
 }
 
 /**
@@ -285,9 +300,9 @@ export async function getNotes(fileId) {
  */
 export async function addNote(fileId, text) {
   return apiRequest(`/files/${fileId}/notes`, {
-    method: 'POST',
+    method: "POST",
     body: JSON.stringify({ text }),
-  })
+  });
 }
 
 /**
@@ -298,8 +313,8 @@ export async function addNote(fileId, text) {
  */
 export async function deleteNote(fileId, noteId) {
   return apiRequest(`/files/${fileId}/notes/${noteId}`, {
-    method: 'DELETE',
-  })
+    method: "DELETE",
+  });
 }
 
 /**
@@ -311,9 +326,9 @@ export async function deleteNote(fileId, noteId) {
  */
 export async function updateNote(fileId, noteId, text) {
   return apiRequest(`/files/${fileId}/notes/${noteId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     body: JSON.stringify({ text }),
-  })
+  });
 }
 
 // ==================== Collections API ====================
@@ -323,7 +338,7 @@ export async function updateNote(fileId, noteId, text) {
  * Note: This endpoint may not exist in the backend yet
  */
 export async function getCollections() {
-  return apiRequest('/collections')
+  return apiRequest("/collections");
 }
 
 /**
@@ -332,7 +347,7 @@ export async function getCollections() {
  * @param {string} collectionType - Type of collection
  */
 export async function getCollectionStats(collectionType) {
-  return apiRequest(`/collections/${collectionType}/stats`)
+  return apiRequest(`/collections/${collectionType}/stats`);
 }
 
 // ==================== Statistics API ====================
@@ -342,7 +357,7 @@ export async function getCollectionStats(collectionType) {
  * Note: This endpoint may not exist in the backend yet
  */
 export async function getStatistics() {
-  return apiRequest('/statistics')
+  return apiRequest("/statistics");
 }
 
 // ==================== User/Auth API ====================
@@ -354,17 +369,17 @@ export async function getStatistics() {
  * @param {string} password - User password
  */
 export async function login(email, password) {
-  const response = await apiRequest('/auth/login', {
-    method: 'POST',
+  const response = await apiRequest("/auth/login", {
+    method: "POST",
     body: JSON.stringify({ email, password }),
-  })
-  
+  });
+
   // Store token if provided
   if (response.token) {
-    localStorage.setItem('auth_token', response.token)
+    localStorage.setItem("auth_token", response.token);
   }
-  
-  return response
+
+  return response;
 }
 
 /**
@@ -372,11 +387,11 @@ export async function login(email, password) {
  * Note: This endpoint may not exist in the backend yet
  */
 export async function logout() {
-  localStorage.removeItem('auth_token')
-  sessionStorage.removeItem('auth_token')
-  return apiRequest('/auth/logout', {
-    method: 'POST',
-  })
+  localStorage.removeItem("auth_token");
+  sessionStorage.removeItem("auth_token");
+  return apiRequest("/auth/logout", {
+    method: "POST",
+  });
 }
 
 /**
@@ -384,19 +399,19 @@ export async function logout() {
  * Note: This endpoint may not exist in the backend yet
  */
 export async function getCurrentUser() {
-  return apiRequest('/auth/me')
+  return apiRequest("/auth/me");
 }
 
 // Export default API config for customization
 export default {
   setBaseURL: (url) => {
-    API_CONFIG.baseURL = url
+    API_CONFIG.baseURL = url;
   },
   setAuthToken: (token) => {
-    localStorage.setItem('auth_token', token)
+    localStorage.setItem("auth_token", token);
   },
   clearAuthToken: () => {
-    localStorage.removeItem('auth_token')
-    sessionStorage.removeItem('auth_token')
+    localStorage.removeItem("auth_token");
+    sessionStorage.removeItem("auth_token");
   },
-}
+};
