@@ -1,4 +1,6 @@
 // Configuration service for fetching and caching application configuration
+import { API_CONFIG } from "./api.js";
+
 class ConfigService {
   constructor() {
     this.config = null;
@@ -27,7 +29,7 @@ class ConfigService {
 
     this.loadPromise = (async () => {
       try {
-        const response = await fetch("/api/config", {
+        const response = await fetch(`${API_CONFIG.baseURL}/api/config`, {
           method: "GET",
           headers: { Accept: "application/json" },
         });

@@ -1270,8 +1270,24 @@ async function loadCollections() {
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
-    // Render collection cards
-    collections.forEach((collection) => {
+    // Filter out empty collections (file_count === 0)
+    const nonEmptyCollections = collections.filter((collection) => {
+      const stats = statsMap.get(collection.type) || {
+        file_count: 0,
+        storage_used_formatted: "0 B",
+      };
+      return stats.file_count > 0;
+    });
+
+    // Check if we have any collections after filtering
+    if (nonEmptyCollections.length === 0) {
+      collectionCards.innerHTML =
+        '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">No collections available</p>';
+      return;
+    }
+
+    // Render collection cards (only non-empty ones)
+    nonEmptyCollections.forEach((collection) => {
       const stats = statsMap.get(collection.type) || {
         file_count: 0,
         storage_used_formatted: "0 B",
@@ -1802,29 +1818,39 @@ async function uploadFiles(files) {
     return;
   }
 
+  const validationErrors = [];
+  const validFiles = [];
+  const fileTypes = new Map();
+  const uploadResults = { success: [], failed: [] };
+  let uploadToast = null;
+
   try {
     // Initialize upload queue UI if not already done
     uploadQueueUI.init();
 
-  for (const file of files) {
-    const errors = validateFile(file);
-    if (errors.length > 0) {
-      validationErrors.push(...errors);
-    } else {
-      validFiles.push(file);
+    // Validate files
+    for (const file of files) {
+      const errors = validateFile(file);
+      if (errors.length > 0) {
+        validationErrors.push(...errors);
+      } else {
+        validFiles.push(file);
+        // Track file types
+        const category = detectFileTypeCategory(file);
+        fileTypes.set(category, (fileTypes.get(category) || 0) + 1);
+      }
     }
-  }
 
-  // Show validation errors
-  if (validationErrors.length > 0) {
-    validationErrors.forEach((error) => {
-      showToast(error.message, "error");
-    });
-    
-    if (validFiles.length === 0) {
-      return; // No valid files to upload
+    // Show validation errors
+    if (validationErrors.length > 0) {
+      validationErrors.forEach((error) => {
+        showToast(error.message, "error");
+      });
+      
+      if (validFiles.length === 0) {
+        return; // No valid files to upload
+      }
     }
-  }
 
     // Determine if files are media or mixed for options
     const mediaTypes = ["image/", "video/", "audio/"];
@@ -1837,7 +1863,7 @@ async function uploadFiles(files) {
       : { namespace: "", comment: "" };
 
     // Start uploads with progress tracking
-    const results = await uploadManager.uploadFiles(files, options);
+    const results = await uploadManager.uploadFiles(validFiles, options);
 
     // Show success message for completed uploads
     const completed = results.filter(
@@ -1865,26 +1891,6 @@ async function uploadFiles(files) {
       );
     }
 
-    // Reload collections to show new folders
-    await loadCollections();
-    }
-
-    // Dismiss upload toast
-    dismissToast(uploadToast);
-
-    // Show success with file type information
-    const typeMessages = [];
-    fileTypes.forEach((count, category) => {
-      const typeName = getFileTypeName(category);
-      typeMessages.push(`${count} ${typeName}${count > 1 ? "s" : ""}`);
-    });
-
-    const typeMessage = typeMessages.join(", ");
-    showToast(
-      `Successfully uploaded: ${typeMessage}`,
-      "success"
-    );
-
     uploadResults.success = validFiles;
 
     // Reload collections to show new folders
@@ -1894,11 +1900,18 @@ async function uploadFiles(files) {
     if (currentCollectionType) {
       loadCollectionFiles(currentCollectionType);
     }
+
+    // Dismiss upload toast if it exists
+    if (uploadToast) {
+      dismissToast(uploadToast);
+    }
   } catch (error) {
     console.error("Upload error:", error);
     
-    // Dismiss upload toast
-    dismissToast(uploadToast);
+    // Dismiss upload toast if it exists
+    if (uploadToast) {
+      dismissToast(uploadToast);
+    }
 
     // Import APIError if available
     let errorMessage = "Unknown error";
@@ -2253,6 +2266,52 @@ async function initAll() {
   }
 }
 
+// Initialize authentication UI based on config
+function initAuthUI() {
+  try {
+    const authEnabled = configService.isAuthEnabled();
+    const userIcon = document.getElementById("user-icon");
+    const loginBtn = document.getElementById("login-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    const authStatus = document.getElementById("auth-status");
+
+    // Show/hide auth UI elements based on config
+    if (authEnabled) {
+      // Show user icon and auth buttons if auth is enabled
+      if (userIcon) {
+        userIcon.classList.remove("hidden");
+      }
+      if (loginBtn) {
+        loginBtn.classList.remove("hidden");
+      }
+      if (logoutBtn) {
+        logoutBtn.classList.remove("hidden");
+      }
+    } else {
+      // Hide auth UI elements if auth is disabled
+      if (userIcon) {
+        userIcon.classList.add("hidden");
+      }
+      if (loginBtn) {
+        loginBtn.classList.add("hidden");
+      }
+      if (logoutBtn) {
+        logoutBtn.classList.add("hidden");
+      }
+    }
+
+    // Update auth status in about modal
+    if (authStatus) {
+      authStatus.innerHTML = authEnabled
+        ? '🔓 <strong>Authentication:</strong> Enabled'
+        : '🔒 <strong>Authentication:</strong> Disabled';
+    }
+  } catch (error) {
+    console.warn("Error initializing auth UI:", error);
+    // Silently fail - auth UI is optional
+  }
+}
+
 // Initialize layout toggle
 function initLayoutToggle() {
   const layoutButtons = document.querySelectorAll(".layout-button");
@@ -2276,8 +2335,6 @@ function initLayoutToggle() {
   });
 }
 
-<<<<<<< HEAD
-=======
 // Load SQL tables from backend
 async function loadSQLTables() {
   const tbody = document.getElementById("sql-tables-body");
@@ -2572,7 +2629,6 @@ function openNoSQLModal(collectionName, schema, files) {
   document.addEventListener("keydown", escapeHandler);
 }
 
->>>>>>> this
 // Initialize data tabs (SQL/NoSQL)
 let dataTabsInitialized = false;
 function initDataTabs() {
