@@ -55,13 +55,17 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 // Stop gracefully stops the server and cleans up resources.
 func (s *Server) Stop() {
+	// Job queue shutdown will be implemented when async endpoints are added
 	if s.jobQueue != nil {
-		s.jobQueue.Shutdown()
+		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
 	}
 }
 
 func (s *Server) routes() {
 	r := s.router
+
+	// CORS middleware
+	r.Use(s.corsMiddleware)
 
 	// Lightweight middleware for performance
 	r.Use(middleware.RequestID)
@@ -85,6 +89,25 @@ func (s *Server) routes() {
 	r.Get("/files/stream", s.handleFileStream)
 	r.Get("/collections", s.handleGetCollections)
 	r.Get("/collections/{collection_type}/stats", s.handleCollectionStats)
+}
+
+// corsMiddleware handles CORS headers for frontend requests
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
