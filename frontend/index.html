@@ -65,6 +65,24 @@
         <div class="actions">
           <button
             type="button"
+            id="about-btn"
+            class="icon-button"
+            aria-label="About RhinoBox"
+            title="About RhinoBox"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4m0-4h.01" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
             id="modeToggle"
             class="icon-button"
             aria-label="Toggle dark mode"
@@ -950,6 +968,188 @@
             </div>
           </form>
         </div>
+      </div>
+    </div>
+
+    <!-- About Modal -->
+    <div
+      id="about-modal"
+      class="about-modal"
+      role="dialog"
+      aria-labelledby="about-title"
+      aria-hidden="true"
+    >
+      <div class="about-modal-overlay" aria-hidden="true"></div>
+      <div class="about-modal-content">
+        <header class="about-modal-header">
+          <div class="about-header">
+            <div class="about-logo">
+              <svg
+                class="logo-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 3h18v4H3V3zm0 6h18v12H3V9zm2 2v8h14v-8H5z"
+                />
+              </svg>
+            </div>
+            <div class="about-title-group">
+              <h2 id="about-title" class="about-modal-title">RhinoBox</h2>
+              <p class="about-tagline">Intelligent space for every file</p>
+              <span class="version-badge" id="version-badge">v1.0.0</span>
+            </div>
+          </div>
+          <button
+            class="about-close-button"
+            aria-label="Close about dialog"
+            type="button"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </header>
+
+        <section class="about-modal-body">
+          <div class="about-section">
+            <h3>📖 About</h3>
+            <p>
+              RhinoBox is an intelligent file storage and organization system
+              that automatically categorizes your files, eliminates duplicates
+              through content-based hashing, and routes data to appropriate
+              storage backends (SQL/NoSQL) based on structure and type.
+            </p>
+          </div>
+
+          <div class="about-section">
+            <h3>✨ Key Features</h3>
+            <ul class="feature-list">
+              <li>
+                <span class="feature-icon">📁</span>
+                <div class="feature-content">
+                  <strong>Smart Categorization</strong>
+                  <p>Automatic media file detection and organization</p>
+                </div>
+              </li>
+              <li>
+                <span class="feature-icon">🔗</span>
+                <div class="feature-content">
+                  <strong>Content Deduplication</strong>
+                  <p>SHA-256 hashing prevents duplicate storage</p>
+                </div>
+              </li>
+              <li>
+                <span class="feature-icon">🗄️</span>
+                <div class="feature-content">
+                  <strong>Multi-Backend Storage</strong>
+                  <p>PostgreSQL for structured data, MongoDB for flexibility</p>
+                </div>
+              </li>
+              <li>
+                <span class="feature-icon">⚡</span>
+                <div class="feature-content">
+                  <strong>Async Batch Ingestion</strong>
+                  <p>High-throughput processing with background workers</p>
+                </div>
+              </li>
+              <li>
+                <span class="feature-icon">🔍</span>
+                <div class="feature-content">
+                  <strong>Fast Search</strong>
+                  <p>Content-based search across all stored files</p>
+                </div>
+              </li>
+              <li>
+                <span class="feature-icon">🛡️</span>
+                <div class="feature-content">
+                  <strong>Namespace Isolation</strong>
+                  <p>Secure multi-tenant data separation</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="about-section">
+            <h3>🔗 Resources</h3>
+            <div class="resource-links">
+              <a
+                href="https://github.com/Muneer320/RhinoBox"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="resource-link"
+              >
+                <span class="resource-icon">💻</span>
+                <span>GitHub Repository</span>
+                <span class="external-icon">↗</span>
+              </a>
+              <a
+                href="https://github.com/Muneer320/RhinoBox/blob/main/README.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="resource-link"
+              >
+                <span class="resource-icon">📚</span>
+                <span>Documentation</span>
+                <span class="external-icon">↗</span>
+              </a>
+              <a
+                href="https://github.com/Muneer320/RhinoBox/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="resource-link"
+              >
+                <span class="resource-icon">📝</span>
+                <span>Changelog</span>
+                <span class="external-icon">↗</span>
+              </a>
+              <a
+                href="https://github.com/Muneer320/RhinoBox/issues/new"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="resource-link"
+              >
+                <span class="resource-icon">🐛</span>
+                <span>Report Issue</span>
+                <span class="external-icon">↗</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="about-section">
+            <h3>⚖️ License</h3>
+            <p>
+              RhinoBox is open-source software licensed under the
+              <a
+                href="https://opensource.org/licenses/MIT"
+                target="_blank"
+                rel="noopener noreferrer"
+                >MIT License</a
+              >.
+            </p>
+          </div>
+        </section>
+
+        <footer class="about-modal-footer">
+          <div class="about-footer">
+            <p class="copyright">© 2025 RhinoBox Contributors</p>
+            <p class="build-info" id="build-info">Version 1.0.0 • Built on 2025-01-15</p>
+          </div>
+        </footer>
       </div>
     </div>
 

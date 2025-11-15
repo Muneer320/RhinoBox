@@ -1641,6 +1641,108 @@ function showToast(message) {
   }, 2400);
 }
 
+// Initialize About Modal
+let aboutModalInitialized = false;
+function initAboutModal() {
+  if (aboutModalInitialized) return;
+  
+  const aboutBtn = document.getElementById("about-btn");
+  const modal = document.getElementById("about-modal");
+  const closeBtn = modal?.querySelector(".about-close-button");
+  const background = modal?.querySelector(".about-modal-overlay");
+
+  if (!aboutBtn || !modal) {
+    setTimeout(initAboutModal, 100);
+    return;
+  }
+
+  aboutModalInitialized = true;
+
+  // Open modal function
+  const openModal = () => {
+    modal.classList.add("is-active");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    
+    // Focus first focusable element
+    const firstLink = modal.querySelector("a, button");
+    firstLink?.focus();
+  };
+
+  // Close modal function
+  const closeModal = () => {
+    modal.classList.remove("is-active");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    aboutBtn.focus(); // Return focus to button
+  };
+
+  // Open modal on button click
+  aboutBtn.addEventListener("click", openModal);
+
+  // Close button
+  closeBtn?.addEventListener("click", closeModal);
+
+  // Click outside modal
+  background?.addEventListener("click", closeModal);
+
+  // ESC key handler
+  const handleEscape = (e) => {
+    if (e.key === "Escape" && modal.classList.contains("is-active")) {
+      closeModal();
+    }
+  };
+  document.addEventListener("keydown", handleEscape);
+
+  // Trap focus within modal when open
+  const trapFocus = (e) => {
+    if (!modal.classList.contains("is-active")) return;
+    
+    if (e.key === "Tab") {
+      const focusableElements = modal.querySelectorAll(
+        "a[href], button:not([disabled]), textarea, input, select"
+      );
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      } else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+  };
+  modal.addEventListener("keydown", trapFocus);
+
+  // Load version info from backend (optional)
+  loadVersionInfo();
+}
+
+// Fetch version from backend (optional)
+async function loadVersionInfo() {
+  try {
+    const response = await fetch("/api/version");
+    if (!response.ok) throw new Error("Version endpoint not available");
+    
+    const data = await response.json();
+    const versionBadge = document.getElementById("version-badge");
+    const buildInfo = document.getElementById("build-info");
+    
+    if (versionBadge && data.version) {
+      versionBadge.textContent = `v${data.version}`;
+    }
+    
+    if (buildInfo && data.version && data.build_date) {
+      buildInfo.textContent = `Version ${data.version} • Built on ${data.build_date}`;
+    }
+  } catch (error) {
+    // Silently fail - version endpoint is optional
+    console.debug("Could not load version info:", error);
+  }
+}
+
 // Initialize all features when DOM is ready
 function initAll() {
   try {
@@ -1662,6 +1764,7 @@ function initAll() {
     initCommentsModal();
     initGhostButton();
     initDataTabs();
+    initAboutModal();
     ensureButtonsClickable();
 
     // Load collections if on files page
