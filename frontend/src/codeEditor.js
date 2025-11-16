@@ -1,5 +1,6 @@
 // Monaco Editor Integration for RhinoBox
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import * as monaco from 'monaco-editor';
+import { jsonDefaults } from 'monaco-editor/language/json/monaco.contribution.js';
 
 let codeEditor = null;
 let modalEditor = null;
@@ -153,7 +154,7 @@ export function initCodeEditor() {
 
   // Setup JSON validation
   if (currentLanguage === 'json') {
-    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+    jsonDefaults.setDiagnosticsOptions({
       validate: true,
       schemas: [],
       allowComments: false,
@@ -329,7 +330,7 @@ function changeLanguage(language, isModal = false) {
 
   // Update validation for JSON
   if (language === 'json') {
-    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+    jsonDefaults.setDiagnosticsOptions({
       validate: true,
       schemas: [],
       allowComments: false,

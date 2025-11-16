@@ -103,7 +103,8 @@ async function parseErrorResponse(response) {
     const contentType = response.headers.get('content-type')
     if (contentType && contentType.includes('application/json')) {
       errorData = await response.json()
-      errorMessage = errorData.message || errorData.error || errorData.detail || errorMessage
+      const structuredError = errorData.error
+      errorMessage = errorData.message || (typeof structuredError === 'string' ? structuredError : structuredError?.message) || errorData.detail || errorMessage
     } else {
       const text = await response.text()
       if (text) {
@@ -585,14 +586,13 @@ export async function deleteFile(fileId) {
 
 /**
  * Rename a file
- * Note: This endpoint may not exist in the backend yet
  * @param {string} fileId - File ID
  * @param {string} newName - New file name
  */
 export async function renameFile(fileId, newName) {
-  return apiRequest(`/files/${fileId}/rename`, {
+  return apiRequest('/files/rename', {
     method: 'PATCH',
-    body: JSON.stringify({ name: newName }),
+    body: JSON.stringify({ hash: fileId, new_name: newName }),
   })
 }
 

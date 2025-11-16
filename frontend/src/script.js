@@ -4,8 +4,8 @@ import { getUserFriendlyErrorMessage } from "./ui-components.js";
 import {
   ingestFiles,
   ingestJSON,
+  downloadFile as fetchFileDownload,
   getFiles,
-  getFile,
   deleteFile,
   renameFile,
   getNotes,
@@ -287,8 +287,11 @@ function initHomePageFeatures() {
         }
 
         showToast("Processing...");
-        await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
-        showToast("Successfully added item");
+        const result = await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
+        const count = result.records_inserted || result.records_archived || documents.length;
+        const destination = result.storage_backend === "ndjson" ? "the local NDJSON archive" : result.storage_backend;
+        showToast(`Saved ${count} document${count === 1 ? "" : "s"} to ${destination}`);
+        if (result.warnings?.length) showToast(result.warnings.join(" "), "warning", 8000);
 
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
@@ -1035,10 +1038,8 @@ function formatFileSize(bytes) {
 }
 
 // Escape HTML to prevent XSS
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
 }
 
 // Collection card navigation
@@ -1141,7 +1142,7 @@ function createFileElement(file, collectionType) {
 
   const isImage =
     collectionType === "images" || file.type?.startsWith("image/");
-  const imageUrl = file.url || file.path || file.thumbnail || "";
+  const imageUrl = `${API_CONFIG.baseURL}/files/stream?hash=${encodeURIComponent(file.hash || file.id || "")}`;
 
   div.innerHTML = `
     <div class="gallery-item-header">
@@ -1151,12 +1152,10 @@ function createFileElement(file, collectionType) {
             ? `
           <img
             src="${imageUrl}"
-            alt="${file.name || "File"}"
+            alt="${escapeHtml(file.name || "File")}"
             loading="lazy"
             class="gallery-image"
-            onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 100 100\\'%3E%3Crect fill=\\'%23ddd\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50\\' y=\\'50\\' text-anchor=\\'middle\\' dy=\\'.3em\\' font-size=\\'14\\' fill=\\'%23999\\'%3E${
-              file.type || "File"
-            }%3C/text%3E%3C/svg%3E'"
+            onerror="this.hidden=true"
           />
         `
             : `
@@ -1408,26 +1407,9 @@ function createCollectionCard(collection, stats, previewUrl = null) {
   let imageUrl = previewUrl;
 
   if (!imageUrl) {
-    // Map collection types to fallback image URLs (only used if no preview available)
-    const imageMap = {
-      images:
-        "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80",
-      videos:
-        "https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80",
-      audio:
-        "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80",
-      documents:
-        "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
-      spreadsheets:
-        "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
-      presentations:
-        "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
-      archives:
-        "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
-      other:
-        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-    };
-    imageUrl = imageMap[collection.type] || imageMap["other"];
+    const label = escapeHtml(collection.name || collection.type);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><defs><linearGradient id="cover" x2="1" y2="1"><stop stop-color="#1c2945"/><stop offset="1" stop-color="#5748b8"/></linearGradient></defs><rect width="640" height="360" fill="url(#cover)"/><path d="M245 105h64l25 24h85v104H245z" fill="none" stroke="#c7c7ff" stroke-width="7" stroke-linejoin="round"/><text x="320" y="290" text-anchor="middle" fill="#f1f1ff" font-family="system-ui,sans-serif" font-size="28">${label}</text></svg>`;
+    imageUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   }
 
   // Construct full URL if previewUrl is a relative path
@@ -1446,7 +1428,7 @@ function createCollectionCard(collection, stats, previewUrl = null) {
       src="${imageUrl}"
       alt="${collection.name || collection.type}"
       loading="lazy"
-      onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 100 100\\'%3E%3Crect fill=\\'%23ddd\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50\\' y=\\'50\\' text-anchor=\\'middle\\' dy=\\'.3em\\' font-size=\\'14\\' fill=\\'%23999\\'%3E${escapeHtml(collection.name || collection.type)}%3C/text%3E%3C/svg%3E'"
+      onerror="this.hidden=true"
     />
     <div class="collection-meta">
       <h3>${escapeHtml(collection.name || collection.type)}</h3>
@@ -1474,10 +1456,13 @@ function createCollectionCard(collection, stats, previewUrl = null) {
 // Collection cards initialization is now in initAll()
 
 // Gallery menu functionality
+let galleryDocumentBound = false;
 function initGalleryMenus() {
   const menuButtons = document.querySelectorAll(".gallery-menu-button");
   const menuOptions = document.querySelectorAll(".menu-option");
 
+  if (!galleryDocumentBound) {
+    galleryDocumentBound = true;
   // Close all dropdowns when clicking outside
   document.addEventListener("click", (e) => {
     if (
@@ -1493,8 +1478,12 @@ function initGalleryMenus() {
     }
   });
 
+  }
+
   // Toggle dropdown on menu button click
   menuButtons.forEach((button) => {
+    if (button.dataset.menuBound) return;
+    button.dataset.menuBound = "true";
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const dropdown = button.nextElementSibling;
@@ -1518,6 +1507,8 @@ function initGalleryMenus() {
 
   // Handle menu option clicks
   menuOptions.forEach((option) => {
+    if (option.dataset.actionBound) return;
+    option.dataset.actionBound = "true";
     option.addEventListener("click", async (e) => {
       e.stopPropagation();
       const action = option.dataset.action;
@@ -1605,6 +1596,8 @@ function initGalleryMenus() {
   // Populate tooltip with file data on hover
   const infoOptions = document.querySelectorAll(".menu-option-with-info");
   infoOptions.forEach((option) => {
+    if (option.dataset.infoBound) return;
+    option.dataset.infoBound = "true";
     option.addEventListener("mouseenter", () => {
       const galleryItem = option.closest(".gallery-item");
       if (!galleryItem) return;
@@ -1667,94 +1660,22 @@ if (document.readyState === "loading") {
   initGalleryMenus();
 }
 
-// Initialize ghost button
-function initGhostButton() {
-  const ghostButton = document.querySelector(".ghost-button");
-  if (ghostButton && !ghostButton.hasAttribute("data-listener-attached")) {
-    ghostButton.setAttribute("data-listener-attached", "true");
-    ghostButton.addEventListener("click", () => {
-      showToast("Viewing all collections");
-      // Could show all collections or filter view
-    });
-  }
-}
-
 // Download file function
-async function downloadFile(fileId, fileName, fileUrl, filePath) {
+async function downloadFile(fileId, fileName, _fileUrl, filePath) {
   try {
-    // Try to get file from API first to get download URL
-    let downloadUrl = fileUrl;
-
-    // If no direct URL, try to construct download URL from backend
-    if (!downloadUrl || downloadUrl === "") {
-      // Try to fetch file info from API to get download URL
-      try {
-        const fileInfo = await getFile(fileId);
-        downloadUrl =
-          fileInfo.url || fileInfo.downloadUrl || fileInfo.path || downloadUrl;
-      } catch (error) {
-        console.warn(
-          "Could not fetch file info, trying direct download:",
-          error
-        );
-        // Construct download URL from backend
-        downloadUrl = `${API_CONFIG.baseURL}/files/${fileId}/download`;
-      }
-    }
-
-    // If still no URL, use the file path or construct from fileId
-    if (!downloadUrl || downloadUrl === "") {
-      downloadUrl =
-        filePath || `${API_CONFIG.baseURL}/files/${fileId}/download`;
-    }
-
-    // Create a temporary anchor element to trigger download
+    const blob = await fetchFileDownload(fileId || null, fileId ? null : filePath, null, fileName);
+    const blobUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = downloadUrl;
+    link.href = blobUrl;
     link.download = fileName || "download";
-    link.style.display = "none";
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-
-    // If direct link doesn't work, try fetching as blob
-    setTimeout(async () => {
-      try {
-        const response = await fetch(downloadUrl, {
-          method: "GET",
-          headers: getHeaders(),
-        });
-
-        if (response.ok) {
-          const blob = await response.blob();
-          const blobUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = blobUrl;
-          link.download = fileName || "download";
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(blobUrl);
-        }
-      } catch (error) {
-        console.error("Blob download failed:", error);
-      }
-    }, 100);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    showToast("Download started");
   } catch (error) {
-    console.error("Download error:", error);
-    throw error;
+    showToast(`Download failed: ${getUserFriendlyErrorMessage(error)}`, "error");
   }
-}
-
-// Helper function to get headers (imported from api.js context)
-function getHeaders() {
-  const headers = {};
-  const token =
-    localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token");
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return headers;
 }
 
 // Ensure all buttons have proper cursor and are clickable
@@ -1814,6 +1735,10 @@ async function uploadFiles(files) {
           success = true;
         } else if (result.results.files && result.results.files.length > 0) {
           success = true;
+        } else if (result.results.json?.some(item => item.records_archived > 0 || item.records_inserted > 0)) {
+          success = true;
+          const warnings = result.results.json.flatMap(item => item.warnings || []);
+          if (warnings.length) showToast(warnings.join(" "), "warning", 8000);
         }
       }
 
@@ -1945,7 +1870,6 @@ function initAll() {
     initGalleryMenus();
     initLayoutToggle();
     initCommentsModal();
-    initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
 
@@ -2068,31 +1992,37 @@ function initDataTabs() {
 async function loadSQLTables() {
   const tbody = document.getElementById("sql-tables-body");
   if (!tbody) return;
-
+  tbody.replaceChildren();
   try {
-    // For now, we'll get SQL data from JSON collections that were stored as SQL
-    // This would need a proper SQL tables endpoint in the backend
-    // For now, show empty state
-    tbody.innerHTML = "";
-    const emptyTr = document.createElement("tr");
-    emptyTr.id = "sql-empty";
-    emptyTr.innerHTML = `
-      <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-        No SQL tables available. Upload JSON data to create SQL tables.
-      </td>
-    `;
-    tbody.appendChild(emptyTr);
-  } catch (error) {
-    console.error("Error loading SQL tables:", error);
-    if (tbody) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-            Error loading SQL tables
-          </td>
-        </tr>
-      `;
+    const response = await getFiles("json", "", { limit: 1000 });
+    const groups = new Map();
+    for (const file of response.files || []) {
+      if (file.engine !== "sql") continue;
+      const destination = file.destination || file.namespace || "default";
+      const key = `${file.storage_backend}:${destination}`;
+      if (!groups.has(key)) groups.set(key, { destination, files: [] });
+      groups.get(key).files.push(file);
     }
+    if (!groups.size) {
+      const row = tbody.insertRow();
+      const cell = row.insertCell(); cell.colSpan = 5;
+      cell.textContent = "No SQL-routed archives yet. Add JSON from Home.";
+    }
+    for (const { destination, files } of groups.values()) {
+      const latest = files[0];
+      const row = tbody.insertRow();
+      for (const value of [destination, latest.storage_backend || "ndjson", files.length, new Date(latest.uploadedAt).toLocaleString()]) {
+        row.insertCell().textContent = String(value);
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Download latest";
+      button.addEventListener("click", () => downloadFile(latest.hash, latest.name, latest.url, latest.path));
+      row.insertCell().appendChild(button);
+    }
+  } catch (error) {
+    const cell = tbody.insertRow().insertCell(); cell.colSpan = 5;
+    cell.textContent = `Could not load archives: ${getUserFriendlyErrorMessage(error)}`;
   }
 }
 
@@ -2123,7 +2053,7 @@ async function loadNoSQLCollections() {
     // For now, we'll check if there's a json collection type
     try {
       const jsonFiles = await getFiles("json", "", { limit: 100 });
-      const files = jsonFiles.files || jsonFiles || [];
+      const files = (jsonFiles.files || []).filter(file => file.engine === "nosql");
 
       if (files.length === 0) {
         if (emptyMessage) emptyMessage.style.display = "block";
@@ -2186,7 +2116,7 @@ async function loadNoSQLCollections() {
         countText.setAttribute("text-anchor", "middle");
         countText.setAttribute("font-size", "12");
         countText.setAttribute("fill", "var(--text-secondary)");
-        countText.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
+        countText.textContent = `${files.length} archived batch${files.length !== 1 ? 'es' : ''}`;
         tile.appendChild(countText);
 
         // Add click handler to show modal
@@ -2235,7 +2165,7 @@ function showNoSQLCollectionModal(namespace, files) {
 
   // Set modal title
   modalTitle.textContent = `Collection: ${namespace}`;
-  modalSubtitle.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
+  modalSubtitle.textContent = `${files.length} archived batch${files.length !== 1 ? 'es' : ''}`;
 
   // Calculate total size
   const totalSize = files.reduce((sum, file) => sum + (file.size || file.fileSize || 0), 0);
@@ -2244,14 +2174,14 @@ function showNoSQLCollectionModal(namespace, files) {
   // Populate collection info
   collectionInfo.innerHTML = `
     <div style="background: var(--surface-muted); padding: 20px; border-radius: 12px; border: 1px solid var(--border);">
-      <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">Collection Statistics</h3>
+      <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">Archive inventory</h3>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
         <div>
           <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Namespace</p>
           <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">${escapeHtml(namespace)}</p>
         </div>
         <div>
-          <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Documents</p>
+          <p style="margin: 0; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Archived batches</p>
           <p style="margin: 4px 0 0 0; font-size: 16px; font-weight: 600; color: var(--text-primary);">${files.length}</p>
         </div>
         <div>
@@ -2290,7 +2220,7 @@ function showNoSQLCollectionModal(namespace, files) {
                   </p>
                 </div>
                 ${file.url || file.downloadUrl ? `
-                  <a href="${API_CONFIG.baseURL}${file.url || file.downloadUrl}" target="_blank"
+                  <a href="${API_CONFIG.baseURL}${file.url || file.downloadUrl}" target="_blank" rel="noopener noreferrer"
                      style="padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px;
                             text-decoration: none; font-size: 12px; font-weight: 600;">
                     View
@@ -2356,8 +2286,8 @@ function initCommentsModal() {
   commentInput = document.getElementById("comment-input");
   const commentSubmit = document.getElementById("comment-submit");
   const commentCancel = document.getElementById("comment-cancel");
-  const commentsCloseButton = document.querySelector(".comments-close-button");
-  commentsFileName = document.querySelector(".comments-file-name");
+  const commentsCloseButton = commentsModal?.querySelector(".comments-close-button");
+  commentsFileName = commentsModal?.querySelector(".comments-file-name");
 
   if (commentSubmit && !commentSubmit.hasAttribute("data-listener-attached")) {
     commentSubmit.setAttribute("data-listener-attached", "true");
@@ -2505,8 +2435,8 @@ async function renderComments(fileId) {
 
       // Sort notes by date (newest first)
       const sortedNotes = [...notes].sort((a, b) => {
-        const dateA = new Date(a.date || a.createdAt || a.timestamp);
-        const dateB = new Date(b.date || b.createdAt || b.timestamp);
+        const dateA = new Date(a.date || a.created_at || a.createdAt || a.timestamp);
+        const dateB = new Date(b.date || b.created_at || b.createdAt || b.timestamp);
         return dateB - dateA;
       });
 
@@ -2516,7 +2446,7 @@ async function renderComments(fileId) {
         commentItem.dataset.commentId = note.id || note.noteId;
 
         const initials = getUserInitials();
-        const noteDate = note.date || note.createdAt || note.timestamp;
+        const noteDate = note.date || note.created_at || note.createdAt || note.timestamp;
         const noteText = note.text || note.content || note.note;
 
         commentItem.innerHTML = `

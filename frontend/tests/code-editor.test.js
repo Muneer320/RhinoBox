@@ -36,7 +36,8 @@ const monacoMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("monaco-editor/esm/vs/editor/editor.api.js", () => monacoMock);
+vi.mock("monaco-editor", () => monacoMock);
+vi.mock("monaco-editor/language/json/monaco.contribution.js", () => ({ jsonDefaults: monacoMock.languages.json.jsonDefaults }));
 global.monaco = monacoMock;
 
 // Mock DOM elements
