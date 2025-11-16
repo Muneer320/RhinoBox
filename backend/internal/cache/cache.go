@@ -22,7 +22,9 @@ type Cache struct {
 	mu    sync.RWMutex
 
 	// L3 cache: Persistent on-disk storage
-	l3 *badger.DB
+	l3        *badger.DB
+	closeOnce sync.Once
+	closeErr  error
 
 	// Metrics
 	hits   uint64
@@ -41,11 +43,11 @@ type Config struct {
 // DefaultConfig returns sensible defaults for the cache
 func DefaultConfig() Config {
 	return Config{
-		L1Size:      10000,             // 10K items in memory
-		L1TTL:       5 * time.Minute,   // 5 minute TTL
-		BloomSize:   1000000,            // 1M expected items
-		BloomFPRate: 0.01,               // 1% false positive rate
-		L3Path:      "./data/cache",     // Default path
+		L1Size:      10000,           // 10K items in memory
+		L1TTL:       5 * time.Minute, // 5 minute TTL
+		BloomSize:   1000000,         // 1M expected items
+		BloomFPRate: 0.01,            // 1% false positive rate
+		L3Path:      "./data/cache",  // Default path
 	}
 }
 
@@ -59,12 +61,36 @@ func New(cfg Config) (*Cache, error) {
 
 	// Initialize L3 BadgerDB
 	opts := badger.DefaultOptions(cfg.L3Path)
-	opts.Logger = nil // Disable verbose logging
-	opts.SyncWrites = false // Async writes for better performance
+	opts.Logger = nil          // Disable verbose logging
+	opts.SyncWrites = false    // Async writes for better performance
 	opts.NumVersionsToKeep = 1 // Keep only latest version
+	// This is a metadata cache, not a database-sized reservation per instance.
+	opts.ValueLogFileSize = 8 << 20
+	opts.MemTableSize = 8 << 20
+	opts.BaseTableSize = 2 << 20
+	opts.BaseLevelSize = 8 << 20
+	opts.BlockCacheSize = 16 << 20
+	opts.IndexCacheSize = 4 << 20
+	opts.NumMemtables = 2
 
 	l3DB, err := badger.Open(opts)
 	if err != nil {
+		return nil, err
+	}
+
+	// The in-memory filter must include persisted keys after a restart.
+	err = l3DB.View(func(txn *badger.Txn) error {
+		iterOpts := badger.DefaultIteratorOptions
+		iterOpts.PrefetchValues = false
+		iter := txn.NewIterator(iterOpts)
+		defer iter.Close()
+		for iter.Rewind(); iter.Valid(); iter.Next() {
+			bloomFilter.Add(iter.Item().Key())
+		}
+		return nil
+	})
+	if err != nil {
+		_ = l3DB.Close()
 		return nil, err
 	}
 
@@ -149,11 +175,14 @@ func (c *Cache) Delete(key string) error {
 
 // Close closes the cache and flushes pending writes
 func (c *Cache) Close() error {
-	return c.l3.Close()
+	c.closeOnce.Do(func() { c.closeErr = c.l3.Close() })
+	return c.closeErr
 }
 
 // Stats returns cache statistics
 func (c *Cache) Stats() CacheStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	totalReqs := c.hits + c.misses
 	hitRate := float64(0)
 	if totalReqs > 0 {
