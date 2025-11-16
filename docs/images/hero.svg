@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-labelledby="title desc">
+  <title id="title">RhinoBox — a place for files and a path for JSON</title>
+  <desc id="desc">An indigo storage box connects files, PostgreSQL and MongoDB. Local file organization and structural JSON routing.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#11152d"/><stop offset="1" stop-color="#292353"/></linearGradient>
+    <linearGradient id="lid" x2="1" y2="1"><stop stop-color="#a6a2ff"/><stop offset="1" stop-color="#6760ff"/></linearGradient>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M30 0H0V30" fill="none" stroke="#aaa4ff" stroke-opacity=".06"/></pattern>
+  </defs>
+  <rect width="1200" height="330" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="330" rx="20" fill="url(#grid)"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="54" y="62" fill="#b9b4ff" font-size="13" letter-spacing="3">FILES · JSON · LOCAL STORAGE</text>
+    <text x="50" y="140" fill="#fff" font-size="66" font-weight="700">RhinoBox</text>
+    <text x="54" y="190" fill="#ecebff" font-size="25">A place for files.</text>
+    <text x="54" y="225" fill="#ecebff" font-size="25">A path for JSON.</text>
+    <text x="54" y="282" fill="#b5b4d0" font-size="16">Organize uploads. Route batches. Keep the archive.</text>
+    <g fill="none" stroke="#9188ff" stroke-width="2">
+      <path d="M827 155H873V87H937M873 155V165H937M873 165V243H937"/>
+    </g>
+    <path d="M690 126L756 91L822 126L756 162Z" fill="url(#lid)"/>
+    <path d="M690 134L750 168V237L690 203Z" fill="#6960e8"/>
+    <path d="M762 168L822 134V203L762 237Z" fill="#9890ff"/>
+    <g fill="#20213e" stroke="#726aaf">
+      <rect x="938" y="61" width="208" height="51" rx="10"/>
+      <rect x="938" y="139" width="208" height="51" rx="10"/>
+      <rect x="938" y="217" width="208" height="51" rx="10"/>
+    </g>
+    <g fill="#eeeaff" font-size="17">
+      <text x="960" y="93">Indexed files</text>
+      <text x="960" y="171">PostgreSQL</text>
+      <text x="960" y="249">MongoDB</text>
+    </g>
+  </g>
+</svg>

@@ -1,53 +1,92 @@
-# RhinoBox
+<div align="center">
 
-[![Checks and local demo](https://github.com/Muneer320/RhinoBox/actions/workflows/ci.yml/badge.svg)](https://github.com/Muneer320/RhinoBox/actions/workflows/ci.yml)
+![RhinoBox: a place for files, a path for JSON](docs/images/hero.svg)
 
-RhinoBox is a team-built hackathon prototype for organizing files and routing JSON batches to PostgreSQL or MongoDB using structural heuristics. A Go API handles storage; a Vite frontend provides uploads, collections, notes, search, downloads and an inventory of JSON archives.
+**A local workspace for organizing files and routing JSON into the right kind of store.**
 
-The maintained target is a **local, single-user demo**. The original team history is preserved. Throughput benchmarks and production readiness are not claimed.
+Upload files, find them again, and send JSON batches to PostgreSQL or MongoDB from the same interface.
 
-## Run the complete demo
+[![Checks and local demo](https://github.com/Muneer320/RhinoBox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Muneer320/RhinoBox/actions/workflows/ci.yml) [![MIT license](https://img.shields.io/badge/license-MIT-7770e8?style=flat-square)](LICENSE) [![Go backend](https://img.shields.io/badge/Go-backend-00ADD8?style=flat-square&logo=go&logoColor=white)](backend/go.mod)
 
-Install Docker with Compose, then run from the repository root:
+[**Try locally**](#try-it-locally) · [**See the workflow**](#from-upload-to-stored-data) · [**Developer guides**](#developer-guides)
+
+</div>
+
+## One workspace for two storage problems
+
+Files need names, collections and a way to find them. JSON batches also need a storage decision: a flat, consistent shape fits a relational table differently from a deeply nested document. RhinoBox brings those workflows together: browse indexed files, inspect a structural routing decision, and keep a downloadable archive of each JSON batch.
+
+![The running RhinoBox workspace with automatic file routing and upload controls](docs/images/workspace.png)
+
+*Real local application capture. The demo uses synthetic files and records; no personal uploads are shown.*
+
+| Find your files | Send JSON somewhere useful | Keep the result visible |
+| --- | --- | --- |
+| Collections, metadata/content search, previews, downloads and notes | Structural heuristics recommend SQL or NoSQL; configured adapters write to PostgreSQL or MongoDB | Responses distinguish database inserts from archived records; NDJSON batches remain downloadable |
+
+> [!NOTE]
+> **Team-built hackathon prototype; maintained as a local, single-user demo.** No external account or API key is needed. Authentication and tenant isolation are not implemented; keep it on your own machine.
+
+## From upload to stored data
+
+```mermaid
+flowchart LR
+    UI[Browser workspace] --> Proxy[Vite or nginx proxy]
+    Proxy --> API[Go API]
+    API --> Files[Indexed files and NDJSON archives]
+    API --> Shape[JSON structure analysis]
+    Shape -->|SQL selected| PG[(PostgreSQL)]
+    Shape -->|NoSQL selected| Mongo[(MongoDB)]
+```
+
+File classification uses MIME types/extensions and saved rules. JSON routing examines structure; it does not infer the meaning of a document. The selected backend and actual insert/archive counts are returned separately.
+
+<details>
+<summary><strong>See JSON entry in the running application</strong></summary>
+
+![Actual Monaco JSON editor with a synthetic customer batch](docs/images/json-editor.png)
+
+The editor submits JSON to the API. **Data** lists retained SQL/NoSQL-routed archives; **Files → JSON Documents** provides their downloads and normal file controls. Data is an archive inventory, not a live database console.
+
+</details>
+
+## Try it locally
+
+Install Git and Docker with Compose v2. From a terminal:
 
 ```sh
+git clone https://github.com/Muneer320/RhinoBox.git
+cd RhinoBox
 docker compose -p rhinobox-demo up --build --wait --wait-timeout 180
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The API is available at [http://127.0.0.1:8090/healthz](http://127.0.0.1:8090/healthz). No external account or API key is needed. PostgreSQL and MongoDB use internal container networking; the web ports bind only to loopback. The included database password is a local demo default.
+**Open [localhost:5173](http://127.0.0.1:5173).** The Go API health check is [localhost:8090/healthz](http://127.0.0.1:8090/healthz). PostgreSQL and MongoDB start with the application and use internal container networking. Web ports bind only to loopback; the included database password is a local demo default.
 
-Stop the demo while keeping its data:
-
-```sh
-docker compose -p rhinobox-demo stop
-```
-
-Named volumes retain files, metadata and database records. Keep the same Compose project name when restarting.
-
-## Try it
-
-1. From **Home**, upload a small image or text file. Auto routing uses its MIME type/extension; the type selector can override that choice.
-2. Open **Files**, select a collection and try download, rename, notes and deletion. Collection counts refresh after changes.
-3. Open **Add New Item**, enter a flat JSON batch and submit it:
+1. Upload a small image or text file from **Home**. Auto uses its MIME type/extension; the type selector can override it.
+2. Open **Files**, select a collection, and try download, rename and notes. Reload to see saved changes.
+3. Choose **Add New Item**, paste this batch and submit:
 
    ```json
    [{"id":1,"customer":"Ada","total":12.5},{"id":2,"customer":"Lin","total":7.5}]
    ```
 
-4. The response identifies the actual storage backend. **Data** shows retained SQL/NoSQL-routed archives; **Files → JSON Documents** exposes downloadable NDJSON batches with normal file controls.
-5. Try deeply nested JSON to exercise MongoDB routing. See [the demo walkthrough](docs/DEMO.md) for the exact examples and verification command.
+4. The response reports the actual storage backend. Find its archive in **Data** or **Files → JSON Documents**. The [walkthrough](docs/DEMO.md) includes a nested example for MongoDB and database verification.
 
-## What works
+Stop while keeping files, metadata and database records:
 
-- Indexed file storage with SHA-256 deduplication, MIME/extension categories and saved routing rules.
-- File listing, metadata/name/date/content search, download and range streaming, rename, copy, move, versions, notes and deletion. Some advanced operations are API-only.
-- JSON structure analysis, SQL/NoSQL recommendation and actual writes when the selected database is configured.
-- Transactional PostgreSQL table creation/insertion; changed inferred schemas get separate tables instead of silently dropping new fields.
-- MongoDB insertion that preserves int64 values and reports partial write counts.
-- Indexed NDJSON archives, collection statistics, bounded persistent caching and streamed upload limits.
-- Automated backend/frontend checks and a Compose smoke test that queries the real databases and checks persistence after restart.
+```sh
+docker compose -p rhinobox-demo stop
+```
 
-## Storage behavior and limits
+Use the same Compose project name next time to reuse its named volumes. The complete Compose path is verified on Docker Desktop; Linux backend and frontend checks also run in CI.
+
+## What to know before importing data
+
+> [!IMPORTANT]
+> **Archive deletion does not delete database rows.** JSON writes and filesystem archival are separate operations. Retrying a committed or partially committed batch can duplicate database records. The demo has no request idempotency or public-hosting authentication.
+
+<details>
+<summary><strong>Storage behavior, upload limits and incomplete features</strong></summary>
 
 JSON responses separate `decision.engine`, `storage_backend`, `records_inserted`, `records_archived` and warnings. If the selected database URL is absent, RhinoBox archives NDJSON locally and reports zero database inserts. A configured but unreachable database fails startup.
 
@@ -59,7 +98,16 @@ The default request/upload cap is 512 MiB; the media endpoint accepts at most 50
 
 Authentication, tenant isolation and asynchronous ingestion are not implemented. Setting `RHINOBOX_AUTH_ENABLED=true` refuses startup. This demo is not configured for public hosting. No current throughput or stress-test performance is asserted.
 
-## Local development without databases
+Additional file operations include range streaming, copy, move and versions; some are API-only. Collection statistics use a bounded persistent cache. See [database behavior](docs/DATABASE.md) and the [API reference](docs/API_REFERENCE.md).
+
+</details>
+
+## Develop and verify
+
+The interface uses Vite, plain JavaScript and Monaco; the Go API manages indexed files and database adapters. Docker Compose provides PostgreSQL 16 and MongoDB 7 for the full demo.
+
+<details>
+<summary><strong>Native development and environment configuration</strong></summary>
 
 Use Go and Node.js 24. Docker/CI use Go 1.27; native Windows checks also run with Go 1.25.1.
 
@@ -91,7 +139,10 @@ Open the printed Vite URL. Its `/api` proxy forwards to the local Go server. JSO
 | `RHINOBOX_DB_MAX_CONNS` | `10` per database adapter |
 | `VITE_API_BASE_URL` | Frontend build setting; defaults to `/api` |
 
-## Checks
+</details>
+
+<details>
+<summary><strong>Tests, lint, build and real-database restart checks</strong></summary>
 
 ```sh
 cd backend
@@ -120,13 +171,17 @@ python scripts/smoke_demo.py --project rhinobox-demo --base-url http://127.0.0.1
 
 The smoke test creates synthetic records and disposable files; it retains synthetic database records and remaining archives for the restart check. Tests use generated fixtures, not personal Downloads folders. Vitest failures propagate to the exit status. Some legacy console warnings remain in lint. The production npm audit is clear; five moderate advisories remain in development lint dependencies.
 
-## Documentation and contributors
+</details>
 
-- [Demo walkthrough](docs/DEMO.md)
-- [API reference](docs/API_REFERENCE.md)
-- [Architecture](docs/ARCHITECTURE.md), [database behavior](docs/DATABASE.md), [deployment](docs/DEPLOYMENT.md)
-- [Frontend development](frontend/README.md)
+## Developer guides
 
-RhinoBox was built collaboratively. The repository's human contributors include [@Muneer320](https://github.com/Muneer320), [@thewildofficial](https://github.com/thewildofficial) and [@ZairaAk](https://github.com/ZairaAk). Their original contributions and commit history remain intact.
+| Start and explore | Understand and operate |
+| --- | --- |
+| [Demo walkthrough](docs/DEMO.md) | [Architecture](docs/ARCHITECTURE.md) |
+| [Frontend development](frontend/README.md) | [Database behavior](docs/DATABASE.md) |
+| [Backend development](backend/README.md) | [Deployment and local boundaries](docs/DEPLOYMENT.md) |
+| [API reference](docs/API_REFERENCE.md) | [MIT license](LICENSE) |
 
-Released under the [MIT license](LICENSE).
+For bugs, open an [issue](https://github.com/Muneer320/RhinoBox/issues) with reproduction steps and the affected endpoint or screen. For a contribution, keep the change focused, run the relevant checks above and update affected guides. Use generated fixtures; never attach credentials or personal uploads.
+
+RhinoBox was built collaboratively. Contributors include [@Muneer320](https://github.com/Muneer320), [@thewildofficial](https://github.com/thewildofficial) and [@ZairaAk](https://github.com/ZairaAk). Original contributions and history remain intact. Released under [MIT](LICENSE).
