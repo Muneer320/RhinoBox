@@ -138,6 +138,15 @@ docker run -p 8090:8090 -v ./data:/data rhinobox
 | PATCH  | `/files/{file_id}/metadata` | Update file metadata                           |
 | PATCH  | `/files/rename`             | Rename a file                                  |
 | POST   | `/files/metadata/batch`     | Batch update file metadata                     |
+| GET    | `/files/type/{type}`        | Get all files of a specific type               |
+| GET    | `/files/{file_id}/notes`    | Get notes for a file                           |
+| POST   | `/files/{file_id}/notes`    | Add a note to a file                           |
+| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                           |
+| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                           |
+| GET    | `/statistics`               | Get overall storage statistics                 |
+| GET    | `/collections`              | Get all file collections                       |
+| GET    | `/collections/{type}/stats` | Get collection-specific statistics             |
+| GET    | `/api/config`               | Get API configuration                          |
 
 **See `docs/API_REFERENCE.md` for detailed API documentation.**
 

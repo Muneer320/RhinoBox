@@ -49,6 +49,15 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 | POST   | `/files/copy/batch`         | Batch copy files                                  |
 | PATCH  | `/files/{file_id}/move`     | Move a file to different category                 |
 | PATCH  | `/files/batch/move`         | Batch move files                                  |
+| GET    | `/files/type/{type}`        | Get files by type (images, videos, documents)     |
+| GET    | `/files/{file_id}/notes`    | Get notes/comments for a file                     |
+| POST   | `/files/{file_id}/notes`    | Add a note to a file                              |
+| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                             |
+| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                             |
+| GET    | `/statistics`               | Get overall storage statistics                    |
+| GET    | `/collections`              | Get all file collections                          |
+| GET    | `/collections/{type}/stats` | Get statistics for a specific collection          |
+| GET    | `/api/config`               | Get API configuration                             |
 
 ---
 
@@ -1022,6 +1031,328 @@ data/
 └── files/
     └── <namespace>/
         └── <filename>_<uuid><ext>
+```
+
+---
+
+## GET `/files/type/{type}`
+
+Get all files of a specific type (collection).
+
+### Path Parameters
+
+| Parameter | Type   | Description                                    |
+| --------- | ------ | ---------------------------------------------- |
+| `type`    | string | File type: `images`, `videos`, `audio`, `documents`, `archives`, `other` |
+
+### Query Parameters
+
+| Parameter   | Type   | Description                    |
+| ----------- | ------ | ------------------------------ |
+| `page`      | int    | Page number (default: 1)       |
+| `page_size` | int    | Items per page (default: 50)   |
+
+### Response
+
+```json
+{
+  "files": [
+    {
+      "hash": "abc123...",
+      "original_name": "vacation.jpg",
+      "stored_path": "storage/images/vacation.jpg",
+      "category": "images",
+      "mime_type": "image/jpeg",
+      "size": 1048576,
+      "uploaded_at": "2025-11-15T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 50,
+    "total_items": 150,
+    "total_pages": 3
+  }
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/files/type/images?page=1&page_size=20"
+```
+
+---
+
+## GET `/files/{file_id}/notes`
+
+Get all notes/comments for a specific file.
+
+### Path Parameters
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `file_id` | string | File hash   |
+
+### Response
+
+```json
+{
+  "notes": [
+    {
+      "id": "note_123",
+      "file_id": "abc123...",
+      "text": "Great photo from the trip!",
+      "author": "user@example.com",
+      "created_at": "2025-11-15T10:30:00Z",
+      "updated_at": "2025-11-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/files/abc123.../notes"
+```
+
+---
+
+## POST `/files/{file_id}/notes`
+
+Add a new note to a file.
+
+### Path Parameters
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `file_id` | string | File hash   |
+
+### Request Body
+
+```json
+{
+  "text": "Remember to edit this later",
+  "author": "user@example.com"
+}
+```
+
+### Response
+
+```json
+{
+  "id": "note_456",
+  "file_id": "abc123...",
+  "text": "Remember to edit this later",
+  "author": "user@example.com",
+  "created_at": "2025-11-15T11:00:00Z",
+  "updated_at": "2025-11-15T11:00:00Z"
+}
+```
+
+### Example
+
+```bash
+curl -X POST "http://localhost:8090/files/abc123.../notes" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Great shot!", "author": "john@example.com"}'
+```
+
+---
+
+## PATCH `/files/{file_id}/notes/{note_id}`
+
+Update an existing note.
+
+### Path Parameters
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `file_id` | string | File hash   |
+| `note_id` | string | Note ID     |
+
+### Request Body
+
+```json
+{
+  "text": "Updated note text"
+}
+```
+
+### Response
+
+```json
+{
+  "id": "note_456",
+  "file_id": "abc123...",
+  "text": "Updated note text",
+  "author": "user@example.com",
+  "created_at": "2025-11-15T11:00:00Z",
+  "updated_at": "2025-11-15T11:30:00Z"
+}
+```
+
+---
+
+## DELETE `/files/{file_id}/notes/{note_id}`
+
+Delete a note from a file.
+
+### Path Parameters
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `file_id` | string | File hash   |
+| `note_id` | string | Note ID     |
+
+### Response
+
+```json
+{
+  "message": "Note deleted successfully"
+}
+```
+
+### Example
+
+```bash
+curl -X DELETE "http://localhost:8090/files/abc123.../notes/note_456"
+```
+
+---
+
+## GET `/statistics`
+
+Get overall storage and file statistics.
+
+### Response
+
+```json
+{
+  "total_files": 1250,
+  "total_size": 5368709120,
+  "total_size_formatted": "5.0 GB",
+  "by_category": {
+    "images": {"count": 450, "size": 2147483648},
+    "videos": {"count": 120, "size": 2147483648},
+    "documents": {"count": 680, "size": 1073741824}
+  },
+  "recent_uploads": 25,
+  "storage_used_percent": 45.5
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/statistics"
+```
+
+---
+
+## GET `/collections`
+
+Get all file collections with metadata and statistics.
+
+### Response
+
+```json
+{
+  "collections": [
+    {
+      "type": "images",
+      "name": "Images",
+      "description": "Photo and image files",
+      "count": 450,
+      "size": 2147483648,
+      "size_formatted": "2.0 GB"
+    },
+    {
+      "type": "videos",
+      "name": "Videos",
+      "description": "Video files",
+      "count": 120,
+      "size": 2147483648,
+      "size_formatted": "2.0 GB"
+    }
+  ]
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/collections"
+```
+
+---
+
+## GET `/collections/{type}/stats`
+
+Get detailed statistics for a specific collection.
+
+### Path Parameters
+
+| Parameter | Type   | Description                    |
+| --------- | ------ | ------------------------------ |
+| `type`    | string | Collection type (e.g., `images`) |
+
+### Response
+
+```json
+{
+  "type": "images",
+  "file_count": 450,
+  "total_size": 2147483648,
+  "storage_used_formatted": "2.0 GB",
+  "avg_file_size": 4771853,
+  "largest_file": {
+    "name": "panorama.jpg",
+    "size": 15728640
+  },
+  "recent_files": 15,
+  "file_types": {
+    "jpg": 320,
+    "png": 100,
+    "gif": 30
+  }
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/collections/images/stats"
+```
+
+---
+
+## GET `/api/config`
+
+Get API configuration and feature flags.
+
+### Response
+
+```json
+{
+  "features": {
+    "auth_enabled": false,
+    "async_processing": true,
+    "content_search": true
+  },
+  "limits": {
+    "max_upload_size": 536870912,
+    "max_batch_size": 100
+  },
+  "version": "1.0.0"
+}
+```
+
+### Example
+
+```bash
+curl "http://localhost:8090/api/config"
 ```
 
 ---
