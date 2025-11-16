@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -512,7 +513,7 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		"decision": result.Decision, "batch_path": result.BatchPath, "schema_path": result.SchemaPath,
 		"documents": len(docs), "storage_backend": result.StorageBackend,
 		"records_inserted": result.RecordsInserted, "records_archived": result.RecordsArchived,
-		"schema_created": result.SchemaCreated, "warnings": result.Warnings,
+		"schema_created": result.SchemaCreated, "warnings": result.Warnings, "archive_hash": result.ArchiveHash,
 	})
 }
 
@@ -705,6 +706,9 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 			parsed, err := time.Parse(time.RFC3339, raw)
 			if err != nil {
 				parsed, err = time.Parse("2006-01-02", raw)
+				if err == nil && input.key == "date_to" {
+					parsed = parsed.AddDate(0, 0, 1).Add(-time.Nanosecond)
+				}
 			}
 			if err != nil {
 				httpError(w, http.StatusBadRequest, "invalid "+input.key)
@@ -717,7 +721,7 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "date_from must not be after date_to")
 		return
 	}
-	results := s.storage.SearchFiles(filters)
+	results := s.storage.SearchFilesWithContent(filters)
 
 	// Transform results to include frontend-friendly field names
 	formattedResults := make([]map[string]any, len(results))
@@ -1023,7 +1027,9 @@ func (s *Server) checkIfRange(r *http.Request, result *storage.FileRetrievalResu
 func (s *Server) setFileHeaders(w http.ResponseWriter, r *http.Request, result *storage.FileRetrievalResult, disposition string) {
 	w.Header().Set("Content-Type", result.Metadata.MimeType)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", result.Size))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, result.Metadata.OriginalName))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": result.Metadata.OriginalName}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'")
 	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, result.Metadata.Hash))
 	w.Header().Set("Last-Modified", result.Metadata.UploadedAt.Format(http.TimeFormat))
 	w.Header().Set("X-File-Category", result.Metadata.Category)
@@ -1181,29 +1187,31 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files = append(files, map[string]any{
-			"id":             file.Hash, // Use hash as ID
-			"name":           file.OriginalName,
-			"fileName":       file.OriginalName, // Alias for compatibility
-			"path":           file.StoredPath,
-			"filePath":       file.StoredPath, // Alias for compatibility
-			"storedPath":     file.StoredPath,
-			"size":           file.Size,
-			"fileSize":       file.Size, // Alias for compatibility
-			"type":           file.MimeType,
-			"category":       file.Category,
-			"fileType":       file.MimeType, // Alias for compatibility
-			"date":           file.UploadedAt.Format(time.RFC3339),
-			"uploadedAt":     file.UploadedAt.Format(time.RFC3339),
-			"hash":           file.Hash,
-			"url":            fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"downloadUrl":    fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"dimensions":     dimensions,
-			"fileDimensions": dimensions, // Alias for compatibility
-			"description":    description,
-			"comment":        description, // Alias for compatibility
-			"namespace":      namespace,
-			"collection":     namespace,
-			"engine":         engine,
+			"id":              file.Hash, // Use hash as ID
+			"name":            file.OriginalName,
+			"fileName":        file.OriginalName, // Alias for compatibility
+			"path":            file.StoredPath,
+			"filePath":        file.StoredPath, // Alias for compatibility
+			"storedPath":      file.StoredPath,
+			"size":            file.Size,
+			"fileSize":        file.Size, // Alias for compatibility
+			"type":            file.MimeType,
+			"category":        file.Category,
+			"fileType":        file.MimeType, // Alias for compatibility
+			"date":            file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":      file.UploadedAt.Format(time.RFC3339),
+			"hash":            file.Hash,
+			"url":             fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":     fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":      dimensions,
+			"fileDimensions":  dimensions, // Alias for compatibility
+			"description":     description,
+			"comment":         description, // Alias for compatibility
+			"namespace":       namespace,
+			"collection":      namespace,
+			"engine":          engine,
+			"storage_backend": file.Metadata["storage_backend"],
+			"destination":     file.Metadata["table"],
 		})
 	}
 
@@ -1294,29 +1302,31 @@ func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files = append(files, map[string]any{
-			"id":             file.Hash,
-			"name":           file.OriginalName,
-			"fileName":       file.OriginalName,
-			"path":           file.StoredPath,
-			"filePath":       file.StoredPath,
-			"storedPath":     file.StoredPath,
-			"size":           file.Size,
-			"fileSize":       file.Size,
-			"type":           file.MimeType,
-			"category":       file.Category,
-			"fileType":       file.MimeType,
-			"date":           file.UploadedAt.Format(time.RFC3339),
-			"uploadedAt":     file.UploadedAt.Format(time.RFC3339),
-			"hash":           file.Hash,
-			"url":            fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"downloadUrl":    fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"dimensions":     dimensions,
-			"fileDimensions": dimensions,
-			"description":    description,
-			"comment":        description,
-			"namespace":      namespace,
-			"collection":     namespace,
-			"engine":         engine,
+			"id":              file.Hash,
+			"name":            file.OriginalName,
+			"fileName":        file.OriginalName,
+			"path":            file.StoredPath,
+			"filePath":        file.StoredPath,
+			"storedPath":      file.StoredPath,
+			"size":            file.Size,
+			"fileSize":        file.Size,
+			"type":            file.MimeType,
+			"category":        file.Category,
+			"fileType":        file.MimeType,
+			"date":            file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":      file.UploadedAt.Format(time.RFC3339),
+			"hash":            file.Hash,
+			"url":             fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":     fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":      dimensions,
+			"fileDimensions":  dimensions,
+			"description":     description,
+			"comment":         description,
+			"namespace":       namespace,
+			"collection":      namespace,
+			"engine":          engine,
+			"storage_backend": file.Metadata["storage_backend"],
+			"destination":     file.Metadata["table"],
 		})
 	}
 

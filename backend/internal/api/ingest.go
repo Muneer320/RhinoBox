@@ -55,6 +55,7 @@ type MediaResult struct {
 }
 
 type JSONResult struct {
+	ArchiveHash           string              `json:"archive_hash,omitempty"`
 	StorageBackend        string              `json:"storage_backend"`
 	RecordsArchived       int                 `json:"records_archived"`
 	Warnings              []string            `json:"warnings,omitempty"`

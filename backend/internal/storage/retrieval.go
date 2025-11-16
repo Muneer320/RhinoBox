@@ -237,20 +237,9 @@ func (m *Manager) GetFilesByType(req GetFilesByTypeRequest) (*GetFilesByTypeResp
 		req.Limit = 1000 // Max limit to prevent excessive memory usage
 	}
 
-	// Special-case JSON collections: they are stored as NDJSON batches on disk
-	// and are not part of the metadata index. Enumerate JSON batches directly.
-	var allFiles []FileMetadata
-	if strings.ToLower(req.Type) == "json" {
-		var err error
-		allFiles, err = m.ListJSONBatches()
-		if err != nil {
-			return nil, fmt.Errorf("failed to list json batches: %v", err)
-		}
-	} else {
-		m.mu.Lock()
-		allFiles = m.index.FindByType(req.Type)
-		m.mu.Unlock()
-	}
+	m.mu.Lock()
+	allFiles := m.index.FindByType(req.Type)
+	m.mu.Unlock()
 
 	// Filter by category if specified
 	filteredFiles := allFiles

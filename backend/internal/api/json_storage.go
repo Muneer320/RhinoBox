@@ -41,12 +41,13 @@ func (s *Server) persistJSON(ctx context.Context, namespace, comment string, doc
 			columns = append(columns, name)
 		}
 		if s.postgres != nil {
-			if err := s.postgres.StoreJSON(ctx, decision.Table, decision.Schema, columns, docs); err != nil {
+			created, err := s.postgres.StoreJSON(ctx, decision.Table, decision.Schema, columns, docs)
+			if err != nil {
 				return JSONResult{}, fmt.Errorf("PostgreSQL ingest: %w", err)
 			}
 			result.StorageBackend = "postgres"
 			result.RecordsInserted = len(docs)
-			result.SchemaCreated = true
+			result.SchemaCreated = created
 		}
 	} else if s.mongo != nil {
 		inserted, err := s.mongo.InsertJSON(ctx, "rhinobox", decision.Table, docs)
@@ -62,17 +63,16 @@ func (s *Server) persistJSON(ctx context.Context, namespace, comment string, doc
 	}
 	result.TableOrCollection = decision.Table
 	result.Decision = decision
-	result.BatchPath = s.storage.NextJSONBatchPath(decision.Engine, namespace)
-	if _, err := s.storage.AppendNDJSON(result.BatchPath, docs); err != nil {
-		// Database writes and filesystem archival are not a distributed transaction.
-		// Report committed DB writes accurately; do not encourage an unsafe retry.
+	archive, err := s.storage.StoreJSONArchive(decision.Engine, namespace, result.StorageBackend, decision.Table, docs)
+	if err != nil {
 		if result.RecordsInserted == 0 {
 			return JSONResult{}, fmt.Errorf("archive JSON: %w", err)
 		}
-		result.BatchPath = ""
 		result.Warnings = append(result.Warnings, "Database write committed; NDJSON archive failed.")
 		s.logger.Error("archive JSON after database commit", "err", err)
 	} else {
+		result.BatchPath = archive.Metadata.StoredPath
+		result.ArchiveHash = archive.Metadata.Hash
 		result.RecordsArchived = len(docs)
 	}
 	if decision.Engine == "sql" {

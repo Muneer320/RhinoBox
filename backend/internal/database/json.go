@@ -12,22 +12,26 @@ import (
 
 // StoreJSON creates the inferred table and inserts a complete batch atomically.
 // PostgreSQL performs JSON-to-column conversion, preserving JSON numbers and nulls.
-func (db *PostgresDB) StoreJSON(ctx context.Context, table, ddl string, columns []string, docs []map[string]any) error {
+func (db *PostgresDB) StoreJSON(ctx context.Context, table, ddl string, columns []string, docs []map[string]any) (bool, error) {
 	payload, err := json.Marshal(docs)
 	if err != nil {
-		return fmt.Errorf("encode documents: %w", err)
+		return false, fmt.Errorf("encode documents: %w", err)
 	}
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin batch: %w", err)
+		return false, fmt.Errorf("begin batch: %w", err)
 	}
 	defer tx.Rollback(ctx)
 	// Serialize first creation of a schema shared by concurrent ingest requests.
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", table); err != nil {
-		return err
+		return false, err
+	}
+	var existed bool
+	if err := tx.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", pgx.Identifier{table}.Sanitize()).Scan(&existed); err != nil {
+		return false, err
 	}
 	if _, err := tx.Exec(ctx, ddl); err != nil {
-		return fmt.Errorf("create inferred table: %w", err)
+		return false, fmt.Errorf("create inferred table: %w", err)
 	}
 	tableSQL := pgx.Identifier{table}.Sanitize()
 	columns = append([]string(nil), columns...)
@@ -35,7 +39,7 @@ func (db *PostgresDB) StoreJSON(ctx context.Context, table, ddl string, columns 
 	if len(columns) == 0 {
 		for range docs {
 			if _, err := tx.Exec(ctx, "INSERT INTO "+tableSQL+" DEFAULT VALUES"); err != nil {
-				return fmt.Errorf("insert document: %w", err)
+				return false, fmt.Errorf("insert document: %w", err)
 			}
 		}
 	} else {
@@ -46,11 +50,11 @@ func (db *PostgresDB) StoreJSON(ctx context.Context, table, ddl string, columns 
 		list := strings.Join(quoted, ", ")
 		query := "INSERT INTO " + tableSQL + " (" + list + ") SELECT " + list + " FROM jsonb_populate_recordset(NULL::" + tableSQL + ", $1::jsonb)"
 		if _, err := tx.Exec(ctx, query, string(payload)); err != nil {
-			return fmt.Errorf("insert batch: %w", err)
+			return false, fmt.Errorf("insert batch: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit batch: %w", err)
+		return false, fmt.Errorf("commit batch: %w", err)
 	}
-	return nil
+	return !existed, nil
 }
