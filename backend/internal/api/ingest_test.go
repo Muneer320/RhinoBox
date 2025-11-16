@@ -135,8 +135,8 @@ func TestUnifiedIngestMixed(t *testing.T) {
 	if len(result.Results.JSON) != 1 {
 		t.Errorf("expected 1 JSON result, got %d", len(result.Results.JSON))
 	}
-	if result.Timing["total_ms"] == 0 {
-		t.Error("expected timing metrics to be populated")
+	if elapsed, ok := result.Timing["total_ms"]; !ok || elapsed < 0 {
+		t.Error("expected a non-negative total_ms timing metric; sub-millisecond work may round to zero")
 	}
 }
 
