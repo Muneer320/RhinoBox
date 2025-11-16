@@ -18,7 +18,7 @@ func RegisterAllSchemas(validator *Validator, maxUploadBytes int64) {
 			MaxSize:      maxUploadBytes,
 			MaxFiles:     100, // Reasonable limit
 			FieldName:    "files",
-			AllowedTypes: []string{"image", "video", "audio", "application/json", "application/pdf", "application/octet-stream"}, // Allow all types
+			AllowedTypes: []string{}, // Allow all file types - empty slice means no MIME type restrictions
 		},
 		QueryParams: map[string]QueryParamRule{
 			"namespace": {
@@ -54,7 +54,7 @@ func RegisterAllSchemas(validator *Validator, maxUploadBytes int64) {
 			MaxSize:      maxUploadBytes,
 			MaxFiles:     50,
 			FieldName:    "file",
-			AllowedTypes: []string{"image", "video", "audio", "application/octet-stream"}, // Allow octet-stream as fallback
+			AllowedTypes: []string{}, // Allow all file types - empty slice means no MIME type restrictions
 		},
 		QueryParams: map[string]QueryParamRule{
 			"category": {

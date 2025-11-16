@@ -1152,6 +1152,7 @@ async function loadCollectionFiles(collectionType) {
       presentations: "documents",
       archives: "archives",
       other: "other",
+      files: "files", // Generic files type
     };
 
     const apiType = apiTypeMap[collectionType] || collectionType;
@@ -1340,32 +1341,46 @@ async function loadCollections() {
       return;
     }
 
-    // Fetch stats for each collection in parallel
-    const statsPromises = collections.map((collection) =>
-      getCollectionStats(collection.type).catch((err) => {
-        console.warn(`Failed to fetch stats for ${collection.type}:`, err);
-        return {
-          type: collection.type,
-          file_count: 0,
-          storage_used: 0,
-          storage_used_formatted: "0 B",
-        };
-      })
-    );
-
-    const statsResults = await Promise.all(statsPromises);
-    const statsMap = new Map();
-    statsResults.forEach((stats) => {
-      statsMap.set(stats.type, stats);
-    });
-
     // Hide loading state
     if (loadingState) loadingState.style.display = "none";
 
+    // Collections may have stats embedded or we need to fetch them
+    const collectionsWithStats = await Promise.all(
+      collections.map(async (collection) => {
+        // If stats are already in the response, use them
+        if (collection.stats) {
+          return {
+            ...collection,
+            stats: collection.stats,
+          };
+        }
+        // Otherwise, fetch stats separately
+        try {
+          const statsResponse = await getCollectionStats(collection.type);
+          return {
+            ...collection,
+            stats: statsResponse.stats || statsResponse.Stats || statsResponse,
+          };
+        } catch (err) {
+          console.warn(`Failed to fetch stats for ${collection.type}:`, err);
+          return {
+            ...collection,
+            stats: {
+              type: collection.type,
+              file_count: 0,
+              storage_used: 0,
+              storage_used_formatted: "0 B",
+            },
+          };
+        }
+      })
+    );
+
     // Filter out empty collections (collections with 0 files)
-    const nonEmptyCollections = collections.filter((collection) => {
-      const stats = statsMap.get(collection.type);
-      const fileCount = stats?.file_count || 0;
+    const nonEmptyCollections = collectionsWithStats.filter((collection) => {
+      const stats = collection.stats;
+      // Handle different stats structures
+      const fileCount = stats?.file_count || stats?.Stats?.file_count || 0;
       return fileCount > 0;
     });
 
@@ -1377,11 +1392,19 @@ async function loadCollections() {
 
     // Render collection cards for non-empty collections only
     nonEmptyCollections.forEach((collection) => {
-      const stats = statsMap.get(collection.type) || {
+      // Extract stats - handle both embedded stats and separate stats object
+      const stats = collection.stats || {
         file_count: 0,
+        storage_used: 0,
         storage_used_formatted: "0 B",
       };
-      const card = createCollectionCard(collection, stats);
+      // Normalize stats structure (handle Stats vs stats)
+      const normalizedStats = {
+        file_count: stats.file_count || stats.Stats?.file_count || 0,
+        storage_used: stats.storage_used || stats.Stats?.storage_used || 0,
+        storage_used_formatted: stats.storage_used_formatted || stats.Stats?.storage_used_formatted || "0 B",
+      };
+      const card = createCollectionCard(collection, normalizedStats);
       collectionCards.appendChild(card);
     });
 

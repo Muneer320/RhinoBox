@@ -27,6 +27,12 @@ func NewRequestSizeLimitMiddleware(cfg config.SecurityConfig, logger *slog.Logge
 // Handler returns the middleware handler function
 func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Always allow OPTIONS requests through (CORS preflight)
+		if req.Method == "OPTIONS" {
+			next.ServeHTTP(w, req)
+			return
+		}
+		
 		if r.config.MaxRequestSize <= 0 {
 			next.ServeHTTP(w, req)
 			return
@@ -34,7 +40,13 @@ func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 
 		// Check Content-Length header first
 		if req.ContentLength > r.config.MaxRequestSize {
-			http.Error(w, "Request entity too large", http.StatusRequestEntityTooLarge)
+			// Set CORS headers before error response (always set for wildcard)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			w.Write([]byte("Request entity too large"))
 			return
 		}
 
@@ -48,7 +60,13 @@ func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 			if n > 0 {
 				bodyBytes = append(bodyBytes, buf[:n]...)
 				if int64(len(bodyBytes)) > r.config.MaxRequestSize {
-					http.Error(w, "Request entity too large", http.StatusRequestEntityTooLarge)
+					// Set CORS headers before error response (always set for wildcard)
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.WriteHeader(http.StatusRequestEntityTooLarge)
+					w.Write([]byte("Request entity too large"))
 					return
 				}
 			}
@@ -56,7 +74,13 @@ func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 				break
 			}
 			if err != nil {
-				http.Error(w, "Error reading request body", http.StatusBadRequest)
+				// Set CORS headers before error response (always set for wildcard)
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Error reading request body"))
 				return
 			}
 		}

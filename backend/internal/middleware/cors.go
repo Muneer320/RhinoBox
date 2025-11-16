@@ -34,6 +34,15 @@ func (c *CORSMiddleware) Handler(next http.Handler) http.Handler {
 
 		origin := r.Header.Get("Origin")
 
+		// Log CORS requests for debugging
+		if origin != "" {
+			c.logger.Debug("CORS request",
+				"method", r.Method,
+				"origin", origin,
+				"path", r.URL.Path,
+			)
+		}
+
 		// Handle preflight OPTIONS requests
 		if r.Method == "OPTIONS" {
 			c.handlePreflight(w, r, origin)
@@ -44,11 +53,25 @@ func (c *CORSMiddleware) Handler(next http.Handler) http.Handler {
 		allowedOrigin := c.getAllowedOrigin(origin)
 		if allowedOrigin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-			if c.config.CORSAllowCreds {
+			// Only set credentials header if credentials are enabled AND not using wildcard
+			// (wildcard with credentials is insecure and should be disabled by config validation)
+			if c.config.CORSAllowCreds && allowedOrigin != "*" {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			// Set exposed headers on actual responses (not just preflight)
 			w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type, X-Request-ID")
+			c.logger.Debug("CORS: Allowed origin",
+				"origin", origin,
+				"allowed_origin", allowedOrigin,
+				"credentials", c.config.CORSAllowCreds,
+			)
+		} else if origin != "" {
+			// Log when origin is provided but not allowed (for debugging)
+			c.logger.Warn("CORS: Origin not allowed",
+				"origin", origin,
+				"allowed_origins", c.config.CORSOrigins,
+				"path", r.URL.Path,
+			)
 		}
 
 		// Continue with the request
@@ -61,13 +84,20 @@ func (c *CORSMiddleware) handlePreflight(w http.ResponseWriter, r *http.Request,
 	allowedOrigin := c.getAllowedOrigin(origin)
 	if allowedOrigin == "" {
 		// Origin not allowed, reject preflight
+		// Log for debugging
+		c.logger.Debug("CORS: Preflight rejected - origin not allowed",
+			"origin", origin,
+			"allowed_origins", c.config.CORSOrigins,
+		)
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
 	// Set CORS headers for preflight
 	w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-	if c.config.CORSAllowCreds {
+	// Only set credentials header if credentials are enabled AND not using wildcard
+	// (wildcard with credentials is insecure and should be disabled by config validation)
+	if c.config.CORSAllowCreds && allowedOrigin != "*" {
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
 
@@ -81,7 +111,9 @@ func (c *CORSMiddleware) handlePreflight(w http.ResponseWriter, r *http.Request,
 	if requestedHeaders != "" {
 		// Use requested headers if they match our allowed headers, otherwise use configured
 		if c.isHeaderAllowed(requestedHeaders) {
-			w.Header().Set("Access-Control-Allow-Headers", requestedHeaders)
+			// Echo back the requested headers (normalized)
+			normalizedHeaders := c.normalizeHeaders(requestedHeaders)
+			w.Header().Set("Access-Control-Allow-Headers", normalizedHeaders)
 		} else if len(c.config.CORSAllowHeaders) > 0 {
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join(c.config.CORSAllowHeaders, ", "))
 		}
@@ -103,6 +135,20 @@ func (c *CORSMiddleware) handlePreflight(w http.ResponseWriter, r *http.Request,
 // getAllowedOrigin determines if the origin is allowed and returns the allowed origin value
 func (c *CORSMiddleware) getAllowedOrigin(origin string) string {
 	if len(c.config.CORSOrigins) == 0 {
+		return ""
+	}
+
+	// Handle null/empty origin (file:// protocol or same-origin requests)
+	// For same-origin requests, CORS doesn't apply, but we still need to handle them gracefully
+	// For file:// protocol, we allow it if wildcard is enabled
+	if origin == "" || origin == "null" {
+		// Check if wildcard is enabled and credentials are disabled (required for wildcard)
+		for _, allowed := range c.config.CORSOrigins {
+			if allowed == "*" && !c.config.CORSAllowCreds {
+				return "*"
+			}
+		}
+		// If no wildcard or credentials enabled, reject null origin
 		return ""
 	}
 
@@ -142,6 +188,19 @@ func (c *CORSMiddleware) isHeaderAllowed(requestedHeaders string) bool {
 		}
 	}
 	return true
+}
+
+// normalizeHeaders normalizes header names (lowercase, trimmed) and returns them as a comma-separated string
+func (c *CORSMiddleware) normalizeHeaders(headers string) string {
+	parts := strings.Split(headers, ",")
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return strings.Join(normalized, ", ")
 }
 
 // formatDuration formats a duration as seconds for HTTP headers

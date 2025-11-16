@@ -128,10 +128,18 @@ async function apiRequest(endpoint, options = {}) {
   
   // If body is FormData, preserve auth headers but let browser set Content-Type with boundary
   const isFormData = options.body instanceof FormData
-  const defaultHeaders = getHeaders()
+  let defaultHeaders = {}
+  
   if (isFormData) {
-    // Let the browser set multipart boundary while preserving auth headers
-    delete defaultHeaders['Content-Type']
+    // For FormData, only include Authorization header if present, let browser set Content-Type
+    const token = getAuthToken()
+    if (token) {
+      defaultHeaders['Authorization'] = `Bearer ${token}`
+    }
+    // Explicitly don't set Content-Type - browser will set it with boundary
+  } else {
+    // For non-FormData requests, use all default headers
+    defaultHeaders = getHeaders()
   }
   
   const config = {
@@ -141,6 +149,8 @@ async function apiRequest(endpoint, options = {}) {
       ...options.headers,
     },
     signal: controller.signal,
+    mode: 'cors', // Explicitly set CORS mode for cross-origin requests
+    credentials: 'omit', // Don't send credentials to avoid CORS issues with wildcard origin
   }
 
   try {
