@@ -74,8 +74,9 @@ func LoadSecurityConfig() SecurityConfig {
 		RateLimitByIP:       getBoolEnv("RHINOBOX_RATE_LIMIT_BY_IP", true),
 		RateLimitByEndpoint: getBoolEnv("RHINOBOX_RATE_LIMIT_BY_ENDPOINT", false),
 
-		// Request size limits (default 10MB, separate from upload size)
-		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 10*1024*1024),
+		// Request size limits (default 2GB to support large file uploads, separate from upload size)
+		// Note: This should be less than or equal to MaxUploadBytes in config.go (25 GiB)
+		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 2*1024*1024*1024),
 
 		// IP filtering defaults
 		IPWhitelistEnabled: getBoolEnv("RHINOBOX_IP_WHITELIST_ENABLED", false),

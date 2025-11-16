@@ -1838,7 +1838,6 @@ async function uploadFiles(files) {
         console.warn(`Upload completed but no files in result for: ${file.name}`);
       }
     } catch (error) {
-      console.error(`Upload error for ${file.name}:`, error);
       const errorMessage = error.message || "Unknown error";
       const errorStatus = error.status || 0;
 
@@ -1846,17 +1845,18 @@ async function uploadFiles(files) {
       if (errorStatus === 413 || errorMessage.includes("Request Entity Too Large")) {
         skippedCount++;
         skippedFiles.push(file.name);
-        console.warn(`Skipping file too large: ${file.name}`);
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        console.warn(`⚠️ Skipping file too large: ${file.name} (${fileSizeMB} MB exceeds 10MB limit) - continuing with other files`);
       } else if (errorStatus >= 400 && errorStatus < 500) {
         // Other client errors - skip and continue
         skippedCount++;
         skippedFiles.push(file.name);
-        console.warn(`Skipping file due to client error (${errorStatus}): ${file.name}`);
+        console.warn(`⚠️ Skipping file due to client error (${errorStatus}): ${file.name} (will continue with other files)`);
       } else {
         // Network or server errors - count as failed but continue
         failedCount++;
         failedFiles.push(file.name);
-        console.error(`Failed to upload: ${file.name}`, error);
+        console.error(`❌ Failed to upload: ${file.name}`, error);
       }
     }
   }

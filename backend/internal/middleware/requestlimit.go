@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -44,9 +45,15 @@ func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusRequestEntityTooLarge)
-			w.Write([]byte("Request entity too large"))
+			
+			// Provide detailed error message with size information
+			maxSizeMB := float64(r.config.MaxRequestSize) / (1024 * 1024)
+			requestSizeMB := float64(req.ContentLength) / (1024 * 1024)
+			errorMsg := fmt.Sprintf(`{"error":"Request entity too large","message":"File size (%.2f MB) exceeds maximum allowed size (%.2f MB). Maximum request size: %d bytes"}`, 
+				requestSizeMB, maxSizeMB, r.config.MaxRequestSize)
+			w.Write([]byte(errorMsg))
 			return
 		}
 
@@ -64,9 +71,15 @@ func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 					w.Header().Set("Access-Control-Allow-Origin", "*")
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.Header().Set("Content-Type", "application/json; charset=utf-8")
 					w.WriteHeader(http.StatusRequestEntityTooLarge)
-					w.Write([]byte("Request entity too large"))
+					
+					// Provide detailed error message with size information
+					maxSizeMB := float64(r.config.MaxRequestSize) / (1024 * 1024)
+					requestSizeMB := float64(len(bodyBytes)) / (1024 * 1024)
+					errorMsg := fmt.Sprintf(`{"error":"Request entity too large","message":"File size (%.2f MB) exceeds maximum allowed size (%.2f MB). Maximum request size: %d bytes"}`, 
+						requestSizeMB, maxSizeMB, r.config.MaxRequestSize)
+					w.Write([]byte(errorMsg))
 					return
 				}
 			}
