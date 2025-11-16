@@ -31,3 +31,6 @@ docker/.env
 backend/rhinobox
 backend/*.exe
 backend/*.dll
+
+# Duplicate directories
+RhinoBox/
