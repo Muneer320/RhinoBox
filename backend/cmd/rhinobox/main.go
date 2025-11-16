@@ -12,7 +12,6 @@ import (
 
 	"github.com/Muneer320/RhinoBox/internal/api"
 	"github.com/Muneer320/RhinoBox/internal/config"
-	"golang.org/x/net/http2"
 )
 
 func main() {
@@ -29,14 +28,13 @@ func main() {
 	}
 	defer srv.Stop()
 
-	// Configure high-performance HTTP server
+	// Allow bounded local uploads time to finish without claiming plaintext HTTP/2.
 	server := &http.Server{
 		Addr:    cfg.Addr,
 		Handler: srv.Router(),
 
-		// Aggressive timeouts for fast responses
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 
@@ -54,18 +52,9 @@ func main() {
 		},
 	}
 
-	// Enable HTTP/2 with optimized settings
-	http2Server := &http2.Server{
-		MaxConcurrentStreams: 1000,
-		MaxReadFrameSize:     1 << 20, // 1MB
-		IdleTimeout:          120 * time.Second,
-	}
-	_ = http2.ConfigureServer(server, http2Server)
-
 	logger.Info("starting RhinoBox",
 		slog.String("addr", cfg.Addr),
-		slog.String("data_dir", cfg.DataDir),
-		slog.Bool("http2", true))
+		slog.String("data_dir", cfg.DataDir))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
