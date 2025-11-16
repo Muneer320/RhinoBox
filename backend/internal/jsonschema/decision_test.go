@@ -27,6 +27,22 @@ func TestDecideStorageSQLVsNoSQL(t *testing.T) {
 			},
 			expected: "nosql",
 		},
+		{
+			name: "simple_consistent_json",
+			docs: []map[string]any{
+				{"name": "Alice", "age": jsonNumber("25"), "email": "alice@example.com"},
+				{"name": "Bob", "age": jsonNumber("30"), "email": "bob@example.com"},
+				{"name": "Charlie", "age": jsonNumber("35"), "email": "charlie@example.com"},
+			},
+			expected: "sql",
+		},
+		{
+			name: "simple_single_document",
+			docs: []map[string]any{
+				{"id": jsonNumber("1"), "title": "Test", "status": "active"},
+			},
+			expected: "sql",
+		},
 	}
 
 	for _, tt := range tests {

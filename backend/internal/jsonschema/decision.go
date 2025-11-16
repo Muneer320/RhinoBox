@@ -25,6 +25,7 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 	sqlReasons := make([]string, 0)
 	nosqlReasons := make([]string, 0)
 
+	// SQL indicators (positive scoring)
 	if analysis.HasForeignKeys || analysis.HasRelationships {
 		score += 1.0
 		sqlReasons = append(sqlReasons, "foreign keys/relationships present")
@@ -36,11 +37,22 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 	if analysis.SchemaConsistency > 0.8 {
 		score += 0.5
 		sqlReasons = append(sqlReasons, fmt.Sprintf("schema consistency %.2f", analysis.SchemaConsistency))
+	} else if analysis.SchemaConsistency > 0.7 {
+		// Give partial credit for good consistency
+		score += 0.3
+		sqlReasons = append(sqlReasons, fmt.Sprintf("schema consistency %.2f", analysis.SchemaConsistency))
 	}
 	if analysis.MaxNestingDepth <= 2 {
 		score += 0.3
+		sqlReasons = append(sqlReasons, "shallow nesting")
+	}
+	// Bonus for simple, flat structures with good consistency
+	if analysis.MaxNestingDepth <= 2 && analysis.SchemaConsistency > 0.7 && analysis.FieldCount > 0 && analysis.FieldCount < 50 {
+		score += 0.2
+		sqlReasons = append(sqlReasons, "simple flat structure")
 	}
 
+	// NoSQL indicators (negative scoring)
 	if analysis.MaxNestingDepth > 3 {
 		score -= 1.0
 		nosqlReasons = append(nosqlReasons, "deep nesting")
@@ -58,20 +70,62 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 		nosqlReasons = append(nosqlReasons, "high write load hint")
 	}
 
-	engine := "nosql"
-	confidence := -score
-	reason := strings.Join(nosqlReasons, "; ")
+	// Decision logic: favor SQL for simple, consistent structures
+	// Default to SQL unless there are clear NoSQL indicators
+	engine := "sql"
+	confidence := score
+	reason := strings.Join(sqlReasons, "; ")
 	if reason == "" {
-		reason = "optimized for flexible schema"
+		reason = "simple consistent structure"
 	}
-	if score > 0.5 {
-		engine = "sql"
-		confidence = score
-		reason = strings.Join(sqlReasons, "; ")
-		if reason == "" {
-			reason = "stable relational signals"
+	
+	// Switch to NoSQL only if we have clear indicators:
+	// 1. Deep nesting (> 3 levels) - strong NoSQL indicator
+	// 2. Very low consistency (< 0.5) - schema is too inconsistent
+	// 3. High field variation (> 30% unique field sets) - too flexible (only for multiple documents)
+	// 4. Low consistency (< 0.6) combined with nested structure (> 2 levels)
+	shouldUseNoSQL := false
+	
+	if analysis.MaxNestingDepth > 3 {
+		shouldUseNoSQL = true
+	}
+	if analysis.SchemaConsistency < 0.5 {
+		shouldUseNoSQL = true
+	}
+	// Only check field variation if we have enough documents to make it meaningful
+	// For small numbers of documents, the ratio can be misleading
+	// High variation means many different field structures across documents
+	if analysis.RecordCount >= 3 {
+		ratio := float64(analysis.UniqueFieldSets) / float64(analysis.RecordCount)
+		// If more than 50% of documents have unique field structures, that's high variation
+		// For 3+ documents, this indicates inconsistent schema
+		if ratio > 0.5 {
+			shouldUseNoSQL = true
+		}
+	} else if analysis.RecordCount == 2 {
+		// For exactly 2 documents, only flag if they have completely different structures
+		// (i.e., UniqueFieldSets = 2, meaning both are different)
+		if analysis.UniqueFieldSets == 2 {
+			shouldUseNoSQL = true
 		}
 	}
+	if analysis.SchemaConsistency < 0.6 && analysis.MaxNestingDepth > 2 {
+		shouldUseNoSQL = true
+	}
+	
+	// Only switch to NoSQL if we have clear indicators
+	if shouldUseNoSQL {
+		engine = "nosql"
+		confidence = -score
+		if confidence < 0 {
+			confidence = -confidence
+		}
+		reason = strings.Join(nosqlReasons, "; ")
+		if reason == "" {
+			reason = "optimized for flexible schema"
+		}
+	}
+	
 	reason = fmt.Sprintf("%s (score %.2f)", reason, score)
 
 	table := sanitizeIdentifier(namespace)
