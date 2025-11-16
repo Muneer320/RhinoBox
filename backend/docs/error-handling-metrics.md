@@ -1,5 +1,7 @@
 # Error Handling Middleware - Implementation Metrics
 
+> Historical implementation notes. Line counts, coverage percentages, acceptance checklists and performance claims below are not current verification results. Use the [current instructions](../README.md) and [demo walkthrough](../../docs/DEMO.md) for supported behavior and validation.
+
 ## Overview
 This document provides metrics and analysis for the centralized error handling middleware implementation.
 

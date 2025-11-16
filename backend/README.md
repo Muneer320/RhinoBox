@@ -1,116 +1,19 @@
-# RhinoBox
+# RhinoBox backend
 
-RhinoBox is a hackathon-friendly, high-speed Go service that accepts any payload through one HTTP entry point and stores it intelligently in the local filesystem. Media assets are categorized and dropped into type-aware folders, while structured JSON is analyzed to decide whether it belongs in an auto-generated SQL schema or in a document-style collection.
+The Go API supports the local file manager and JSON routing demo. Run `go run ./cmd/rhinobox` from this directory. It binds to `127.0.0.1:8090` and stores data under `./data` by default. Use Go 1.25 or newer; Docker and CI use Go 1.27.
 
-## Features
+Files are indexed by content hash and support collections, search, download, rename, move, notes and deletion. JSON batches are analyzed using structural heuristics. Configured PostgreSQL/MongoDB adapters receive the selected batches; otherwise that engine uses an indexed NDJSON archive and reports zero database inserts. Responses distinguish inserted and archived counts and surface partial-write warnings.
 
-- **Single ingestion API**: upload media (images, videos, audio, anything) and structured JSON through the same server.
-- **Automatic retry logic**: exponential backoff (3 attempts, 1s→2s→4s) for transient failures in job processing.
-- **On-the-fly media organization**: MIME-aware classifier groups assets (images/videos/audio/other) and keeps related uploads inside deterministic subdirectories. Optional `category` hints keep humans in the loop.
-- **Schema-aware JSON handling**: a Go port of the MammothBox schema analyzer inspects each batch, computes stability metrics, and selects SQL vs. NoSQL storage automatically.
-- **Advanced search**: metadata search + content search inside text files (JSON, XML, code, markdown up to 10MB).
-- **Filesystem-first**: everything lands under `./data`, making demos easy and keeping the footprint portable.
+For the complete browser/database demo, run Compose from the repository root. See the [README](../README.md), [walkthrough](../docs/DEMO.md), [API reference](../docs/API_REFERENCE.md) and [database behavior](../docs/DATABASE.md).
 
-## Requirements
+Run checks here:
 
-- Go 1.21+
-
-## Getting Started
-
-```pwsh
-cd RhinoBox
-setx RHINOBOX_ADDR ":8090" # optional override
-# optional: setx RHINOBOX_DATA_DIR "C:\\tmp\\rhino-data"
-go run ./cmd/rhinobox
+```sh
+go test -mod=readonly -p 2 -timeout 120s ./...
+go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 ```
 
-The server exposes:
+Tests generate their own fixtures. The current integrated smoke check is `scripts/smoke_demo.py` at the repository root; it independently queries both databases and checks retained archives after restart. Earlier stress-test artifacts are historical, do not establish current performance and are not part of the supported demo instructions.
 
-- `GET /healthz` — basic health probe.
-- `POST /ingest/media` — multipart form upload (`file` parts, optional `category` + `comment`).
-- `POST /ingest/json` — JSON body with either a single `document` or multiple `documents` plus optional metadata.
-- `POST /ingest/async` — async unified ingestion (returns job ID immediately).
-- `POST /ingest/media/async` — async media upload (background processing).
-- `POST /ingest/json/async` — async JSON ingestion (queued processing).
-- `GET /jobs` — list active and recent jobs.
-- `GET /jobs/{job_id}` — check job status and progress.
-- `GET /jobs/{job_id}/result` — get detailed job results.
-- `DELETE /jobs/{job_id}` — cancel a job.
-- `GET /jobs/stats` — queue statistics (pending, processing, completed, workers).
-
-For full API documentation, see [API_REFERENCE.md](../docs/API_REFERENCE.md) and [ASYNC_API.md](../docs/ASYNC_API.md).
-
-### Media Upload Example
-
-```pwsh
-curl -X POST http://localhost:8090/ingest/media `
-  -F "file=@cats/sleepy.png" `
-  -F "file=@videos/intro.mp4" `
-  -F "category=wildlife" `
-  -F "comment=demo run"
-```
-
-Response includes the resolved media folders and relative file paths under `data/media/...`.
-
-### JSON Upload Example
-
-```pwsh
-curl -X POST http://localhost:8090/ingest/json `
-  -H "Content-Type: application/json" `
-  -d '{
-    "namespace": "inventory",
-    "comment": "evening batch",
-    "documents": [
-      {"sku": "A-100", "qty": 42, "price": 19.99},
-      {"sku": "B-200", "qty": 10, "price": 4.25}
-    ]
-  }'
-```
-
-RhinoBox will:
-
-1. Analyze the batch for schema stability.
-2. Decide SQL vs. NoSQL storage and emit a matching decision payload.
-3. Append newline-delimited documents under `data/json/<engine>/<namespace>/...`.
-4. For SQL decisions, generate a reusable `schema.json` with the inferred DDL.
-
-### Configuration
-
-- `RHINOBOX_ADDR` — HTTP bind address (default `:8090`).
-- `RHINOBOX_DATA_DIR` — root for filesystem storage (default `./data`).
-- `RHINOBOX_MAX_UPLOAD_MB` — multipart limit in MiB (default `512`).
-
-### Observability
-
-- Media ingestion log: `data/media/ingest_log.ndjson`
-- JSON ingestion log: `data/json/ingest_log.ndjson`
-
-Each log entry captures timestamps, chosen storage strategy, and any optional metadata/comments supplied during ingestion.
-
-## Testing
-
-### Unit Tests
-
-```pwsh
-cd RhinoBox
-go test ./...
-```
-
-### E2E Stress Tests
-
-**Latest Results** (November 16, 2025): ✅ **100% Success Rate - Production Ready**
-
-```pwsh
-cd backend/tests/e2e-results
-.\stress_test_e2e.ps1
-```
-
-**Performance Highlights**:
-
-- 55 files (1.06 GB), 13 file types across 7 test phases
-- Upload: 228.35 MB/s avg, 341.59 MB/s peak (128% above target)
-- Search: 3.45ms avg latency (29x faster than 100ms target)
-- Async jobs: 6/6 completed with zero failures
-- Zero errors across all operations
-
-See [tests/e2e-results/](tests/e2e-results/) for detailed test reports and metrics.
+This is a local, single-user prototype. Authentication, tenant isolation and asynchronous ingestion routes are not implemented. Queue helper code does not imply a public job API. Concurrent API processes must not share a data directory. Database writes and filesystem archives are separate operations; retries are not idempotent.

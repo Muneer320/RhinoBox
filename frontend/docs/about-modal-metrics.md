@@ -1,5 +1,7 @@
 # About Modal Feature - Metrics and Performance
 
+> Historical implementation notes. Line counts, coverage percentages, acceptance checklists and performance claims below are not current verification results. Use the [current instructions](../README.md) and [demo walkthrough](../../docs/DEMO.md) for supported behavior and validation.
+
 ## Implementation Summary
 
 This document provides detailed metrics and analysis for the About/Information Page feature implementation (Issue #97).
