@@ -30,7 +30,7 @@ func Load() (Config, error) {
 	addr := getEnv("RHINOBOX_ADDR", ":8090")
 	dataDir := getEnv("RHINOBOX_DATA_DIR", filepath.Join(".", "data"))
 
-	maxUploadBytes := int64(512 * 1024 * 1024) // 512 MiB default
+	maxUploadBytes := int64(25 * 1024 * 1024 * 1024) // 25 GiB default
 	if raw := os.Getenv("RHINOBOX_MAX_UPLOAD_MB"); raw != "" {
 		if mb, err := strconv.ParseInt(raw, 10, 64); err == nil && mb > 0 {
 			maxUploadBytes = mb * 1024 * 1024

@@ -1362,16 +1362,16 @@ async function loadCollections() {
             stats: statsResponse.stats || statsResponse.Stats || statsResponse,
           };
         } catch (err) {
-          console.warn(`Failed to fetch stats for ${collection.type}:`, err);
-          return {
+        console.warn(`Failed to fetch stats for ${collection.type}:`, err);
+        return {
             ...collection,
             stats: {
-              type: collection.type,
-              file_count: 0,
-              storage_used: 0,
-              storage_used_formatted: "0 B",
+          type: collection.type,
+          file_count: 0,
+          storage_used: 0,
+          storage_used_formatted: "0 B",
             },
-          };
+        };
         }
       })
     );
@@ -1781,78 +1781,128 @@ function ensureButtonsClickable() {
   });
 }
 
-// Upload files to backend
+// Upload files to backend with individual file handling and progress tracking
 async function uploadFiles(files) {
   if (!files || files.length === 0) {
     showToast("No files selected");
     return;
   }
 
-  try {
-    showToast(
-      `Uploading ${files.length} file${files.length > 1 ? "s" : ""}...`
-    );
+  const fileArray = Array.isArray(files) ? files : [files];
+  const fileType = getSelectedFileType();
+  const namespace = ""; // Can be enhanced later
 
-    const fileType = getSelectedFileType();
-    const namespace = ""; // Can be enhanced later
+  // Track upload results
+  let uploadedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+  const skippedFiles = [];
+  const failedFiles = [];
 
-    // Use unified endpoint with file type override
-    const result = await ingestFiles(files, namespace, "", fileType);
+  // Show initial progress
+  const updateProgress = (current, total, status = "") => {
+    const progressMsg = status 
+      ? `${status} (${current}/${total})`
+      : `Uploading ${current}/${total} files...`;
+    showToast(progressMsg, "info", 5000);
+  };
 
-    // Show consolidated success message
-    let overrideCount = 0;
-    let totalCount = 0;
-    if (result && result.results && result.results.media) {
-      totalCount += result.results.media.length;
-      overrideCount += result.results.media.filter(
-        (m) => m.user_override_type && m.user_override_type !== ""
-      ).length;
-    } else if (result && result.results && result.results.files) {
-      totalCount += result.results.files.length;
-      overrideCount += result.results.files.filter(
-        (f) => f.user_override_type && f.user_override_type !== ""
-      ).length;
+  updateProgress(0, fileArray.length, "Starting upload");
+
+  // Upload files one by one to handle errors individually
+  for (let i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i];
+    const currentIndex = i + 1;
+
+    try {
+      updateProgress(currentIndex, fileArray.length, `Uploading ${file.name}`);
+
+      // Upload single file
+      const result = await ingestFiles([file], namespace, "", fileType);
+
+      // Check if upload was successful
+      let success = false;
+      if (result && result.results) {
+        if (result.results.media && result.results.media.length > 0) {
+          success = true;
+        } else if (result.results.files && result.results.files.length > 0) {
+          success = true;
+        }
+      }
+
+      if (success) {
+        uploadedCount++;
+      } else {
+        failedCount++;
+        failedFiles.push(file.name);
+        console.warn(`Upload completed but no files in result for: ${file.name}`);
+      }
+    } catch (error) {
+      console.error(`Upload error for ${file.name}:`, error);
+      const errorMessage = error.message || "Unknown error";
+      const errorStatus = error.status || 0;
+
+      // Skip files that are too large (413) or other client errors (4xx)
+      if (errorStatus === 413 || errorMessage.includes("Request Entity Too Large")) {
+        skippedCount++;
+        skippedFiles.push(file.name);
+        console.warn(`Skipping file too large: ${file.name}`);
+      } else if (errorStatus >= 400 && errorStatus < 500) {
+        // Other client errors - skip and continue
+        skippedCount++;
+        skippedFiles.push(file.name);
+        console.warn(`Skipping file due to client error (${errorStatus}): ${file.name}`);
+      } else {
+        // Network or server errors - count as failed but continue
+        failedCount++;
+        failedFiles.push(file.name);
+        console.error(`Failed to upload: ${file.name}`, error);
+      }
     }
+  }
 
-    if (totalCount > 0) {
-      const msg =
-        overrideCount > 0
-          ? `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded (${
-              overrideCount
-            } with override)`
-          : `✅ ${totalCount} file${totalCount > 1 ? "s" : ""} uploaded successfully`;
-      showToast(msg, "success");
-    } else {
-      showToast(
-        `Successfully uploaded ${files.length} file${
-          files.length > 1 ? "s" : ""
-        }`,
-        "success"
-      );
+  // Show final results
+  const totalProcessed = uploadedCount + skippedCount + failedCount;
+  let resultMessage = "";
+
+  if (uploadedCount > 0) {
+    resultMessage = `✅ ${uploadedCount} file${uploadedCount > 1 ? "s" : ""} uploaded successfully`;
+    
+    if (skippedCount > 0) {
+      resultMessage += `, ${skippedCount} skipped`;
     }
-
-    // Reset selector after upload
-    resetFileTypeSelector();
-
-    // Reload current collection if viewing one
-    if (currentCollectionType) {
-      loadCollectionFiles(currentCollectionType);
+    if (failedCount > 0) {
+      resultMessage += `, ${failedCount} failed`;
     }
-  } catch (error) {
-    console.error("Upload error:", error);
-    const errorMessage = error.message || "Unknown error";
-
-    // Provide more helpful error messages
-    if (
-      errorMessage.includes("Cannot connect to backend") ||
-      errorMessage.includes("Failed to fetch")
-    ) {
-      showToast(
-        "Cannot connect to backend. Is the server running on port 8090?"
-      );
-    } else {
-      showToast(`Upload failed: ${errorMessage}`);
+    
+    showToast(resultMessage, "success", 5000);
+  } else if (skippedCount > 0) {
+    resultMessage = `⚠️ ${skippedCount} file${skippedCount > 1 ? "s" : ""} skipped (too large or invalid)`;
+    if (failedCount > 0) {
+      resultMessage += `, ${failedCount} failed`;
     }
+    showToast(resultMessage, "error", 5000);
+  } else if (failedCount > 0) {
+    resultMessage = `❌ ${failedCount} file${failedCount > 1 ? "s" : ""} failed to upload`;
+    showToast(resultMessage, "error", 5000);
+  } else {
+    showToast("No files were processed", "error");
+  }
+
+  // Log details in console
+  if (skippedFiles.length > 0) {
+    console.warn("Skipped files:", skippedFiles);
+  }
+  if (failedFiles.length > 0) {
+    console.error("Failed files:", failedFiles);
+  }
+
+  // Reset selector after upload
+  resetFileTypeSelector();
+
+  // Reload current collection if viewing one and we had successful uploads
+  if (currentCollectionType && uploadedCount > 0) {
+    loadCollectionFiles(currentCollectionType);
   }
 }
 

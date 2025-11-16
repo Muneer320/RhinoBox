@@ -175,21 +175,40 @@ async function apiRequest(endpoint, options = {}) {
     
     // Handle network errors
     if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+      const isAccessDenied = error.message.includes('ACCESS_DENIED') || 
+                             error.message.includes('ERR_ACCESS_DENIED') ||
+                             (error.cause && error.cause.message && error.cause.message.includes('ACCESS_DENIED'))
+      
+      const possibleCauses = isAccessDenied ? [
+        'Browser extension (ad blocker, privacy extension) is blocking the request',
+        'Browser security policy is blocking the request',
+        'Cached failed CORS response - try clearing browser cache',
+        'Backend server is not running or not accessible'
+      ] : [
+        'Backend server is not running',
+        'CORS configuration issue',
+        'Network connectivity problem',
+        'Incorrect backend URL'
+      ]
+      
       console.error('API Request Failed:', {
         endpoint,
         url,
         error: error.message,
-        possibleCauses: [
-          'Backend server is not running',
-          'CORS configuration issue',
-          'Network connectivity problem',
-          'Incorrect backend URL'
-        ]
+        errorName: error.name,
+        errorCause: error.cause,
+        isAccessDenied,
+        possibleCauses
       })
+      
+      const errorMessage = isAccessDenied
+        ? `Request blocked by browser (ERR_ACCESS_DENIED). This is usually caused by a browser extension. Try disabling extensions or using a different browser. Backend URL: ${API_CONFIG.baseURL}`
+        : `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`
+      
       throw new APIError(
-        `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`,
+        errorMessage,
         0,
-        { type: 'network', url }
+        { type: isAccessDenied ? 'access-denied' : 'network', url, isAccessDenied }
       )
     }
     
@@ -249,10 +268,61 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
     formData.append('file_type_override', fileTypeOverride)
   }
 
-  return apiRequest('/ingest', {
-    method: 'POST',
-    headers: {}, // Let browser set Content-Type for FormData
-    body: formData,
+  // Use XMLHttpRequest for FormData uploads to avoid ERR_ACCESS_DENIED issues
+  // This can bypass some browser security restrictions that affect fetch()
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const url = `${API_CONFIG.baseURL}/ingest`
+    
+    xhr.open('POST', url, true)
+    
+    // Set headers
+    const token = getAuthToken()
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    }
+    // Don't set Content-Type - browser will set it with boundary for FormData
+    
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText)
+          resolve(response)
+        } catch (e) {
+          reject(new APIError('Invalid JSON response from server', xhr.status))
+        }
+      } else {
+        let errorMessage = xhr.statusText || `HTTP error! status: ${xhr.status}`
+        
+        // Handle specific status codes with better messages
+        if (xhr.status === 413) {
+          errorMessage = 'Request Entity Too Large - File exceeds maximum size limit'
+        }
+        
+        try {
+          const errorData = JSON.parse(xhr.responseText)
+          errorMessage = errorData.message || errorData.error || errorData.detail || errorMessage
+        } catch {
+          // If response is not JSON, use status text or our custom message
+        }
+        reject(new APIError(errorMessage, xhr.status))
+      }
+    }
+    
+    xhr.onerror = function() {
+      reject(new APIError(
+        `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`,
+        0,
+        { type: 'network', url, isAccessDenied: true }
+      ))
+    }
+    
+    xhr.ontimeout = function() {
+      reject(new APIError('Request timeout. Please try again.', 0, { type: 'timeout' }))
+    }
+    
+    xhr.timeout = API_CONFIG.timeout || 30000
+    xhr.send(formData)
   })
 }
 

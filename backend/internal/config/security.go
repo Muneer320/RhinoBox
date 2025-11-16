@@ -54,8 +54,8 @@ func LoadSecurityConfig() SecurityConfig {
 		CORSOrigins:      getStringSliceEnv("RHINOBOX_CORS_ORIGINS", []string{"http://localhost:5173", "http://127.0.0.1:5173", "*"}),
 		CORSAllowMethods: getStringSliceEnv("RHINOBOX_CORS_METHODS", []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
 		CORSAllowHeaders: getStringSliceEnv("RHINOBOX_CORS_HEADERS", []string{"Content-Type", "Authorization", "X-Requested-With"}),
-		CORSMaxAge:       getDurationEnv("RHINOBOX_CORS_MAX_AGE", 300*time.Second), // Reduced to 5 minutes to help with cache issues
-		CORSAllowCreds:   getBoolEnv("RHINOBOX_CORS_CREDENTIALS", true),
+		CORSMaxAge:       getDurationEnv("RHINOBOX_CORS_MAX_AGE", 3600*time.Second),
+		CORSAllowCreds:   getBoolEnv("RHINOBOX_CORS_CREDENTIALS", false),
 
 		// Security headers defaults
 		SecurityHeadersEnabled:     getBoolEnv("RHINOBOX_SECURITY_HEADERS_ENABLED", true),
@@ -74,8 +74,8 @@ func LoadSecurityConfig() SecurityConfig {
 		RateLimitByIP:       getBoolEnv("RHINOBOX_RATE_LIMIT_BY_IP", true),
 		RateLimitByEndpoint: getBoolEnv("RHINOBOX_RATE_LIMIT_BY_ENDPOINT", false),
 
-		// Request size limits (default 512MB to match upload limit, separate from upload size)
-		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 512*1024*1024),
+		// Request size limits (default 10MB, separate from upload size)
+		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 10*1024*1024),
 
 		// IP filtering defaults
 		IPWhitelistEnabled: getBoolEnv("RHINOBOX_IP_WHITELIST_ENABLED", false),
