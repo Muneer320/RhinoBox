@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach, afterEach } from './test-utils.js'
 import { withErrorHandling, createSafeAsyncFunction, ErrorBoundary } from '../src/errorBoundary.js'
-import { createErrorState } from '../src/ui-components.js'
 
 beforeEach(() => {
   document.body.innerHTML = ''
@@ -20,7 +19,7 @@ describe('Error Boundary', () => {
       const asyncFn = async () => {
         return 'success'
       }
-      
+
       const result = await withErrorHandling(asyncFn)
       expect(result).toBe('success')
     })
@@ -30,7 +29,7 @@ describe('Error Boundary', () => {
       const asyncFn = async () => {
         throw new Error('Test error')
       }
-      
+
       try {
         await withErrorHandling(asyncFn, {
           onError: (error) => {
@@ -38,29 +37,29 @@ describe('Error Boundary', () => {
             expect(error.message).toBe('Test error')
           }
         })
-      } catch (error) {
+      } catch (_error) {
         // Error should be re-thrown
       }
-      
+
       expect(errorHandled).toBe(true)
     })
 
     it('should display error in container', async () => {
       const container = document.createElement('div')
       document.body.appendChild(container)
-      
+
       const asyncFn = async () => {
         throw new Error('Test error')
       }
-      
+
       try {
         await withErrorHandling(asyncFn, {
           errorContainer: container
         })
-      } catch (error) {
+      } catch (_error) {
         // Error should be re-thrown
       }
-      
+
       const errorComponent = container.querySelector('.ui-error-state')
       expect(errorComponent).toBeTruthy()
     })
@@ -74,14 +73,14 @@ describe('Error Boundary', () => {
         }
         return 'success'
       }
-      
+
       const result = await withErrorHandling(asyncFn, {
         maxRetries: 3,
         onRetry: async () => {
           return await asyncFn()
         }
       })
-      
+
       expect(result).toBe('success')
       expect(attemptCount).toBe(2)
     })
@@ -92,10 +91,10 @@ describe('Error Boundary', () => {
       const originalFn = async (x, y) => {
         return x + y
       }
-      
+
       const safeFn = createSafeAsyncFunction(originalFn)
       const result = await safeFn(2, 3)
-      
+
       expect(result).toBe(5)
     })
 
@@ -103,13 +102,13 @@ describe('Error Boundary', () => {
       const originalFn = async () => {
         throw new Error('Test error')
       }
-      
+
       const safeFn = createSafeAsyncFunction(originalFn, {
         onError: (error) => {
           expect(error.message).toBe('Test error')
         }
       })
-      
+
       try {
         await safeFn()
       } catch (error) {
@@ -122,11 +121,11 @@ describe('Error Boundary', () => {
     it('should execute function successfully', async () => {
       const container = document.createElement('div')
       const boundary = new ErrorBoundary(container)
-      
+
       const asyncFn = async () => {
         return 'success'
       }
-      
+
       const result = await boundary.execute(asyncFn)
       expect(result).toBe('success')
     })
@@ -135,17 +134,17 @@ describe('Error Boundary', () => {
       const container = document.createElement('div')
       document.body.appendChild(container)
       const boundary = new ErrorBoundary(container)
-      
+
       const asyncFn = async () => {
         throw new Error('Test error')
       }
-      
+
       try {
         await boundary.execute(asyncFn)
-      } catch (error) {
+      } catch (_error) {
         // Error should be re-thrown
       }
-      
+
       const errorComponent = container.querySelector('.ui-error-state')
       expect(errorComponent).toBeTruthy()
     })
@@ -159,17 +158,17 @@ describe('Error Boundary', () => {
           expect(error.message).toBe('Test error')
         }
       })
-      
+
       const asyncFn = async () => {
         throw new Error('Test error')
       }
-      
+
       try {
         await boundary.execute(asyncFn)
-      } catch (error) {
+      } catch (_error) {
         // Error should be re-thrown
       }
-      
+
       expect(errorHandled).toBe(true)
     })
   })

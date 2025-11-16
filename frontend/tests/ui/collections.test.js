@@ -31,7 +31,7 @@ const mockCollections = {
 
 describe('Collections UI Tests', () => {
   let container
-  let collectionCards
+  let _collectionCards
 
   beforeEach(() => {
     // Create a test container

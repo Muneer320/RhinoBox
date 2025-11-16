@@ -2,7 +2,7 @@
  * Unit tests for Upload Manager
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { UploadManager } from '../src/upload-manager.js';
 
 describe('UploadManager', () => {
@@ -50,32 +50,5 @@ describe('UploadManager', () => {
     });
   });
 
-  describe('selection management', () => {
-    it('should track selected files', () => {
-      expect(uploadManager.getSelectedCount()).toBe(0);
-      
-      uploadManager.selectFile('file1');
-      expect(uploadManager.getSelectedCount()).toBe(1);
-      expect(uploadManager.isSelected('file1')).toBe(true);
-      
-      uploadManager.selectFile('file2');
-      expect(uploadManager.getSelectedCount()).toBe(2);
-      
-      uploadManager.deselectFile('file1');
-      expect(uploadManager.getSelectedCount()).toBe(1);
-      expect(uploadManager.isSelected('file1')).toBe(false);
-    });
-
-    it('should select all files', () => {
-      uploadManager.selectAll(['file1', 'file2', 'file3']);
-      expect(uploadManager.getSelectedCount()).toBe(3);
-    });
-
-    it('should deselect all files', () => {
-      uploadManager.selectAll(['file1', 'file2']);
-      uploadManager.deselectAll();
-      expect(uploadManager.getSelectedCount()).toBe(0);
-    });
-  });
+  // File selection belongs to BulkOperationsManager and is covered in its suite.
 });
-

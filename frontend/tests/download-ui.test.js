@@ -38,14 +38,14 @@ describe('Download UI Components', () => {
 
   it('should show toast notification when download starts', () => {
     const toast = document.getElementById('toast')
-    const showToast = (message, duration = 2400) => {
+    const showToast = (message, _duration = 2400) => {
       toast.textContent = message
       toast.hidden = false
       toast.classList.add('is-visible')
     }
 
     showToast('Starting download: "test.txt"...')
-    
+
     expect(toast.hidden).toBe(false)
     expect(toast.textContent).toContain('Starting download')
     expect(toast.classList.contains('is-visible')).toBe(true)
@@ -60,7 +60,7 @@ describe('Download UI Components', () => {
     }
 
     showProgressToast('test.txt', 50, '512 KB', '1 MB')
-    
+
     expect(toast.textContent).toContain('50%')
     expect(toast.textContent).toContain('512 KB')
     expect(toast.textContent).toContain('1 MB')
@@ -74,7 +74,7 @@ describe('Download UI Components', () => {
     }
 
     showSuccessToast('test.txt')
-    
+
     expect(toast.textContent).toContain('Successfully downloaded')
     expect(toast.textContent).toContain('test.txt')
   })
@@ -87,7 +87,7 @@ describe('Download UI Components', () => {
     }
 
     showErrorToast('File not found')
-    
+
     expect(toast.textContent).toContain('Download failed')
     expect(toast.textContent).toContain('File not found')
   })
@@ -117,7 +117,7 @@ describe('Download UI Components', () => {
     }
 
     const link = createDownloadLink('blob:http://localhost/test', 'test.txt')
-    
+
     expect(link.tagName).toBe('A')
     expect(link.download).toBe('test.txt')
     expect(link.style.display).toBe('none')

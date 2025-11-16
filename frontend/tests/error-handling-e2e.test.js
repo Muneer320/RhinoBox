@@ -31,9 +31,9 @@ describe('Error Handling E2E Tests', () => {
       mockFetch.mockRejectedValueOnce(new Error('Failed to fetch'));
 
       // Simulate file upload
-      const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const fileInput = document.getElementById('fileInput');
-      
+      const _file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+      const _fileInput = document.getElementById('fileInput');
+
       // This would trigger uploadFiles in the actual implementation
       // For testing, we verify the error handling logic
       const error = new Error('Failed to fetch');
@@ -41,12 +41,13 @@ describe('Error Handling E2E Tests', () => {
     });
 
     it('should show error toast when file exceeds size limit', async () => {
-      const largeFile = new File(['x'.repeat(600 * 1024 * 1024)], 'large.jpg', { type: 'image/jpeg' });
-      
+      const largeFile = new File(['x'], 'large.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(largeFile, 'size', { value: 600 * 1024 * 1024 });
+
       // Validate file size
       const MAX_FILE_SIZE = 500 * 1024 * 1024;
       const isValid = largeFile.size <= MAX_FILE_SIZE;
-      
+
       expect(isValid).toBe(false);
     });
 
@@ -118,7 +119,7 @@ describe('Error Handling E2E Tests', () => {
       // Mock success toast
       const toastType = 'success';
       const toastMessage = 'Operation completed successfully';
-      
+
       expect(toastType).toBe('success');
       expect(toastMessage).toBeDefined();
     });
@@ -126,7 +127,7 @@ describe('Error Handling E2E Tests', () => {
     it('should show error toast on failed operation', () => {
       const toastType = 'error';
       const toastMessage = 'Operation failed';
-      
+
       expect(toastType).toBe('error');
       expect(toastMessage).toBeDefined();
     });

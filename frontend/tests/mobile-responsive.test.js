@@ -19,9 +19,9 @@ describe('Mobile Responsive Utilities', () => {
     });
     window = dom.window;
     document = window.document;
-    global.window = window;
-    global.document = document;
-    global.navigator = window.navigator;
+
+
+
   });
 
   afterEach(() => {
@@ -61,34 +61,34 @@ describe('Mobile Responsive Utilities', () => {
     test('should add touch-device class to body', () => {
       document.body.innerHTML = '<div id="dropzone-title">Drag files here</div>';
       window.ontouchstart = () => {};
-      
+
       if ('ontouchstart' in window) {
         document.body.classList.add('touch-device');
       }
-      
+
       expect(document.body.classList.contains('touch-device')).toBe(true);
     });
 
     test('should update dropzone text for touch devices', () => {
       document.body.innerHTML = '<p id="dropzone-title">Drag files here</p>';
       const dropzoneTitle = document.getElementById('dropzone-title');
-      
+
       if ('ontouchstart' in window) {
         dropzoneTitle.textContent = 'Tap to select files or take a photo';
       }
-      
+
       expect(dropzoneTitle.textContent).toBe('Tap to select files or take a photo');
     });
 
     test('should set file input accept attribute for mobile', () => {
       document.body.innerHTML = '<input type="file" id="fileInput" />';
       const fileInput = document.getElementById('fileInput');
-      
+
       if ('ontouchstart' in window) {
         fileInput.setAttribute('accept', 'image/*,video/*,audio/*,.pdf,.txt,.json');
         fileInput.setAttribute('capture', 'environment');
       }
-      
+
       expect(fileInput.getAttribute('accept')).toBe('image/*,video/*,audio/*,.pdf,.txt,.json');
       expect(fileInput.getAttribute('capture')).toBe('environment');
     });
@@ -100,15 +100,15 @@ describe('Mobile Responsive Utilities', () => {
         <button id="hamburger-btn" aria-expanded="false"></button>
         <nav id="mobile-nav"></nav>
       `;
-      
+
       const btn = document.getElementById('hamburger-btn');
       const nav = document.getElementById('mobile-nav');
-      
+
       // Simulate click
       const isOpen = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', !isOpen);
       nav.classList.toggle('is-open');
-      
+
       expect(btn.getAttribute('aria-expanded')).toBe('true');
       expect(nav.classList.contains('is-open')).toBe(true);
     });
@@ -120,15 +120,15 @@ describe('Mobile Responsive Utilities', () => {
           <a href="#" class="mobile-nav-link" data-target="home">Home</a>
         </nav>
       `;
-      
+
       const btn = document.getElementById('hamburger-btn');
       const nav = document.getElementById('mobile-nav');
-      const link = nav.querySelector('.mobile-nav-link');
-      
+      const _link = nav.querySelector('.mobile-nav-link');
+
       // Simulate link click
       btn.setAttribute('aria-expanded', 'false');
       nav.classList.remove('is-open');
-      
+
       expect(btn.getAttribute('aria-expanded')).toBe('false');
       expect(nav.classList.contains('is-open')).toBe(false);
     });
@@ -140,10 +140,10 @@ describe('Mobile Responsive Utilities', () => {
       const testButton = document.createElement('button');
       testButton.style.minHeight = `${touchTargetSize}px`;
       testButton.style.minWidth = `${touchTargetSize}px`;
-      
+
       const computedMinHeight = parseInt(testButton.style.minHeight);
       const computedMinWidth = parseInt(testButton.style.minWidth);
-      
+
       expect(computedMinHeight).toBeGreaterThanOrEqual(touchTargetSize);
       expect(computedMinWidth).toBeGreaterThanOrEqual(touchTargetSize);
     });
@@ -154,7 +154,7 @@ describe('Mobile Responsive Utilities', () => {
       iconButton.className = 'icon-button';
       iconButton.style.minHeight = `${touchTargetSize}px`;
       iconButton.style.minWidth = `${touchTargetSize}px`;
-      
+
       const computedMinHeight = parseInt(iconButton.style.minHeight);
       expect(computedMinHeight).toBeGreaterThanOrEqual(touchTargetSize);
     });
@@ -165,7 +165,7 @@ describe('Mobile Responsive Utilities', () => {
       // This would typically be tested with a headless browser
       // For unit tests, we verify the logic
       const isMobile = (width) => width <= 480;
-      
+
       expect(isMobile(320)).toBe(true);
       expect(isMobile(480)).toBe(true);
       expect(isMobile(481)).toBe(false);
@@ -173,7 +173,7 @@ describe('Mobile Responsive Utilities', () => {
 
     test('should apply tablet styles between 768px and 1023px', () => {
       const isTablet = (width) => width >= 768 && width <= 1023;
-      
+
       expect(isTablet(768)).toBe(true);
       expect(isTablet(900)).toBe(true);
       expect(isTablet(1023)).toBe(true);
@@ -183,7 +183,7 @@ describe('Mobile Responsive Utilities', () => {
 
     test('should apply desktop styles at 1024px and above', () => {
       const isDesktop = (width) => width >= 1024;
-      
+
       expect(isDesktop(1024)).toBe(true);
       expect(isDesktop(1440)).toBe(true);
       expect(isDesktop(1920)).toBe(true);
@@ -211,7 +211,7 @@ describe('Mobile Responsive Utilities', () => {
     test('should make modals full-screen on mobile', () => {
       const modal = document.createElement('div');
       modal.className = 'comments-modal-content';
-      
+
       // Simulate mobile viewport
       const isMobile = window.innerWidth <= 640;
       if (isMobile) {
@@ -220,11 +220,11 @@ describe('Mobile Responsive Utilities', () => {
         modal.style.maxHeight = '100vh';
         modal.style.borderRadius = '0';
       }
-      
+
       // For test, simulate mobile
       modal.style.width = '100%';
       modal.style.maxWidth = '100%';
-      
+
       expect(modal.style.width).toBe('100%');
       expect(modal.style.maxWidth).toBe('100%');
     });
@@ -236,7 +236,7 @@ describe('Accessibility for Mobile', () => {
     const btn = document.createElement('button');
     btn.setAttribute('aria-label', 'Toggle menu');
     btn.setAttribute('aria-expanded', 'false');
-    
+
     expect(btn.getAttribute('aria-label')).toBe('Toggle menu');
     expect(btn.getAttribute('aria-expanded')).toBe('false');
   });
@@ -244,7 +244,7 @@ describe('Accessibility for Mobile', () => {
   test('should have proper ARIA labels on mobile nav', () => {
     const nav = document.createElement('nav');
     nav.setAttribute('aria-label', 'Mobile navigation');
-    
+
     expect(nav.getAttribute('aria-label')).toBe('Mobile navigation');
   });
 });

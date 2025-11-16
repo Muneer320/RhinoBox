@@ -23,7 +23,7 @@ function createMockDOM() {
       }
       return null;
     },
-    closest: function(selector) {
+    closest: function(_selector) {
       return this;
     }
   };
@@ -87,7 +87,7 @@ function assert(condition, message) {
 // Test 1: Menu Action Handler Has Comments Case
 function testMenuActionHandlerHasCommentsCase() {
   console.log('\n=== Test 1: Menu Action Handler Has Comments Case ===');
-  
+
   // This would require reading the actual script.js file
   // In a real test environment, we'd use a test framework like Jest
   assert(true, 'Menu action handler structure check (requires file read)');
@@ -96,7 +96,7 @@ function testMenuActionHandlerHasCommentsCase() {
 // Test 2: openCommentsModal Function Exists
 function testOpenCommentsModalExists() {
   console.log('\n=== Test 2: openCommentsModal Function Exists ===');
-  
+
   // Check if function would be available in the global scope
   // In actual implementation, this would be tested differently
   assert(typeof window !== 'undefined', 'Window object exists');
@@ -105,39 +105,39 @@ function testOpenCommentsModalExists() {
 // Test 3: Modal Opens with Correct File Data
 function testModalOpensWithFileData() {
   console.log('\n=== Test 3: Modal Opens with Correct File Data ===');
-  
+
   const mocks = createMockDOM();
   const galleryItem = mocks.galleryItem;
   const modal = mocks.modal;
-  
+
   // Simulate openCommentsModal behavior
   const fileId = galleryItem.dataset.fileId;
   const fileName = galleryItem.dataset.fileName;
-  
+
   assert(fileId === 'test-file-123', 'File ID extracted correctly');
   assert(fileName === 'test-file.jpg', 'File name extracted correctly');
-  
+
   // Simulate modal opening
   modal.style.display = 'flex';
   const fileNameEl = modal.querySelector('.comments-file-name');
   if (fileNameEl) {
     fileNameEl.textContent = fileName;
   }
-  
+
   assert(modal.style.display === 'flex', 'Modal display set to flex');
 }
 
 // Test 4: Comments List Renders Correctly
 function testCommentsListRenders() {
   console.log('\n=== Test 4: Comments List Renders Correctly ===');
-  
+
   const mocks = createMockDOM();
   const commentsList = mocks.commentsList;
-  
+
   // Simulate rendering comments
   commentsList.innerHTML = '';
   commentsList.style.display = 'flex';
-  
+
   assert(commentsList.innerHTML === '', 'Comments list cleared');
   assert(commentsList.style.display === 'flex', 'Comments list displayed');
 }
@@ -145,18 +145,18 @@ function testCommentsListRenders() {
 // Test 5: Empty State Shows When No Notes
 function testEmptyStateShows() {
   console.log('\n=== Test 5: Empty State Shows When No Notes ===');
-  
+
   const mocks = createMockDOM();
   const commentsList = mocks.commentsList;
   const commentsEmpty = mocks.commentsEmpty;
-  
+
   // Simulate empty state
   const notes = [];
   if (notes.length === 0) {
     commentsEmpty.style.display = 'flex';
     commentsList.style.display = 'none';
   }
-  
+
   assert(commentsEmpty.style.display === 'flex', 'Empty state displayed');
   assert(commentsList.style.display === 'none', 'Comments list hidden');
 }
@@ -164,15 +164,15 @@ function testEmptyStateShows() {
 // Test 6: Add Note Functionality
 function testAddNoteFunctionality() {
   console.log('\n=== Test 6: Add Note Functionality ===');
-  
+
   const mocks = createMockDOM();
   const commentInput = mocks.commentInput;
-  
+
   // Test input validation
   commentInput.value = '';
   const isEmpty = commentInput.value.trim() === '';
   assert(isEmpty, 'Empty input detected');
-  
+
   commentInput.value = 'Test note';
   const hasValue = commentInput.value.trim() !== '';
   assert(hasValue, 'Non-empty input detected');
@@ -182,11 +182,11 @@ function testAddNoteFunctionality() {
 // Test 7: Delete Note Functionality
 function testDeleteNoteFunctionality() {
   console.log('\n=== Test 7: Delete Note Functionality ===');
-  
+
   // Simulate note deletion
   const noteId = 'test-note-123';
   const fileId = 'test-file-123';
-  
+
   assert(noteId !== null, 'Note ID available');
   assert(fileId !== null, 'File ID available');
 }
@@ -194,15 +194,15 @@ function testDeleteNoteFunctionality() {
 // Test 8: Error Handling
 function testErrorHandling() {
   console.log('\n=== Test 8: Error Handling ===');
-  
+
   const mocks = createMockDOM();
   const galleryItem = mocks.galleryItem;
-  
+
   // Test missing file ID
   galleryItem.dataset.fileId = '';
   const hasFileId = galleryItem.dataset.fileId && galleryItem.dataset.fileId.trim() !== '';
   assert(!hasFileId, 'Missing file ID detected');
-  
+
   // Reset
   galleryItem.dataset.fileId = 'test-file-123';
   const hasFileIdAfterReset = galleryItem.dataset.fileId && galleryItem.dataset.fileId.trim() !== '';
@@ -212,15 +212,15 @@ function testErrorHandling() {
 // Test 9: Modal Close Functionality
 function testModalCloseFunctionality() {
   console.log('\n=== Test 9: Modal Close Functionality ===');
-  
+
   const mocks = createMockDOM();
   const modal = mocks.modal;
   const commentInput = mocks.commentInput;
-  
+
   // Simulate closing modal
   modal.style.display = 'none';
   commentInput.value = '';
-  
+
   assert(modal.style.display === 'none', 'Modal hidden');
   assert(commentInput.value === '', 'Input cleared');
 }
@@ -228,17 +228,17 @@ function testModalCloseFunctionality() {
 // Test 10: Integration Test - Full Flow
 function testFullFlow() {
   console.log('\n=== Test 10: Full Flow Integration ===');
-  
+
   const mocks = createMockDOM();
   const galleryItem = mocks.galleryItem;
   const modal = mocks.modal;
-  const commentsList = mocks.commentsList;
+  const _commentsList = mocks.commentsList;
   const commentInput = mocks.commentInput;
-  
+
   // Simulate full flow: open modal -> add note -> close modal
-  const fileId = galleryItem.dataset.fileId;
+  const _fileId = galleryItem.dataset.fileId;
   const fileName = galleryItem.dataset.fileName;
-  
+
   // Step 1: Open modal
   modal.style.display = 'flex';
   const fileNameEl = modal.querySelector('.comments-file-name');
@@ -246,11 +246,11 @@ function testFullFlow() {
     fileNameEl.textContent = fileName;
   }
   assert(modal.style.display === 'flex', 'Step 1: Modal opened');
-  
+
   // Step 2: Add note
   commentInput.value = 'Test note';
   assert(commentInput.value === 'Test note', 'Step 2: Note text entered');
-  
+
   // Step 3: Close modal
   modal.style.display = 'none';
   commentInput.value = '';
@@ -263,7 +263,7 @@ function runAllTests() {
   console.log('========================================');
   console.log('Notes Menu Action - Unit Tests');
   console.log('========================================\n');
-  
+
   testMenuActionHandlerHasCommentsCase();
   testOpenCommentsModalExists();
   testModalOpensWithFileData();
@@ -274,7 +274,7 @@ function runAllTests() {
   testErrorHandling();
   testModalCloseFunctionality();
   testFullFlow();
-  
+
   // Print summary
   console.log('\n========================================');
   console.log('Test Summary');
@@ -284,7 +284,7 @@ function runAllTests() {
   console.log(`Failed: ${testResults.failed}`);
   console.log(`Success Rate: ${Math.round((testResults.passed / testResults.total) * 100)}%`);
   console.log('========================================\n');
-  
+
   return testResults;
 }
 

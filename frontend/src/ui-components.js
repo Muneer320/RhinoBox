@@ -15,9 +15,9 @@ export function createLoadingState(message = 'Loading...', size = 'medium') {
   loadingDiv.setAttribute('role', 'status')
   loadingDiv.setAttribute('aria-live', 'polite')
   loadingDiv.setAttribute('aria-label', message)
-  
+
   const sizeClass = `ui-loading-${size}`
-  
+
   loadingDiv.innerHTML = `
     <div class="ui-loading-spinner ${sizeClass}">
       <svg class="spinner-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -29,7 +29,7 @@ export function createLoadingState(message = 'Loading...', size = 'medium') {
     </div>
     ${message ? `<p class="ui-loading-message">${escapeHtml(message)}</p>` : ''}
   `
-  
+
   return loadingDiv
 }
 
@@ -45,11 +45,11 @@ export function createErrorState(message, onRetry = null, errorType = 'generic')
   errorDiv.className = 'ui-error-state'
   errorDiv.setAttribute('role', 'alert')
   errorDiv.setAttribute('aria-live', 'assertive')
-  
+
   // Determine icon and styling based on error type
   let iconSvg = ''
   let errorTitle = 'Something went wrong'
-  
+
   switch (errorType) {
     case 'network':
       iconSvg = `
@@ -82,7 +82,7 @@ export function createErrorState(message, onRetry = null, errorType = 'generic')
         </svg>
       `
   }
-  
+
   errorDiv.innerHTML = `
     <div class="ui-error-icon">
       ${iconSvg}
@@ -98,7 +98,7 @@ export function createErrorState(message, onRetry = null, errorType = 'generic')
       </button>
     ` : ''}
   `
-  
+
   // Attach retry handler if provided
   if (onRetry) {
     const retryButton = errorDiv.querySelector('.ui-retry-button')
@@ -110,7 +110,7 @@ export function createErrorState(message, onRetry = null, errorType = 'generic')
       })
     }
   }
-  
+
   return errorDiv
 }
 
@@ -127,9 +127,9 @@ export function createEmptyState(title, message, iconType = 'generic', action = 
   emptyDiv.className = 'ui-empty-state'
   emptyDiv.setAttribute('role', 'status')
   emptyDiv.setAttribute('aria-live', 'polite')
-  
+
   let iconSvg = ''
-  
+
   switch (iconType) {
     case 'files':
       iconSvg = `
@@ -159,7 +159,7 @@ export function createEmptyState(title, message, iconType = 'generic', action = 
         </svg>
       `
   }
-  
+
   emptyDiv.innerHTML = `
     <div class="ui-empty-icon">
       ${iconSvg}
@@ -172,7 +172,7 @@ export function createEmptyState(title, message, iconType = 'generic', action = 
       </button>
     ` : ''}
   `
-  
+
   // Attach action handler if provided
   if (action && action.onClick) {
     const actionButton = emptyDiv.querySelector('.ui-empty-action')
@@ -180,7 +180,7 @@ export function createEmptyState(title, message, iconType = 'generic', action = 
       actionButton.addEventListener('click', action.onClick)
     }
   }
-  
+
   return emptyDiv
 }
 
@@ -200,26 +200,27 @@ function escapeHtml(text) {
  */
 export function getErrorType(error) {
   if (!error) return 'generic'
-  
+
   const message = error.message || ''
   const name = error.name || ''
-  
+
   if (name === 'AbortError' || message.includes('timeout') || message.includes('network')) {
     return 'network'
   }
-  
+
+  if (message === 'File not found') return message
   if (message.includes('404') || message.includes('not found')) {
     return 'not-found'
   }
-  
+
   if (message.includes('500') || message.includes('server')) {
     return 'server'
   }
-  
+
   if (message.includes('Failed to fetch') || message.includes('Cannot connect')) {
     return 'network'
   }
-  
+
   return 'generic'
 }
 
@@ -230,45 +231,46 @@ export function getErrorType(error) {
  */
 export function getUserFriendlyErrorMessage(error) {
   if (!error) return 'An unexpected error occurred. Please try again.'
-  
+
   const message = error.message || ''
   const name = error.name || ''
-  
+
   // Network errors
   if (name === 'AbortError' || message.includes('timeout')) {
     return 'The request took too long. Please check your connection and try again.'
   }
-  
+
   if (message.includes('Failed to fetch') || message.includes('Cannot connect')) {
     return 'Unable to connect to the server. Please ensure the backend is running and try again.'
   }
-  
+
   // HTTP errors
   if (message.includes('401') || message.includes('Unauthorized')) {
     return 'You are not authorized to perform this action. Please log in again.'
   }
-  
+
   if (message.includes('403') || message.includes('Forbidden')) {
     return 'You do not have permission to access this resource.'
   }
-  
+
+  if (message === 'File not found') return message
   if (message.includes('404') || message.includes('not found')) {
     return 'The requested resource was not found.'
   }
-  
+
   if (message.includes('500') || message.includes('Internal Server Error')) {
     return 'The server encountered an error. Please try again later.'
   }
-  
+
   if (message.includes('503') || message.includes('Service Unavailable')) {
     return 'The service is temporarily unavailable. Please try again later.'
   }
-  
+
   // Return original message if it's already user-friendly, otherwise generic
   if (message && message.length < 100 && !message.includes('HTTP')) {
     return message
   }
-  
+
   return 'An error occurred while processing your request. Please try again.'
 }
 

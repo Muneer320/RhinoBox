@@ -1,3 +1,4 @@
+import { vi } from 'vitest'
 /**
  * Unit tests for ConfigService
  */
@@ -5,7 +6,7 @@
 import { configService } from "../src/configService.js";
 
 // Mock fetch globally
-global.fetch = jest.fn();
+global.fetch = vi.fn();
 
 describe("ConfigService", () => {
   beforeEach(() => {

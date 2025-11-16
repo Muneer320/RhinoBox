@@ -35,7 +35,7 @@ function isCacheValid(cacheKey, ttl) {
  */
 export async function getFiles(collectionType, params = {}, useCache = true) {
   const cacheKey = `files_${collectionType}_${JSON.stringify(params)}`
-  
+
   if (useCache && isCacheValid('files', CACHE_TTL.files)) {
     const cached = cache.files.get(cacheKey)
     if (cached && isCacheValid(cacheKey, CACHE_TTL.files)) {
@@ -61,7 +61,7 @@ export async function getFiles(collectionType, params = {}, useCache = true) {
  */
 export async function getFile(fileId) {
   const cacheKey = `file_${fileId}`
-  
+
   if (cache.files.has(cacheKey)) {
     const cached = cache.files.get(cacheKey)
     if (isCacheValid(cacheKey, CACHE_TTL.files)) {

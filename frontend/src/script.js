@@ -1,7 +1,8 @@
+import { initFileTypeSelector as setupFileTypeSelector, getSelectedFileType, resetFileTypeSelector } from "./file-type-selector.js";
+import { getUserFriendlyErrorMessage } from "./ui-components.js";
 // Import API functions
 import {
   ingestFiles,
-  ingestMedia,
   ingestJSON,
   getFiles,
   getFile,
@@ -23,7 +24,6 @@ import {
   getEditorValue,
   getCurrentLanguage,
   setEditorValue,
-  submitCode,
 } from "./codeEditor.js";
 
 const root = document.documentElement;
@@ -31,7 +31,7 @@ const THEME_KEY = "rhinobox-theme";
 let currentCollectionType = null;
 let modeToggle = null;
 let toast = null;
-let selectedFileType = "auto";
+
 
 // Detect touch device
 function isTouchDevice() {
@@ -202,7 +202,7 @@ function initHomePageFeatures() {
   // Setup quick add panel trigger (separate tab button)
   const quickAddPanel = document.getElementById("quickAdd-panel");
   const quickAddOverlay = document.getElementById("quickAdd-overlay");
-  
+
   if (quickAddTrigger && quickAddPanel) {
     quickAddTrigger.addEventListener("click", () => {
       quickAddPanel.classList.add("is-open");
@@ -255,7 +255,7 @@ function initHomePageFeatures() {
   if (quickAddForm) {
     quickAddForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      
+
       // Get value from code editor
       const value = getEditorValue().trim();
       const selectedType = getCurrentLanguage() || "json";
@@ -267,7 +267,7 @@ function initHomePageFeatures() {
 
       try {
         let documents = [];
-        
+
         // Handle different types
         if (selectedType === "url") {
           // Treat as URL
@@ -289,7 +289,7 @@ function initHomePageFeatures() {
         showToast("Processing...");
         await ingestJSON(documents, "quick-add", `Quick add: ${selectedType}`);
         showToast("Successfully added item");
-        
+
         // Close panel and reset
         const quickAddPanel = document.getElementById("quickAdd-panel");
         if (quickAddPanel) {
@@ -297,7 +297,7 @@ function initHomePageFeatures() {
           document.body.style.overflow = "";
         }
         setEditorValue("");
-        
+
         // Reset language selector
         const languageSelector = document.getElementById("language-selector");
         if (languageSelector) {
@@ -316,73 +316,8 @@ function initHomePageFeatures() {
   }
 }
 
-// Initialize file type selector
 function initFileTypeSelector() {
-  const buttons = document.querySelectorAll(".type-btn");
-
-  buttons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      // Remove active from all
-      buttons.forEach((b) => {
-        b.classList.remove("active");
-        b.setAttribute("aria-checked", "false");
-      });
-
-      // Set active
-      btn.classList.add("active");
-      btn.setAttribute("aria-checked", "true");
-      selectedFileType = btn.dataset.type;
-
-      // Visual feedback
-      showToast(`File type: ${selectedFileType}`, "info", 2000);
-    });
-  });
-
-  // Keyboard navigation
-  const container = document.querySelector(".type-buttons");
-  if (container) {
-    container.addEventListener("keydown", (e) => {
-      const buttons = Array.from(container.querySelectorAll(".type-btn"));
-      const currentIndex = buttons.findIndex((b) =>
-        b.classList.contains("active")
-      );
-
-      let nextIndex = currentIndex;
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-        nextIndex = (currentIndex + 1) % buttons.length;
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        buttons[currentIndex].click();
-        return;
-      } else {
-        return;
-      }
-
-      e.preventDefault();
-      // Update state without toast for keyboard navigation
-      buttons.forEach((b) => {
-        b.classList.remove("active");
-        b.setAttribute("aria-checked", "false");
-      });
-      buttons[nextIndex].classList.add("active");
-      buttons[nextIndex].setAttribute("aria-checked", "true");
-      selectedFileType = buttons[nextIndex].dataset.type;
-      buttons[nextIndex].focus();
-    });
-  }
-}
-
-function getSelectedFileType() {
-  return selectedFileType;
-}
-
-function resetFileTypeSelector() {
-  const autoBtn = document.querySelector('.type-btn[data-type="auto"]');
-  if (autoBtn) {
-    autoBtn.click();
-  }
+  setupFileTypeSelector(document, type => showToast(`File type: ${type}`, "info", 2000));
 }
 
 function applyTheme(theme) {
@@ -414,12 +349,12 @@ function initNosqlZoomPan() {
   const resetBtn = document.getElementById("nosql-reset");
 
   if (!nosqlSvg || !nosqlDiagram) return;
-  
+
   // Reset initialization flag if elements are recreated
   if (!nosqlSvg.querySelector("g.nosql-transform-group")) {
     nosqlZoomPanInitialized = false;
   }
-  
+
   if (nosqlZoomPanInitialized) return;
   nosqlZoomPanInitialized = true;
 
@@ -427,7 +362,7 @@ function initNosqlZoomPan() {
   nosqlZoom = 1;
   nosqlPanX = 0;
   nosqlPanY = 0;
-  
+
   // Initialize transform group and apply initial transform
   setTimeout(() => {
     updateNosqlTransform();
@@ -544,7 +479,7 @@ function updateNosqlTransform() {
   if (!nosqlSvg) return;
 
   let g = nosqlSvg.querySelector("g.nosql-transform-group");
-  
+
   // Create transform group if it doesn't exist
   if (!g) {
     g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -1408,11 +1343,11 @@ async function loadCollections() {
             files: "files",
           };
           const apiType = apiTypeMap[collection.type] || collection.type;
-          
+
           // Fetch first file from collection to use as preview
           const filesResponse = await getFiles(apiType, "", { limit: 1 });
           const files = filesResponse.files || filesResponse || [];
-          
+
           if (files.length > 0) {
             const firstFile = files[0];
             // Use file URL as preview (works for images, videos, etc.)
@@ -1421,7 +1356,7 @@ async function loadCollections() {
         } catch (err) {
           console.warn(`Failed to fetch preview for ${collection.type}:`, err);
         }
-        
+
         return {
           ...collection,
           previewUrl,
@@ -1471,7 +1406,7 @@ function createCollectionCard(collection, stats, previewUrl = null) {
 
   // Use preview URL if available, otherwise fallback to default images
   let imageUrl = previewUrl;
-  
+
   if (!imageUrl) {
     // Map collection types to fallback image URLs (only used if no preview available)
     const imageMap = {
@@ -1494,14 +1429,14 @@ function createCollectionCard(collection, stats, previewUrl = null) {
     };
     imageUrl = imageMap[collection.type] || imageMap["other"];
   }
-  
+
   // Construct full URL if previewUrl is a relative path
   if (previewUrl && !previewUrl.startsWith('http') && !previewUrl.startsWith('data:')) {
     imageUrl = `${API_CONFIG.baseURL}${previewUrl.startsWith('/') ? '' : '/'}${previewUrl}`;
   } else if (previewUrl) {
     imageUrl = previewUrl;
   }
-  
+
   const fileCount = stats.file_count || 0;
   const storageUsed =
     stats.storage_used_formatted || stats.storage_used || "0 B";
@@ -1696,7 +1631,7 @@ function initGalleryMenus() {
               day: "numeric",
             });
           }
-        } catch (e) {
+        } catch (_e) {
           // Keep original date if parsing fails
         }
       }
@@ -1853,7 +1788,7 @@ async function uploadFiles(files) {
 
   // Show initial progress
   const updateProgress = (current, total, status = "") => {
-    const progressMsg = status 
+    const progressMsg = status
       ? `${status} (${current}/${total})`
       : `Uploading ${current}/${total} files...`;
     showToast(progressMsg, "info", 5000);
@@ -1914,19 +1849,18 @@ async function uploadFiles(files) {
   }
 
   // Show final results
-  const totalProcessed = uploadedCount + skippedCount + failedCount;
   let resultMessage = "";
 
   if (uploadedCount > 0) {
     resultMessage = `✅ ${uploadedCount} file${uploadedCount > 1 ? "s" : ""} uploaded successfully`;
-    
+
     if (skippedCount > 0) {
       resultMessage += `, ${skippedCount} skipped`;
     }
     if (failedCount > 0) {
       resultMessage += `, ${failedCount} failed`;
     }
-    
+
     showToast(resultMessage, "success", 5000);
   } else if (skippedCount > 0) {
     resultMessage = `⚠️ ${skippedCount} file${skippedCount > 1 ? "s" : ""} skipped (too large or invalid)`;
@@ -1967,13 +1901,13 @@ function showToast(message, type = "info", duration = 2400) {
   toast.textContent = message;
   toast.hidden = false;
   toast.classList.add("is-visible");
-  
+
   // Add type class for styling (optional)
   toast.classList.remove("toast-success", "toast-error", "toast-info");
   if (type) {
     toast.classList.add(`toast-${type}`);
   }
-  
+
   clearTimeout(toastTimeoutId);
   toastTimeoutId = setTimeout(() => {
     toast.classList.remove("is-visible");
@@ -2014,7 +1948,7 @@ function initAll() {
     initGhostButton();
     initDataTabs();
     ensureButtonsClickable();
-    
+
     // Initialize code editor (will be initialized when Quick Add panel opens)
     // But we can pre-initialize it for better UX
     setTimeout(() => {
@@ -2097,7 +2031,7 @@ function initDataTabs() {
     // Remove any existing listeners by cloning
     const newTab = tab.cloneNode(true);
     tab.parentNode.replaceChild(newTab, tab);
-    
+
     newTab.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2182,22 +2116,22 @@ async function loadNoSQLCollections() {
     // Clear existing collection tiles
     const existingTiles = transformGroup.querySelectorAll(".nosql-collection-tile");
     existingTiles.forEach(tile => tile.remove());
-    
+
     const emptyMessage = document.getElementById("nosql-empty-message");
-    
+
     // Try to get JSON collections (NoSQL data)
     // For now, we'll check if there's a json collection type
     try {
       const jsonFiles = await getFiles("json", "", { limit: 100 });
       const files = jsonFiles.files || jsonFiles || [];
-      
+
       if (files.length === 0) {
         if (emptyMessage) emptyMessage.style.display = "block";
         return;
       }
-      
+
       if (emptyMessage) emptyMessage.style.display = "none";
-      
+
       // Group files by namespace/collection name to create different tiles
       const collectionsMap = new Map();
       files.forEach(file => {
@@ -2207,14 +2141,14 @@ async function loadNoSQLCollections() {
         }
         collectionsMap.get(namespace).push(file);
       });
-      
+
       // Create a tile for each collection/namespace
       let xPos = 50;
       let yPos = 50;
       const tileWidth = 200;
       const tileSpacing = 250;
       const maxPerRow = 4;
-      
+
       collectionsMap.forEach((files, namespace) => {
         // Create collection tile
         const tile = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -2223,7 +2157,7 @@ async function loadNoSQLCollections() {
         tile.style.cursor = "pointer";
         tile.dataset.namespace = namespace;
         tile.dataset.files = JSON.stringify(files);
-        
+
         // Create rectangle for collection
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         rect.setAttribute("width", tileWidth);
@@ -2233,7 +2167,7 @@ async function loadNoSQLCollections() {
         rect.setAttribute("stroke", "var(--border)");
         rect.setAttribute("stroke-width", "2");
         tile.appendChild(rect);
-        
+
         // Create text for collection name
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
         text.setAttribute("x", tileWidth / 2);
@@ -2244,7 +2178,7 @@ async function loadNoSQLCollections() {
         text.setAttribute("fill", "var(--text-primary)");
         text.textContent = namespace;
         tile.appendChild(text);
-        
+
         // Create text for document count
         const countText = document.createElementNS("http://www.w3.org/2000/svg", "text");
         countText.setAttribute("x", tileWidth / 2);
@@ -2254,12 +2188,12 @@ async function loadNoSQLCollections() {
         countText.setAttribute("fill", "var(--text-secondary)");
         countText.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
         tile.appendChild(countText);
-        
+
         // Add click handler to show modal
         tile.addEventListener("click", () => {
           showNoSQLCollectionModal(namespace, files);
         });
-        
+
         // Add hover effect
         tile.addEventListener("mouseenter", () => {
           rect.setAttribute("fill", "var(--surface-muted)");
@@ -2269,9 +2203,9 @@ async function loadNoSQLCollections() {
           rect.setAttribute("fill", "var(--surface)");
           rect.setAttribute("stroke", "var(--border)");
         });
-        
+
         transformGroup.appendChild(tile);
-        
+
         // Update position for next tile
         xPos += tileSpacing;
         if (xPos > (maxPerRow - 1) * tileSpacing) {
@@ -2296,17 +2230,17 @@ function showNoSQLCollectionModal(namespace, files) {
   const collectionInfo = document.getElementById("nosql-collection-info");
   const collectionDocuments = document.getElementById("nosql-collection-documents");
   const closeButton = document.getElementById("nosql-modal-close");
-  
+
   if (!modal) return;
-  
+
   // Set modal title
   modalTitle.textContent = `Collection: ${namespace}`;
   modalSubtitle.textContent = `${files.length} document${files.length !== 1 ? 's' : ''}`;
-  
+
   // Calculate total size
   const totalSize = files.reduce((sum, file) => sum + (file.size || file.fileSize || 0), 0);
   const formattedSize = formatFileSize(totalSize);
-  
+
   // Populate collection info
   collectionInfo.innerHTML = `
     <div style="background: var(--surface-muted); padding: 20px; border-radius: 12px; border: 1px solid var(--border);">
@@ -2327,7 +2261,7 @@ function showNoSQLCollectionModal(namespace, files) {
       </div>
     </div>
   `;
-  
+
   // Populate documents list
   if (files.length === 0) {
     collectionDocuments.innerHTML = `
@@ -2343,7 +2277,7 @@ function showNoSQLCollectionModal(namespace, files) {
           const fileSize = formatFileSize(file.size || file.fileSize || 0);
           const fileDate = file.date || file.uploadedAt || new Date().toISOString();
           const formattedDate = new Date(fileDate).toLocaleDateString();
-          
+
           return `
             <div style="background: var(--surface); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
               <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
@@ -2356,8 +2290,8 @@ function showNoSQLCollectionModal(namespace, files) {
                   </p>
                 </div>
                 ${file.url || file.downloadUrl ? `
-                  <a href="${API_CONFIG.baseURL}${file.url || file.downloadUrl}" target="_blank" 
-                     style="padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; 
+                  <a href="${API_CONFIG.baseURL}${file.url || file.downloadUrl}" target="_blank"
+                     style="padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px;
                             text-decoration: none; font-size: 12px; font-weight: 600;">
                     View
                   </a>
@@ -2379,20 +2313,20 @@ function showNoSQLCollectionModal(namespace, files) {
       </div>
     `;
   }
-  
+
   // Show modal
   modal.style.display = "flex";
   document.body.style.overflow = "hidden";
-  
+
   // Close button handler
   const closeModal = () => {
     modal.style.display = "none";
     document.body.style.overflow = "";
   };
-  
+
   closeButton.onclick = closeModal;
   modal.querySelector(".comments-modal-overlay").onclick = closeModal;
-  
+
   // Close on Escape key
   const handleEscape = (e) => {
     if (e.key === "Escape" && modal.style.display === "flex") {

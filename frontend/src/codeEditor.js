@@ -1,5 +1,5 @@
 // Monaco Editor Integration for RhinoBox
-import * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 
 let codeEditor = null;
 let modalEditor = null;
@@ -519,9 +519,6 @@ function exitFullscreen() {
 // Submit code from main editor
 export function submitCode() {
   if (!codeEditor) return;
-
-  const code = codeEditor.getValue();
-  const language = currentLanguage;
 
   // Trigger form submission
   const form = document.getElementById('quickAddForm');

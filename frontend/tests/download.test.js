@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from './test-utils.js'
-import { downloadFile, getFile } from '../src/api.js'
+import { downloadFile } from '../src/api.js'
 
 // Mock fetch globally
 let fetchMock = null
@@ -21,7 +21,7 @@ beforeEach(() => {
       fetchMock.nextError = error
     },
   }
-  
+
   global.fetch = (...args) => {
     fetchMock.calls.push(args)
     if (fetchMock.nextError) {
@@ -35,14 +35,14 @@ beforeEach(() => {
       blob: () => Promise.resolve(new Blob(['test'])),
     })
   }
-  
+
   // Mock localStorage
   localStorageMock = {
     getItem: () => null,
     setItem: () => {},
     removeItem: () => {},
   }
-  global.localStorage = localStorageMock
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock })
 })
 
 afterEach(() => {
@@ -101,7 +101,7 @@ describe('downloadFile', () => {
     global.fetch = (...args) => {
       fetchMock.calls.push(args)
       callCount++
-      
+
       if (callCount === 1) {
         // First call: getFile
         return Promise.resolve({
@@ -171,7 +171,7 @@ describe('downloadFile', () => {
 
   it('should use direct download method when specified', () => {
     const url = downloadFile('abc123', null, null, 'test.txt', null, 'direct')
-    
+
     // Direct method returns a promise with URL string
     expect(typeof url).toBe('object') // Promise
     expect(url.then).toBeTruthy() // Has then method

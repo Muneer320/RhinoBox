@@ -1,13 +1,25 @@
+import { initFileTypeSelector } from '../src/file-type-selector.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 /**
  * UI Tests for File Type Selector Component
  * Tests the file type override selector buttons and functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach } from './test-utils.js';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from './test-utils.js';
 
 describe('File Type Selector', () => {
   let container;
   let buttons;
+  let stylesheet;
+
+  beforeAll(() => {
+    // Vitest stubs CSS imports; use the actual app stylesheet for layout assertions.
+    stylesheet = document.createElement('style');
+    stylesheet.textContent = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
+    document.head.appendChild(stylesheet);
+  });
+  afterAll(() => stylesheet.remove());
 
   beforeEach(() => {
     // Create test container
@@ -45,6 +57,7 @@ describe('File Type Selector', () => {
     `;
     document.body.appendChild(container);
     buttons = container.querySelectorAll('.type-btn');
+    initFileTypeSelector(container);
   });
 
   afterEach(() => {
@@ -76,7 +89,7 @@ describe('File Type Selector', () => {
       const radiogroup = container.querySelector('.type-buttons');
       expect(radiogroup.getAttribute('role')).toBe('radiogroup');
       expect(radiogroup.getAttribute('aria-label')).toBe('File type selection');
-      
+
       buttons.forEach(btn => {
         expect(btn.getAttribute('role')).toBe('radio');
         expect(btn.hasAttribute('aria-checked')).toBe(true);
@@ -88,7 +101,7 @@ describe('File Type Selector', () => {
     it('should activate clicked button', () => {
       const imageBtn = container.querySelector('.type-btn[data-type="image"]');
       imageBtn.click();
-      
+
       expect(imageBtn.classList.contains('active')).toBe(true);
       expect(imageBtn.getAttribute('aria-checked')).toBe('true');
     });
@@ -96,9 +109,9 @@ describe('File Type Selector', () => {
     it('should deactivate previously active button', () => {
       const autoBtn = container.querySelector('.type-btn[data-type="auto"]');
       const imageBtn = container.querySelector('.type-btn[data-type="image"]');
-      
+
       imageBtn.click();
-      
+
       expect(autoBtn.classList.contains('active')).toBe(false);
       expect(autoBtn.getAttribute('aria-checked')).toBe('false');
     });
@@ -106,10 +119,10 @@ describe('File Type Selector', () => {
     it('should only have one active button at a time', () => {
       const imageBtn = container.querySelector('.type-btn[data-type="image"]');
       const videoBtn = container.querySelector('.type-btn[data-type="video"]');
-      
+
       imageBtn.click();
       expect(document.querySelectorAll('.type-btn.active').length).toBe(1);
-      
+
       videoBtn.click();
       expect(document.querySelectorAll('.type-btn.active').length).toBe(1);
       expect(imageBtn.classList.contains('active')).toBe(false);
@@ -119,12 +132,12 @@ describe('File Type Selector', () => {
   describe('Keyboard Navigation', () => {
     it('should navigate right with ArrowRight key', () => {
       const autoBtn = container.querySelector('.type-btn[data-type="auto"]');
-      const imageBtn = container.querySelector('.type-btn[data-type="image"]');
-      
+      const _imageBtn = container.querySelector('.type-btn[data-type="image"]');
+
       autoBtn.focus();
       const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true });
       container.querySelector('.type-buttons').dispatchEvent(event);
-      
+
       // Note: Actual navigation logic would need to be initialized
       // This test verifies the structure supports keyboard navigation
       expect(buttons.length).toBeGreaterThan(0);
@@ -142,7 +155,7 @@ describe('File Type Selector', () => {
     it('should apply active styles to selected button', () => {
       const imageBtn = container.querySelector('.type-btn[data-type="image"]');
       imageBtn.click();
-      
+
       // Check that active class is applied
       expect(imageBtn.classList.contains('active')).toBe(true);
     });
@@ -151,7 +164,7 @@ describe('File Type Selector', () => {
       const imageBtn = container.querySelector('.type-btn[data-type="image"]');
       const hoverEvent = new MouseEvent('mouseenter', { bubbles: true });
       imageBtn.dispatchEvent(hoverEvent);
-      
+
       // Button should be interactive
       expect(imageBtn.style.cursor !== 'not-allowed').toBe(true);
     });
@@ -161,7 +174,7 @@ describe('File Type Selector', () => {
     it('should have responsive button layout', () => {
       const typeButtons = container.querySelector('.type-buttons');
       const computedStyle = window.getComputedStyle(typeButtons);
-      
+
       // Should use flexbox for responsive layout
       expect(computedStyle.display).toBe('flex');
     });
@@ -169,7 +182,7 @@ describe('File Type Selector', () => {
     it('should wrap buttons on small screens', () => {
       const typeButtons = container.querySelector('.type-buttons');
       const computedStyle = window.getComputedStyle(typeButtons);
-      
+
       // Should allow wrapping
       expect(['wrap', 'wrap-reverse']).toContain(computedStyle.flexWrap);
     });

@@ -43,7 +43,7 @@ export class UploadQueueUI {
       }, 3000);
     });
 
-    uploadManager.onError((upload, error) => {
+    uploadManager.onError((upload, _error) => {
       this.updateUploadItem(upload);
     });
 
@@ -286,7 +286,7 @@ export class UploadQueueUI {
     // Update summary if summary element exists
     const summaryEl = document.getElementById('upload-queue-summary');
     if (summaryEl) {
-      summaryEl.textContent = `${completedCount} of ${totalCount} uploaded${
+      summaryEl.textContent = `${completedCount} of ${totalCount} uploaded${failedCount ? `, ${failedCount} failed` : ''}${
         activeUploads.length > 0 ? ` (${activeUploads.length} active)` : ''
       }`;
     }
@@ -297,7 +297,7 @@ export class UploadQueueUI {
    */
   monitorUploads() {
     const knownUploadIds = new Set(this.uploadItems.keys());
-    
+
     setInterval(() => {
       const allUploads = uploadManager.getAllUploads();
       allUploads.forEach((upload) => {

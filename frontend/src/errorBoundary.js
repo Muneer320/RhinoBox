@@ -28,15 +28,15 @@ export async function withErrorHandling(asyncFn, options = {}) {
     return await asyncFn()
   } catch (error) {
     console.error('Error in async operation:', error)
-    
+
     const errorType = getErrorType(error)
     const errorMessage = getUserFriendlyErrorMessage(error)
-    
+
     // Call custom error handler if provided
     if (onError) {
       onError(error, errorType, errorMessage)
     }
-    
+
     // Show error in container if provided
     if (errorContainer) {
       errorContainer.innerHTML = ''
@@ -52,17 +52,17 @@ export async function withErrorHandling(asyncFn, options = {}) {
       )
       errorContainer.appendChild(errorComponent)
     }
-    
+
     // Retry if conditions are met
     if (retryCount < maxRetries && onRetry) {
       try {
         return await onRetry(error, retryCount + 1)
-      } catch (retryError) {
+      } catch (_retryError) {
         // If retry also fails, throw the original error
         throw error
       }
     }
-    
+
     throw error
   }
 }
@@ -108,11 +108,11 @@ export class ErrorBoundary {
   handleError(error) {
     const errorType = getErrorType(error)
     const errorMessage = getUserFriendlyErrorMessage(error)
-    
+
     if (this.options.onError) {
       this.options.onError(error, errorType, errorMessage)
     }
-    
+
     if (this.options.showError && this.container) {
       this.container.innerHTML = ''
       const errorComponent = createErrorState(

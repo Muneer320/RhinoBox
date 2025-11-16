@@ -80,7 +80,7 @@ beforeEach(() => {
       </div>
     </div>
   `
-  
+
   // Initialize modal state
   document.body.style.overflow = ''
 })
@@ -96,23 +96,23 @@ function initModal() {
   const modal = document.getElementById('about-modal')
   const closeBtn = modal.querySelector('.about-close-button')
   const overlay = modal.querySelector('.about-modal-overlay')
-  
+
   const openModal = () => {
     modal.classList.add('is-active')
     modal.setAttribute('aria-hidden', 'false')
     document.body.style.overflow = 'hidden'
   }
-  
+
   const closeModal = () => {
     modal.classList.remove('is-active')
     modal.setAttribute('aria-hidden', 'true')
     document.body.style.overflow = ''
   }
-  
+
   aboutBtn.addEventListener('click', openModal)
   closeBtn.addEventListener('click', closeModal)
   overlay.addEventListener('click', closeModal)
-  
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('is-active')) {
       closeModal()
@@ -126,9 +126,9 @@ describe('About Modal E2E', () => {
       initModal()
       const modal = document.getElementById('about-modal')
       const aboutBtn = document.getElementById('about-btn')
-      
+
       aboutBtn.click()
-      
+
       expect(modal.classList.contains('is-active')).toBe(true)
       expect(modal.getAttribute('aria-hidden')).toBe('false')
       expect(document.body.style.overflow).toBe('hidden')
@@ -138,15 +138,15 @@ describe('About Modal E2E', () => {
       initModal()
       const modal = document.getElementById('about-modal')
       const closeBtn = modal.querySelector('.about-close-button')
-      
+
       // Open first
       modal.classList.add('is-active')
       modal.setAttribute('aria-hidden', 'false')
       document.body.style.overflow = 'hidden'
-      
+
       // Close
       closeBtn.click()
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
       expect(modal.getAttribute('aria-hidden')).toBe('true')
       expect(document.body.style.overflow).toBe('')
@@ -156,14 +156,14 @@ describe('About Modal E2E', () => {
       initModal()
       const modal = document.getElementById('about-modal')
       const overlay = modal.querySelector('.about-modal-overlay')
-      
+
       // Open first
       modal.classList.add('is-active')
       modal.setAttribute('aria-hidden', 'false')
-      
+
       // Click overlay
       overlay.click()
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
       expect(modal.getAttribute('aria-hidden')).toBe('true')
     })
@@ -171,15 +171,15 @@ describe('About Modal E2E', () => {
     it('should close modal when user presses Escape key', () => {
       initModal()
       const modal = document.getElementById('about-modal')
-      
+
       // Open first
       modal.classList.add('is-active')
       modal.setAttribute('aria-hidden', 'false')
-      
+
       // Press Escape
       const escapeEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
       document.dispatchEvent(escapeEvent)
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
       expect(modal.getAttribute('aria-hidden')).toBe('true')
     })
@@ -190,7 +190,7 @@ describe('About Modal E2E', () => {
       const aboutSection = document.querySelector('.about-section')
       const featureList = document.querySelector('.feature-list')
       const resourceLinks = document.querySelector('.resource-links')
-      
+
       expect(aboutSection).toBeTruthy()
       expect(featureList).toBeTruthy()
       expect(resourceLinks).toBeTruthy()
@@ -206,7 +206,7 @@ describe('About Modal E2E', () => {
     it('should display version information', () => {
       const versionBadge = document.getElementById('version-badge')
       const buildInfo = document.getElementById('build-info')
-      
+
       expect(versionBadge).toBeTruthy()
       expect(buildInfo).toBeTruthy()
       expect(versionBadge.textContent).toContain('v')
@@ -219,14 +219,14 @@ describe('About Modal E2E', () => {
       initModal()
       const modal = document.getElementById('about-modal')
       const aboutBtn = document.getElementById('about-btn')
-      
+
       // Focus on button
       aboutBtn.focus()
       expect(document.activeElement).toBe(aboutBtn)
-      
+
       // Open modal
       aboutBtn.click()
-      
+
       // In real implementation, focus would move to first focusable element
       const firstFocusable = modal.querySelector('a, button')
       if (firstFocusable) {
@@ -240,11 +240,11 @@ describe('About Modal E2E', () => {
       const modal = document.getElementById('about-modal')
       const aboutBtn = document.getElementById('about-btn')
       const closeBtn = modal.querySelector('.about-close-button')
-      
+
       // Open and close
       aboutBtn.click()
       closeBtn.click()
-      
+
       // Focus should return to button
       aboutBtn.focus()
       expect(document.activeElement).toBe(aboutBtn)
@@ -254,9 +254,9 @@ describe('About Modal E2E', () => {
       initModal()
       const modal = document.getElementById('about-modal')
       const focusableElements = modal.querySelectorAll('a[href], button:not([disabled])')
-      
+
       expect(focusableElements.length).toBeGreaterThan(0)
-      
+
       // Test that focus can cycle through elements
       if (focusableElements.length > 1) {
         focusableElements[0].focus()
@@ -270,7 +270,7 @@ describe('About Modal E2E', () => {
       try {
         const response = await fetch('/api/version')
         const data = await response.json()
-        
+
         expect(data).toBeTruthy()
         expect(data.version).toBeTruthy()
       } catch (error) {
@@ -285,7 +285,7 @@ describe('About Modal E2E', () => {
       global.fetch = async () => {
         throw new Error('Network error')
       }
-      
+
       try {
         await fetch('/api/version')
       } catch (error) {
@@ -302,12 +302,12 @@ describe('About Modal E2E', () => {
       const modal = document.getElementById('about-modal')
       const aboutBtn = document.getElementById('about-btn')
       const closeBtn = modal.querySelector('.about-close-button')
-      
+
       // Open and close multiple times
       for (let i = 0; i < 3; i++) {
         aboutBtn.click()
         expect(modal.classList.contains('is-active')).toBe(true)
-        
+
         closeBtn.click()
         expect(modal.classList.contains('is-active')).toBe(false)
       }

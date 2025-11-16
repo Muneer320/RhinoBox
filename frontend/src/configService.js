@@ -50,8 +50,8 @@ class ConfigService {
           version: "unknown",
           features: {
             authentication: false,
-            multi_tenant: true,
-            async_ingestion: true,
+            multi_tenant: false,
+            async_ingestion: false,
             deduplication: true,
           },
         };

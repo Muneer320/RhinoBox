@@ -72,7 +72,7 @@ describe('About Modal', () => {
       const header = document.querySelector('.about-modal-header')
       const body = document.querySelector('.about-modal-body')
       const footer = document.querySelector('.about-modal-footer')
-      
+
       expect(header).toBeTruthy()
       expect(body).toBeTruthy()
       expect(footer).toBeTruthy()
@@ -102,15 +102,15 @@ describe('About Modal', () => {
     it('should open modal when about button is clicked', () => {
       const modal = document.getElementById('about-modal')
       const aboutBtn = document.getElementById('about-btn')
-      
+
       // Simulate click
       aboutBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      
+
       // Note: In real implementation, this would be handled by initAboutModal()
       // For testing, we'll manually trigger the class addition
       modal.classList.add('is-active')
       modal.setAttribute('aria-hidden', 'false')
-      
+
       expect(modal.classList.contains('is-active')).toBe(true)
       expect(modal.getAttribute('aria-hidden')).toBe('false')
     })
@@ -119,7 +119,7 @@ describe('About Modal', () => {
       const modal = document.getElementById('about-modal')
       modal.classList.add('is-active')
       document.body.style.overflow = 'hidden'
-      
+
       expect(document.body.style.overflow).toBe('hidden')
     })
   })
@@ -128,16 +128,16 @@ describe('About Modal', () => {
     it('should close modal when close button is clicked', () => {
       const modal = document.getElementById('about-modal')
       const closeBtn = document.querySelector('.about-close-button')
-      
+
       // Open modal first
       modal.classList.add('is-active')
       modal.setAttribute('aria-hidden', 'false')
-      
+
       // Close modal
       closeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       modal.classList.remove('is-active')
       modal.setAttribute('aria-hidden', 'true')
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
       expect(modal.getAttribute('aria-hidden')).toBe('true')
     })
@@ -145,27 +145,27 @@ describe('About Modal', () => {
     it('should close modal when overlay is clicked', () => {
       const modal = document.getElementById('about-modal')
       const overlay = document.querySelector('.about-modal-overlay')
-      
+
       // Open modal first
       modal.classList.add('is-active')
-      
+
       // Click overlay
       overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       modal.classList.remove('is-active')
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
     })
 
     it('should restore body scroll when modal is closed', () => {
       const modal = document.getElementById('about-modal')
-      
+
       // Open and close
       modal.classList.add('is-active')
       document.body.style.overflow = 'hidden'
-      
+
       modal.classList.remove('is-active')
       document.body.style.overflow = ''
-      
+
       expect(document.body.style.overflow).toBe('')
     })
   })
@@ -174,23 +174,23 @@ describe('About Modal', () => {
     it('should close modal on Escape key', () => {
       const modal = document.getElementById('about-modal')
       modal.classList.add('is-active')
-      
+
       const escapeEvent = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
       document.dispatchEvent(escapeEvent)
-      
+
       // In real implementation, this would be handled by the event listener
       // For testing, we'll manually close
       if (modal.classList.contains('is-active')) {
         modal.classList.remove('is-active')
       }
-      
+
       expect(modal.classList.contains('is-active')).toBe(false)
     })
 
     it('should trap focus within modal when open', () => {
       const modal = document.getElementById('about-modal')
       const focusableElements = modal.querySelectorAll('a[href], button:not([disabled])')
-      
+
       expect(focusableElements.length).toBeGreaterThan(0)
     })
   })
@@ -199,10 +199,10 @@ describe('About Modal', () => {
     it('should have about section with description', () => {
       const aboutSection = document.querySelector('.about-section')
       expect(aboutSection).toBeTruthy()
-      
+
       const heading = aboutSection.querySelector('h3')
       const paragraph = aboutSection.querySelector('p')
-      
+
       expect(heading).toBeTruthy()
       expect(paragraph).toBeTruthy()
       expect(paragraph.textContent).toContain('RhinoBox')
@@ -223,7 +223,7 @@ describe('About Modal', () => {
         </li>
       `
       body.appendChild(featureList)
-      
+
       const list = document.querySelector('.feature-list')
       expect(list).toBeTruthy()
       expect(list.querySelectorAll('li').length).toBeGreaterThan(0)
@@ -242,7 +242,7 @@ describe('About Modal', () => {
         </a>
       `
       body.appendChild(resourceLinks)
-      
+
       const links = document.querySelectorAll('.resource-link')
       expect(links.length).toBeGreaterThan(0)
       expect(links[0].getAttribute('target')).toBe('_blank')

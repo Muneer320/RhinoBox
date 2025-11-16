@@ -1,3 +1,4 @@
+import { vi } from 'vitest'
 /**
  * Unit tests for Monaco Code Editor integration
  */
@@ -5,35 +6,38 @@
 import { initCodeEditor, getEditorValue, getCurrentLanguage, setEditorValue } from '../src/codeEditor.js';
 
 // Mock Monaco Editor
-global.monaco = {
+const monacoMock = vi.hoisted(() => ({
   editor: {
-    create: jest.fn(() => ({
-      getValue: jest.fn(() => 'test code'),
-      setValue: jest.fn(),
-      getPosition: jest.fn(() => ({ lineNumber: 1, column: 1 })),
-      getModel: jest.fn(() => ({
-        onDidChangeContent: jest.fn(),
-        setValue: jest.fn(),
+    create: vi.fn(() => ({
+      getValue: vi.fn(() => 'test code'),
+      setValue: vi.fn(),
+      getPosition: vi.fn(() => ({ lineNumber: 1, column: 1 })),
+      getModel: vi.fn(() => ({
+        onDidChangeContent: vi.fn(),
+        setValue: vi.fn(),
       })),
-      onDidChangeCursorPosition: jest.fn(),
-      getAction: jest.fn(() => ({
-        run: jest.fn(),
+      onDidChangeCursorPosition: vi.fn(),
+      getAction: vi.fn(() => ({
+        run: vi.fn(),
       })),
-      dispose: jest.fn(),
-      focus: jest.fn(),
-      layout: jest.fn(),
+      dispose: vi.fn(),
+      focus: vi.fn(),
+      layout: vi.fn(),
     })),
-    setTheme: jest.fn(),
-    setModelLanguage: jest.fn(),
+    setTheme: vi.fn(),
+    setModelLanguage: vi.fn(),
   },
   languages: {
     json: {
       jsonDefaults: {
-        setDiagnosticsOptions: jest.fn(),
+        setDiagnosticsOptions: vi.fn(),
       },
     },
   },
-};
+}));
+
+vi.mock("monaco-editor/esm/vs/editor/editor.api.js", () => monacoMock);
+global.monaco = monacoMock;
 
 // Mock DOM elements
 const mockEditorContainer = document.createElement('div');
@@ -51,18 +55,18 @@ document.body.appendChild(mockLanguageSelector);
 describe('Code Editor Module', () => {
   beforeEach(() => {
     // Reset mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     document.body.innerHTML = '';
-    
+
     // Recreate elements
     const container = document.createElement('div');
     container.id = 'code-editor-container';
     document.body.appendChild(container);
-    
+
     const preview = document.createElement('div');
     preview.id = 'code-preview';
     document.body.appendChild(preview);
-    
+
     const selector = document.createElement('select');
     selector.id = 'language-selector';
     document.body.appendChild(selector);
@@ -72,16 +76,16 @@ describe('Code Editor Module', () => {
     expect(() => {
       initCodeEditor();
     }).not.toThrow();
-    
+
     expect(global.monaco.editor.create).toHaveBeenCalled();
   });
 
   test('should get editor value', () => {
     // Mock editor
-    const mockEditor = {
-      getValue: jest.fn(() => 'test code'),
+    const _mockEditor = {
+      getValue: vi.fn(() => 'test code'),
     };
-    
+
     // Since we can't directly access the internal editor, we test the function exists
     expect(typeof getEditorValue).toBe('function');
   });
@@ -93,7 +97,7 @@ describe('Code Editor Module', () => {
   });
 
   test('should set editor value', () => {
-    
+
     expect(typeof setEditorValue).toBe('function');
     expect(() => {
       setEditorValue('test');
@@ -106,7 +110,7 @@ describe('Code Editor Module', () => {
       const changeEvent = new Event('change');
       languageSelector.value = 'javascript';
       languageSelector.dispatchEvent(changeEvent);
-      
+
       // Verify language selector exists
       expect(languageSelector).toBeTruthy();
     }
@@ -116,10 +120,10 @@ describe('Code Editor Module', () => {
     const formatButton = document.createElement('button');
     formatButton.id = 'format-code';
     document.body.appendChild(formatButton);
-    
+
     const clickEvent = new Event('click');
     formatButton.dispatchEvent(clickEvent);
-    
+
     expect(formatButton).toBeTruthy();
   });
 
@@ -127,10 +131,10 @@ describe('Code Editor Module', () => {
     const clearButton = document.createElement('button');
     clearButton.id = 'clear-code';
     document.body.appendChild(clearButton);
-    
+
     const clickEvent = new Event('click');
     clearButton.dispatchEvent(clickEvent);
-    
+
     expect(clearButton).toBeTruthy();
   });
 
@@ -138,10 +142,10 @@ describe('Code Editor Module', () => {
     const expandButton = document.createElement('button');
     expandButton.id = 'expand-editor';
     document.body.appendChild(expandButton);
-    
+
     const clickEvent = new Event('click');
     expandButton.dispatchEvent(clickEvent);
-    
+
     expect(expandButton).toBeTruthy();
   });
 });
@@ -151,7 +155,7 @@ describe('Code Editor Integration', () => {
     const form = document.createElement('form');
     form.id = 'quickAddForm';
     document.body.appendChild(form);
-    
+
     expect(document.getElementById('quickAddForm')).toBeTruthy();
   });
 
@@ -187,15 +191,15 @@ describe('Code Editor Modal', () => {
     modal.id = 'editor-modal';
     modal.className = 'editor-modal';
     document.body.appendChild(modal);
-    
+
     const background = document.createElement('div');
     background.className = 'editor-modal-background';
     modal.appendChild(background);
-    
+
     const card = document.createElement('div');
     card.className = 'editor-modal-card';
     modal.appendChild(card);
-    
+
     const modalEditor = document.createElement('div');
     modalEditor.id = 'modal-editor';
     card.appendChild(modalEditor);
@@ -211,10 +215,10 @@ describe('Code Editor Modal', () => {
     const closeButton = document.createElement('button');
     closeButton.className = 'editor-modal-close';
     modal.appendChild(closeButton);
-    
+
     const clickEvent = new Event('click');
     closeButton.dispatchEvent(clickEvent);
-    
+
     expect(closeButton).toBeTruthy();
   });
 });

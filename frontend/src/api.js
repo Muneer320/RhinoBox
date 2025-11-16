@@ -5,7 +5,7 @@
 
 // API Configuration
 export const API_CONFIG = {
-  baseURL: "http://localhost:8090", // RhinoBox backend URL - change this to your backend URL
+  baseURL: (import.meta.env?.VITE_API_BASE_URL || "/api").replace(/\/$/, ""),
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
@@ -77,6 +77,9 @@ export class APIError extends Error {
       504: 'Gateway timeout. The server took too long to respond.',
     }
 
+    if (this.status === 400 && this.message && this.message.length < 150 && !/HTTP|JSON|syntax|unexpected token/i.test(this.message)) {
+      return this.message
+    }
     if (this.status in statusMessages) {
       return statusMessages[this.status]
     }
@@ -121,15 +124,15 @@ async function parseErrorResponse(response) {
 async function apiRequest(endpoint, options = {}) {
   const url = `${API_CONFIG.baseURL}${endpoint}`
   const timeout = API_CONFIG.timeout || 30000
-  
+
   // Create AbortController for timeout
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
-  
+
   // If body is FormData, preserve auth headers but let browser set Content-Type with boundary
   const isFormData = options.body instanceof FormData
   let defaultHeaders = {}
-  
+
   if (isFormData) {
     // For FormData, only include Authorization header if present, let browser set Content-Type
     const token = getAuthToken()
@@ -141,7 +144,7 @@ async function apiRequest(endpoint, options = {}) {
     // For non-FormData requests, use all default headers
     defaultHeaders = getHeaders()
   }
-  
+
   const config = {
     ...options,
     headers: {
@@ -157,7 +160,7 @@ async function apiRequest(endpoint, options = {}) {
   try {
     const response = await fetch(url, config)
     clearTimeout(timeoutId)
-    
+
     if (!response.ok) {
       const { message, details } = await parseErrorResponse(response)
       throw new APIError(message, response.status, details)
@@ -166,19 +169,19 @@ async function apiRequest(endpoint, options = {}) {
     return await response.json()
   } catch (error) {
     clearTimeout(timeoutId)
-    
+
     // Handle timeout errors
     if (error.name === 'AbortError') {
       console.error('API Request Timeout:', endpoint)
       throw new APIError('Request timeout. Please try again.', 0, { type: 'timeout' })
     }
-    
+
     // Handle network errors
     if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
-      const isAccessDenied = error.message.includes('ACCESS_DENIED') || 
+      const isAccessDenied = error.message.includes('ACCESS_DENIED') ||
                              error.message.includes('ERR_ACCESS_DENIED') ||
                              (error.cause && error.cause.message && error.cause.message.includes('ACCESS_DENIED'))
-      
+
       const possibleCauses = isAccessDenied ? [
         'Browser extension (ad blocker, privacy extension) is blocking the request',
         'Browser security policy is blocking the request',
@@ -190,7 +193,7 @@ async function apiRequest(endpoint, options = {}) {
         'Network connectivity problem',
         'Incorrect backend URL'
       ]
-      
+
       console.error('API Request Failed:', {
         endpoint,
         url,
@@ -200,23 +203,23 @@ async function apiRequest(endpoint, options = {}) {
         isAccessDenied,
         possibleCauses
       })
-      
+
       const errorMessage = isAccessDenied
         ? `Request blocked by browser (ERR_ACCESS_DENIED). This is usually caused by a browser extension. Try disabling extensions or using a different browser. Backend URL: ${API_CONFIG.baseURL}`
         : `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`
-      
+
       throw new APIError(
         errorMessage,
         0,
         { type: isAccessDenied ? 'access-denied' : 'network', url, isAccessDenied }
       )
     }
-    
+
     // Re-throw APIError as-is
     if (error instanceof APIError) {
       throw error
     }
-    
+
     // Wrap other errors
     console.error('API Request Error:', error)
     throw new APIError(error.message || 'An unexpected error occurred', 0, { originalError: error })
@@ -245,7 +248,7 @@ export async function healthcheck() {
  */
 export async function ingestFiles(files, namespace = '', comment = '', fileTypeOverride = '') {
   const formData = new FormData()
-  
+
   // Append all files
   if (Array.isArray(files)) {
     files.forEach(file => {
@@ -254,7 +257,7 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
   } else {
     formData.append('files', files)
   }
-  
+
   // Append optional metadata
   if (namespace) {
     formData.append('namespace', namespace)
@@ -262,7 +265,7 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
   if (comment) {
     formData.append('comment', comment)
   }
-  
+
   // Append file type override if specified and not "auto"
   if (fileTypeOverride && fileTypeOverride !== 'auto') {
     formData.append('file_type_override', fileTypeOverride)
@@ -273,32 +276,32 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const url = `${API_CONFIG.baseURL}/ingest`
-    
+
     xhr.open('POST', url, true)
-    
+
     // Set headers
     const token = getAuthToken()
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     }
     // Don't set Content-Type - browser will set it with boundary for FormData
-    
+
     xhr.onload = function() {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const response = JSON.parse(xhr.responseText)
           resolve(response)
-        } catch (e) {
+        } catch (_e) {
           reject(new APIError('Invalid JSON response from server', xhr.status))
         }
       } else {
         let errorMessage = xhr.statusText || `HTTP error! status: ${xhr.status}`
-        
+
         // Handle specific status codes with better messages
         if (xhr.status === 413) {
           errorMessage = 'Request Entity Too Large - File exceeds maximum size limit'
         }
-        
+
         try {
           const errorData = JSON.parse(xhr.responseText)
           errorMessage = errorData.message || errorData.error || errorData.detail || errorMessage
@@ -308,7 +311,7 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
         reject(new APIError(errorMessage, xhr.status))
       }
     }
-    
+
     xhr.onerror = function() {
       reject(new APIError(
         `Cannot connect to backend at ${API_CONFIG.baseURL}. Please ensure the backend server is running.`,
@@ -316,11 +319,11 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
         { type: 'network', url, isAccessDenied: true }
       ))
     }
-    
+
     xhr.ontimeout = function() {
       reject(new APIError('Request timeout. Please try again.', 0, { type: 'timeout' }))
     }
-    
+
     xhr.timeout = API_CONFIG.timeout || 30000
     xhr.send(formData)
   })
@@ -335,7 +338,7 @@ export async function ingestFiles(files, namespace = '', comment = '', fileTypeO
  */
 export async function ingestMedia(files, category = '') {
   const formData = new FormData()
-  
+
   if (Array.isArray(files)) {
     files.forEach(file => {
       formData.append('file', file)
@@ -343,7 +346,7 @@ export async function ingestMedia(files, category = '') {
   } else {
     formData.append('file', files)
   }
-  
+
   if (category) {
     formData.append('category', category)
   }
@@ -368,7 +371,7 @@ export async function ingestJSON(documents, namespace, comment = '') {
     namespace: namespace,
     documents: Array.isArray(documents) ? documents : [documents],
   }
-  
+
   if (comment) {
     payload.comment = comment
   }
@@ -389,21 +392,21 @@ export async function ingestJSON(documents, namespace, comment = '') {
  */
 export async function getFiles(type, category = '', params = {}) {
   const queryParams = new URLSearchParams()
-  
+
   if (category) {
     queryParams.append('category', category)
   }
-  
+
   // Add pagination and other params
   Object.keys(params).forEach(key => {
     if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
       queryParams.append(key, params[key])
     }
   })
-  
+
   const queryString = queryParams.toString()
   const endpoint = `/files/type/${type}${queryString ? `?${queryString}` : ''}`
-  
+
   return apiRequest(endpoint, {
     method: 'GET',
   })
@@ -436,10 +439,13 @@ export async function getFileMetadata(hash) {
 /**
  * Search files by name
  * @param {string} query - Search query (file name)
- * @param {object} filters - Additional filters (not currently used by backend)
+ * @param {object} filters - Additional search filters supported by the backend
  */
 export async function searchFiles(query, filters = {}) {
   const params = new URLSearchParams({ name: query });
+  for (const key of ['extension', 'type', 'category', 'mime_type', 'content_search', 'date_from', 'date_to']) {
+    if (filters[key] !== undefined && filters[key] !== '') params.set(key, String(filters[key]));
+  }
   return apiRequest(`/files/search?${params.toString()}`, {
     method: "GET",
   });
@@ -465,11 +471,11 @@ export async function downloadFile(hash, path, fileId, fileName = 'download', on
       const fileMetadata = await getFile(fileId)
       hash = fileMetadata.hash || fileMetadata.fileHash
       path = fileMetadata.path || fileMetadata.storedPath || fileMetadata.stored_path
-      
+
       if (!hash && !path) {
         throw new Error('File metadata does not contain hash or path')
       }
-      
+
       // Use fileName from metadata if not provided
       if (!fileName || fileName === 'download') {
         fileName = fileMetadata.name || fileMetadata.original_name || fileMetadata.originalName || 'download'
@@ -478,9 +484,9 @@ export async function downloadFile(hash, path, fileId, fileName = 'download', on
       throw new Error(`Failed to fetch file metadata: ${error.message}`)
     }
   }
-  
+
   const queryParams = new URLSearchParams()
-  
+
   if (hash) {
     queryParams.append('hash', hash)
   } else if (path) {
@@ -488,29 +494,25 @@ export async function downloadFile(hash, path, fileId, fileName = 'download', on
   } else {
     throw new Error('Either hash, path, or fileId must be provided for download')
   }
-  
+
   const endpoint = `/files/download?${queryParams.toString()}`
   const url = `${API_CONFIG.baseURL}${endpoint}`
-  
+
   // For direct download, return the URL
   if (method === 'direct') {
-    const headers = getHeaders()
-    const authToken = headers['Authorization']
-    // Return URL with auth token if available (for same-origin requests)
-    // Note: For cross-origin, token should be in header, not URL
     return url
   }
-  
+
   // Use fetch directly for blob response (not JSON)
   const headers = getHeaders()
   // Remove Content-Type for download requests
   delete headers['Content-Type']
-  
+
   const response = await fetch(url, {
     method: 'GET',
     headers: headers,
   })
-  
+
   if (!response.ok) {
     let errorMessage = `Download failed with status: ${response.status}`
     try {
@@ -520,39 +522,39 @@ export async function downloadFile(hash, path, fileId, fileName = 'download', on
       // If response is not JSON, use status text
       errorMessage = response.statusText || errorMessage
     }
-    
+
     const error = new Error(errorMessage)
     error.status = response.status
     error.statusText = response.statusText
     throw error
   }
-  
+
   // Handle progress tracking if callback provided
   if (onProgress && typeof onProgress === 'function') {
     const contentLength = response.headers.get('Content-Length')
     const total = contentLength ? parseInt(contentLength, 10) : null
-    
+
     if (!response.body) {
       // Fallback: read entire blob if streaming not supported
       const blob = await response.blob()
       onProgress(blob.size, blob.size)
       return blob
     }
-    
+
     const reader = response.body.getReader()
     const chunks = []
     let loaded = 0
-    
+
     while (true) {
       const { done, value } = await reader.read()
-      
+
       if (done) {
         break
       }
-      
+
       chunks.push(value)
       loaded += value.length
-      
+
       // Call progress callback
       if (total) {
         onProgress(loaded, total)
@@ -560,12 +562,12 @@ export async function downloadFile(hash, path, fileId, fileName = 'download', on
         onProgress(loaded, null)
       }
     }
-    
+
     // Combine chunks into blob
     const blob = new Blob(chunks)
     return blob
   }
-  
+
   // Standard blob download without progress
   return await response.blob()
 }
@@ -686,12 +688,12 @@ export async function login(email, password) {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })
-  
+
   // Store token if provided
   if (response.token) {
     localStorage.setItem('auth_token', response.token)
   }
-  
+
   return response
 }
 

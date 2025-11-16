@@ -42,7 +42,7 @@ describe('UI Components', () => {
       const small = createLoadingState('Loading...', 'small')
       const medium = createLoadingState('Loading...', 'medium')
       const large = createLoadingState('Loading...', 'large')
-      
+
       expect(small.querySelector('.ui-loading-spinner').classList.contains('ui-loading-small')).toBe(true)
       expect(medium.querySelector('.ui-loading-spinner').classList.contains('ui-loading-medium')).toBe(true)
       expect(large.querySelector('.ui-loading-spinner').classList.contains('ui-loading-large')).toBe(true)
@@ -61,7 +61,7 @@ describe('UI Components', () => {
       expect(error).toBeInstanceOf(HTMLElement)
       expect(error.className).toBe('ui-error-state')
       expect(error.getAttribute('role')).toBe('alert')
-      
+
       const message = error.querySelector('.ui-error-message')
       expect(message).toBeTruthy()
       expect(message.textContent).toBe('Something went wrong')
@@ -70,10 +70,10 @@ describe('UI Components', () => {
     it('should create error state with retry button when onRetry is provided', () => {
       let retryCalled = false
       const onRetry = () => { retryCalled = true }
-      
+
       const error = createErrorState('Error occurred', onRetry)
       const retryButton = error.querySelector('.ui-retry-button')
-      
+
       expect(retryButton).toBeTruthy()
       retryButton.click()
       expect(retryCalled).toBe(true)
@@ -90,7 +90,7 @@ describe('UI Components', () => {
       const server = createErrorState('Server error', null, 'server')
       const notFound = createErrorState('Not found', null, 'not-found')
       const generic = createErrorState('Generic error', null, 'generic')
-      
+
       expect(network.querySelector('.ui-error-icon')).toBeTruthy()
       expect(server.querySelector('.ui-error-icon')).toBeTruthy()
       expect(notFound.querySelector('.ui-error-icon')).toBeTruthy()
@@ -101,7 +101,7 @@ describe('UI Components', () => {
       const onRetry = () => {}
       const error = createErrorState('Error', onRetry)
       const retryButton = error.querySelector('.ui-retry-button')
-      
+
       retryButton.click()
       expect(retryButton.disabled).toBe(true)
       expect(error.classList.contains('ui-retrying')).toBe(true)
@@ -113,10 +113,10 @@ describe('UI Components', () => {
       const empty = createEmptyState('No items', 'This collection is empty')
       expect(empty).toBeInstanceOf(HTMLElement)
       expect(empty.className).toBe('ui-empty-state')
-      
+
       const title = empty.querySelector('.ui-empty-title')
       const message = empty.querySelector('.ui-empty-message')
-      
+
       expect(title.textContent).toBe('No items')
       expect(message.textContent).toBe('This collection is empty')
     })
@@ -127,12 +127,12 @@ describe('UI Components', () => {
         label: 'Add Item',
         onClick: () => { actionCalled = true }
       }
-      
+
       const empty = createEmptyState('No items', 'Empty', 'generic', action)
       const actionButton = empty.querySelector('.ui-empty-action')
-      
+
       expect(actionButton).toBeTruthy()
-      expect(actionButton.textContent).toBe('Add Item')
+      expect(actionButton.textContent.trim()).toBe('Add Item')
       actionButton.click()
       expect(actionCalled).toBe(true)
     })
@@ -142,7 +142,7 @@ describe('UI Components', () => {
       const search = createEmptyState('No results', 'Empty', 'search')
       const collection = createEmptyState('No collection', 'Empty', 'collection')
       const generic = createEmptyState('Empty', 'Empty', 'generic')
-      
+
       expect(files.querySelector('.ui-empty-icon')).toBeTruthy()
       expect(search.querySelector('.ui-empty-icon')).toBeTruthy()
       expect(collection.querySelector('.ui-empty-icon')).toBeTruthy()
@@ -155,11 +155,11 @@ describe('UI Components', () => {
       const error1 = new Error('Failed to fetch')
       error1.name = 'TypeError'
       expect(getErrorType(error1)).toBe('network')
-      
+
       const error2 = new Error('Request timeout')
       error2.name = 'AbortError'
       expect(getErrorType(error2)).toBe('network')
-      
+
       const error3 = new Error('Cannot connect to backend')
       expect(getErrorType(error3)).toBe('network')
     })
@@ -167,7 +167,7 @@ describe('UI Components', () => {
     it('should identify not-found errors', () => {
       const error1 = new Error('404 not found')
       expect(getErrorType(error1)).toBe('not-found')
-      
+
       const error2 = new Error('Resource not found')
       expect(getErrorType(error2)).toBe('not-found')
     })
@@ -203,10 +203,10 @@ describe('UI Components', () => {
     it('should provide friendly message for HTTP errors', () => {
       const error401 = new Error('401 Unauthorized')
       expect(getUserFriendlyErrorMessage(error401)).toContain('authorized')
-      
+
       const error404 = new Error('404 not found')
       expect(getUserFriendlyErrorMessage(error404)).toContain('not found')
-      
+
       const error500 = new Error('500 Internal Server Error')
       expect(getUserFriendlyErrorMessage(error500)).toContain('server')
     })

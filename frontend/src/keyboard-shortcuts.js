@@ -76,7 +76,7 @@ export class KeyboardShortcutManager {
    */
   getKeyCombo(e) {
     const parts = [];
-    
+
     // Check for modifier keys
     if (e.ctrlKey || e.metaKey) {
       parts.push('Ctrl');

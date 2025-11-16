@@ -46,7 +46,7 @@ describe('FileFilterManager', () => {
     it('should toggle file type', () => {
       filterManager.toggleFileType('image/jpeg');
       expect(filterManager.filters.fileTypes).toContain('image/jpeg');
-      
+
       filterManager.toggleFileType('image/jpeg');
       expect(filterManager.filters.fileTypes).not.toContain('image/jpeg');
     });
@@ -57,7 +57,7 @@ describe('FileFilterManager', () => {
       const start = new Date('2024-01-12T00:00:00Z');
       const end = new Date('2024-01-18T00:00:00Z');
       filterManager.setDateRange(start, end);
-      
+
       const filtered = filterManager.filterFiles(mockFiles);
       expect(filtered.length).toBe(1);
       expect(filtered[0].name).toBe('image.jpg');
@@ -98,7 +98,7 @@ describe('FileFilterManager', () => {
       filterManager.setFileTypes(['image/jpeg']);
       filterManager.setDateRange(new Date(), new Date());
       filterManager.clearFilters();
-      
+
       expect(filterManager.filters.fileTypes.length).toBe(0);
       expect(filterManager.filters.dateRange.start).toBeNull();
     });
@@ -107,10 +107,10 @@ describe('FileFilterManager', () => {
   describe('getActiveFilterCount', () => {
     it('should count active filters', () => {
       expect(filterManager.getActiveFilterCount()).toBe(0);
-      
+
       filterManager.setFileTypes(['image/jpeg']);
       expect(filterManager.getActiveFilterCount()).toBe(1);
-      
+
       filterManager.setDateRange(new Date(), new Date());
       expect(filterManager.getActiveFilterCount()).toBe(2);
     });

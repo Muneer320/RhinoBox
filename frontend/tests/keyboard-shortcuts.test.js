@@ -24,7 +24,7 @@ describe('KeyboardShortcutManager', () => {
     it('should register shortcuts', () => {
       const callback = vi.fn();
       shortcutManager.register('Ctrl+k', callback, 'Test shortcut');
-      
+
       const shortcut = shortcutManager.shortcuts.get('Ctrl+K');
       expect(shortcut).toBeDefined();
       expect(shortcut.description).toBe('Test shortcut');
@@ -33,7 +33,7 @@ describe('KeyboardShortcutManager', () => {
     it('should unregister shortcuts', () => {
       shortcutManager.register('Ctrl+k', vi.fn());
       shortcutManager.unregister('Ctrl+k');
-      
+
       expect(shortcutManager.shortcuts.has('Ctrl+K')).toBe(false);
     });
   });

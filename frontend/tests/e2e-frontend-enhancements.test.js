@@ -3,10 +3,10 @@
  * Tests user workflows for upload progress, keyboard shortcuts, filtering, and bulk operations
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'vitest';
 
 describe('Frontend Enhancements E2E Tests', () => {
-  let page;
+  let _page;
 
   beforeEach(async () => {
     // Setup: Navigate to app

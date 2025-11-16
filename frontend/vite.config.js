@@ -14,7 +14,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: true,
+    open: false,
+    proxy: { "/api": { target: "http://127.0.0.1:8090", changeOrigin: true, rewrite: path => path.replace(/^\/api(?=\/)/, "") } },
   },
   plugins: [
     monacoEditorPlugin.default({

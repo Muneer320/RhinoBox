@@ -49,7 +49,7 @@ beforeEach(() => {
       }
     </style>
   `
-  
+
   document.body.innerHTML = `
     <div id="about-modal" class="about-modal">
       <div class="about-modal-overlay"></div>
@@ -87,7 +87,7 @@ beforeEach(() => {
           <div class="about-section">
             <h3>🔗 Resources</h3>
             <div class="resource-links">
-              <a href="https://github.com/Muneer320/RhinoBox" class="resource-link" target="_blank">
+              <a href="https://github.com/Muneer320/RhinoBox" class="resource-link" target="_blank" rel="noopener noreferrer">
                 <span class="resource-icon">💻</span>
                 <span>GitHub Repository</span>
                 <span class="external-icon">↗</span>
@@ -119,7 +119,7 @@ describe('About Modal UI', () => {
       const header = modal.querySelector('.about-modal-header')
       const body = modal.querySelector('.about-modal-body')
       const footer = modal.querySelector('.about-modal-footer')
-      
+
       expect(modal).toBeTruthy()
       expect(content).toBeTruthy()
       expect(header).toBeTruthy()
@@ -137,7 +137,7 @@ describe('About Modal UI', () => {
     it('should display title and tagline', () => {
       const title = document.getElementById('about-title')
       const tagline = document.querySelector('.about-tagline')
-      
+
       expect(title).toBeTruthy()
       expect(title.textContent).toBe('RhinoBox')
       expect(tagline).toBeTruthy()
@@ -155,7 +155,7 @@ describe('About Modal UI', () => {
     it('should render feature list items', () => {
       const featureList = document.querySelector('.feature-list')
       const items = featureList.querySelectorAll('li')
-      
+
       expect(featureList).toBeTruthy()
       expect(items.length).toBeGreaterThan(0)
     })
@@ -170,7 +170,7 @@ describe('About Modal UI', () => {
       const featureContent = document.querySelector('.feature-content')
       const strong = featureContent.querySelector('strong')
       const paragraph = featureContent.querySelector('p')
-      
+
       expect(featureContent).toBeTruthy()
       expect(strong).toBeTruthy()
       expect(paragraph).toBeTruthy()

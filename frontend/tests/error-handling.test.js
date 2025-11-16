@@ -3,14 +3,14 @@
  * Tests APIError class, toast notifications, and error handling utilities
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { APIError } from '../src/api.js';
 
 describe('APIError Class', () => {
   describe('Constructor', () => {
     it('should create an APIError with message, status, and details', () => {
       const error = new APIError('Test error', 404, { code: 'NOT_FOUND' });
-      
+
       expect(error.message).toBe('Test error');
       expect(error.status).toBe(404);
       expect(error.details).toEqual({ code: 'NOT_FOUND' });
@@ -20,7 +20,7 @@ describe('APIError Class', () => {
 
     it('should default status to 0 and details to empty object', () => {
       const error = new APIError('Test error');
-      
+
       expect(error.status).toBe(0);
       expect(error.details).toEqual({});
     });
@@ -36,7 +36,7 @@ describe('APIError Class', () => {
       const error500 = new APIError('Server error', 500);
       const error502 = new APIError('Bad gateway', 502);
       const error503 = new APIError('Service unavailable', 503);
-      
+
       expect(error500.getErrorType()).toBe('server');
       expect(error502.getErrorType()).toBe('server');
       expect(error503.getErrorType()).toBe('server');
@@ -134,7 +134,7 @@ describe('APIError Class', () => {
 
 describe('Toast Notification System', () => {
   let container;
-  
+
   beforeEach(() => {
     // Setup DOM
     document.body.innerHTML = '';
@@ -160,7 +160,7 @@ describe('Toast Notification System', () => {
       toast.className = 'toast toast-success';
       toast.setAttribute('role', 'status');
       toast.setAttribute('aria-live', 'polite');
-      
+
       toast.innerHTML = `
         <div class="toast-icon">✓</div>
         <div class="toast-content">
@@ -168,9 +168,9 @@ describe('Toast Notification System', () => {
         </div>
         <button class="toast-close" aria-label="Close">&times;</button>
       `;
-      
+
       container.appendChild(toast);
-      
+
       expect(toast.classList.contains('toast')).toBe(true);
       expect(toast.classList.contains('toast-success')).toBe(true);
       expect(toast.getAttribute('role')).toBe('status');
@@ -183,7 +183,7 @@ describe('Toast Notification System', () => {
       toast.className = 'toast toast-error';
       toast.setAttribute('role', 'alert');
       toast.setAttribute('aria-live', 'assertive');
-      
+
       expect(toast.getAttribute('role')).toBe('alert');
       expect(toast.getAttribute('aria-live')).toBe('assertive');
     });
@@ -199,7 +199,7 @@ describe('Toast Notification System', () => {
           </div>
         </div>
       `;
-      
+
       const actionButton = toast.querySelector('.toast-action');
       expect(actionButton).toBeDefined();
       expect(actionButton.getAttribute('data-action')).toBe('retry');
@@ -212,45 +212,45 @@ describe('File Validation', () => {
   describe('validateFile', () => {
     it('should pass validation for valid file', () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      file.size = 1024 * 1024; // 1MB
-      
+      Object.defineProperty(file, 'size', { value: 1024 * 1024 }); // 1MB
+
       // Mock validateFile function
       const validateFile = (file) => {
         const errors = [];
         const MAX_FILE_SIZE = 500 * 1024 * 1024;
-        
+
         if (file.size > MAX_FILE_SIZE) {
           errors.push({
             type: 'file-too-large',
             message: `File "${file.name}" exceeds the maximum size limit of 500MB.`,
           });
         }
-        
+
         return errors;
       };
-      
+
       const errors = validateFile(file);
       expect(errors).toHaveLength(0);
     });
 
     it('should fail validation for file exceeding size limit', () => {
       const file = new File(['content'], 'large.jpg', { type: 'image/jpeg' });
-      file.size = 600 * 1024 * 1024; // 600MB
-      
+      Object.defineProperty(file, 'size', { value: 600 * 1024 * 1024 }); // 600MB
+
       const validateFile = (file) => {
         const errors = [];
         const MAX_FILE_SIZE = 500 * 1024 * 1024;
-        
+
         if (file.size > MAX_FILE_SIZE) {
           errors.push({
             type: 'file-too-large',
             message: `File "${file.name}" exceeds the maximum size limit of 500MB.`,
           });
         }
-        
+
         return errors;
       };
-      
+
       const errors = validateFile(file);
       expect(errors).toHaveLength(1);
       expect(errors[0].type).toBe('file-too-large');

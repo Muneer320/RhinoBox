@@ -160,7 +160,6 @@ export class BulkOperationsManager {
       // Download each file and add to zip
       const downloadPromises = selectedFiles.map(async (file) => {
         try {
-          const fileId = file.id || file.fileId || file.hash;
           const fileName = file.name || file.fileName || file.original_name || 'file';
           const fileUrl = file.url || file.downloadUrl || file.path || '';
 

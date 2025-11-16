@@ -16,7 +16,7 @@ describe('BulkOperationsManager', () => {
     it('should toggle file selection', () => {
       bulkManager.toggleSelection('file1');
       expect(bulkManager.isSelected('file1')).toBe(true);
-      
+
       bulkManager.toggleSelection('file1');
       expect(bulkManager.isSelected('file1')).toBe(false);
     });
@@ -24,7 +24,7 @@ describe('BulkOperationsManager', () => {
     it('should select and deselect files', () => {
       bulkManager.selectFile('file1');
       expect(bulkManager.getSelectedCount()).toBe(1);
-      
+
       bulkManager.deselectFile('file1');
       expect(bulkManager.getSelectedCount()).toBe(0);
     });
@@ -46,7 +46,7 @@ describe('BulkOperationsManager', () => {
     it('should notify on selection change', () => {
       const callback = vi.fn();
       bulkManager.onSelectionChange(callback);
-      
+
       bulkManager.selectFile('file1');
       expect(callback).toHaveBeenCalledWith(1, ['file1']);
     });
