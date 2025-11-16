@@ -92,7 +92,7 @@ services:
       RHINOBOX_DATA_DIR: "/data"
       RHINOBOX_MAX_UPLOAD_MB: "512"
       RHINOBOX_POSTGRES_URL: "postgres://${POSTGRES_USER:-rhinobox}:${POSTGRES_PASSWORD:-changeme_in_production}@postgres:5432/${POSTGRES_DB:-rhinobox}?sslmode=disable"
-      RHINOBOX_MONGO_URL: "mongodb://${MONGO_USER:-rhinobox}:${MONGO_PASSWORD:-changeme_in_production}@mongodb:27017"
+      RHINOBOX_MONGO_URL: "mongodb://${MONGO_USER:-rhinobox}:${MONGO_PASSWORD:-changeme_in_production}@mongodb:27017/${MONGO_DB:-rhinobox}?authSource=admin"
       RHINOBOX_DB_MAX_CONNS: "100"
     ports:
       - "8090:8090"
