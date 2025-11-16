@@ -1,20 +1,23 @@
 # syntax=docker/dockerfile:1.6
 
 # ---- Builder ----
-FROM golang:1.23-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 
-# Install build deps (git already included)
-RUN apk add --no-cache build-base
+# Certificates for module downloads and TLS database connections.
+RUN apk add --no-cache ca-certificates
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download || go mod download || go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/rhinobox ./cmd/rhinobox
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -ldflags="-s -w" -o /out/rhinobox ./cmd/rhinobox
 
 # ---- Runtime ----
-FROM alpine:3.20
+FROM alpine:3.23
 WORKDIR /app
 
 # Create non-root user and data directory
@@ -27,6 +30,7 @@ ENV RHINOBOX_ADDR=:8090 \
     RHINOBOX_MAX_UPLOAD_MB=512
 
 COPY --chown=rhinobox:rhinobox --from=builder /out/rhinobox /app/rhinobox
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 USER rhinobox
 VOLUME ["/data"]

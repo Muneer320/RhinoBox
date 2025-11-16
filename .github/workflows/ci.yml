@@ -1,0 +1,54 @@
+name: Checks and local demo
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.x'
+          cache-dependency-path: backend/go.sum
+      - run: go test -mod=readonly -p 2 -timeout 120s ./...
+      - run: go vet ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose -p rhinobox-ci up --build --wait --wait-timeout 180
+      - run: python3 scripts/smoke_demo.py --project rhinobox-ci --base-url http://127.0.0.1:5173/api --state-out /tmp/rhinobox-state.json
+      - run: |
+          docker compose -p rhinobox-ci stop rhinobox
+          docker compose -p rhinobox-ci restart postgres mongodb
+          docker compose -p rhinobox-ci up -d --force-recreate rhinobox
+          docker compose -p rhinobox-ci up --wait --wait-timeout 180
+          python3 scripts/smoke_demo.py --project rhinobox-ci --base-url http://127.0.0.1:5173/api --verify-state /tmp/rhinobox-state.json
+      - if: failure()
+        run: docker compose -p rhinobox-ci logs --tail 100
+      - if: always()
+        run: docker compose -p rhinobox-ci down

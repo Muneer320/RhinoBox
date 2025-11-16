@@ -26,6 +26,7 @@ Thumbs.db
 .env
 .env.local
 docker/.env
+.demo-state.json
 
 # Compiled binaries
 backend/rhinobox
@@ -33,4 +34,4 @@ backend/*.exe
 backend/*.dll
 
 # Duplicate directories
-RhinoBox/
+/RhinoBox/
