@@ -152,7 +152,14 @@ func (c *CORSMiddleware) getAllowedOrigin(origin string) string {
 		return ""
 	}
 
-	// Check for wildcard
+	// Check for exact match first (before wildcard)
+	for _, allowed := range c.config.CORSOrigins {
+		if allowed == origin {
+			return origin
+		}
+	}
+	
+	// Check for wildcard only if no exact match found
 	for _, allowed := range c.config.CORSOrigins {
 		if allowed == "*" {
 			// Wildcard allows all origins, but credentials can't be used with wildcard
@@ -160,12 +167,8 @@ func (c *CORSMiddleware) getAllowedOrigin(origin string) string {
 			if !c.config.CORSAllowCreds {
 				return "*"
 			}
-			// If credentials are enabled, we should never reach here due to config validation,
-			// but as a safety measure, return empty string to reject the request
-			return ""
-		}
-		if allowed == origin {
-			return origin
+			// If credentials are enabled, skip wildcard (security: can't use wildcard with credentials)
+			// Continue to check other origins or return empty
 		}
 	}
 

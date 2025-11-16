@@ -151,6 +151,7 @@ async function apiRequest(endpoint, options = {}) {
     signal: controller.signal,
     mode: 'cors', // Explicitly set CORS mode for cross-origin requests
     credentials: 'omit', // Don't send credentials to avoid CORS issues with wildcard origin
+    cache: 'no-cache', // Prevent browser from caching failed requests
   }
 
   try {

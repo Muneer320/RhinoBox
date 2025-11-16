@@ -54,7 +54,7 @@ func LoadSecurityConfig() SecurityConfig {
 		CORSOrigins:      getStringSliceEnv("RHINOBOX_CORS_ORIGINS", []string{"http://localhost:5173", "http://127.0.0.1:5173", "*"}),
 		CORSAllowMethods: getStringSliceEnv("RHINOBOX_CORS_METHODS", []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
 		CORSAllowHeaders: getStringSliceEnv("RHINOBOX_CORS_HEADERS", []string{"Content-Type", "Authorization", "X-Requested-With"}),
-		CORSMaxAge:       getDurationEnv("RHINOBOX_CORS_MAX_AGE", 3600*time.Second),
+		CORSMaxAge:       getDurationEnv("RHINOBOX_CORS_MAX_AGE", 300*time.Second), // Reduced to 5 minutes to help with cache issues
 		CORSAllowCreds:   getBoolEnv("RHINOBOX_CORS_CREDENTIALS", true),
 
 		// Security headers defaults
