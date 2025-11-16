@@ -1390,8 +1390,47 @@ async function loadCollections() {
       return;
     }
 
+    // Fetch preview images for each collection
+    const collectionsWithPreviews = await Promise.all(
+      nonEmptyCollections.map(async (collection) => {
+        let previewUrl = null;
+        try {
+          // Map collection types to API types
+          const apiTypeMap = {
+            images: "images",
+            videos: "videos",
+            audio: "audio",
+            documents: "documents",
+            spreadsheets: "documents",
+            presentations: "documents",
+            archives: "archives",
+            other: "other",
+            files: "files",
+          };
+          const apiType = apiTypeMap[collection.type] || collection.type;
+          
+          // Fetch first file from collection to use as preview
+          const filesResponse = await getFiles(apiType, "", { limit: 1 });
+          const files = filesResponse.files || filesResponse || [];
+          
+          if (files.length > 0) {
+            const firstFile = files[0];
+            // Use file URL as preview (works for images, videos, etc.)
+            previewUrl = firstFile.url || firstFile.downloadUrl || firstFile.path || null;
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch preview for ${collection.type}:`, err);
+        }
+        
+        return {
+          ...collection,
+          previewUrl,
+        };
+      })
+    );
+
     // Render collection cards for non-empty collections only
-    nonEmptyCollections.forEach((collection) => {
+    collectionsWithPreviews.forEach((collection) => {
       // Extract stats - handle both embedded stats and separate stats object
       const stats = collection.stats || {
         file_count: 0,
@@ -1404,7 +1443,7 @@ async function loadCollections() {
         storage_used: stats.storage_used || stats.Stats?.storage_used || 0,
         storage_used_formatted: stats.storage_used_formatted || stats.Stats?.storage_used_formatted || "0 B",
       };
-      const card = createCollectionCard(collection, normalizedStats);
+      const card = createCollectionCard(collection, normalizedStats, collection.previewUrl);
       collectionCards.appendChild(card);
     });
 
@@ -1424,33 +1463,45 @@ async function loadCollections() {
 }
 
 // Create a collection card element
-function createCollectionCard(collection, stats) {
+function createCollectionCard(collection, stats, previewUrl = null) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "collection-card";
   button.dataset.collection = collection.type;
 
-  // Map collection types to image URLs
-  const imageMap = {
-    images:
-      "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80",
-    videos:
-      "https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80",
-    audio:
-      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80",
-    documents:
-      "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
-    spreadsheets:
-      "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
-    presentations:
-      "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
-    archives:
-      "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
-    other:
-      "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
-  };
-
-  const imageUrl = imageMap[collection.type] || imageMap["other"];
+  // Use preview URL if available, otherwise fallback to default images
+  let imageUrl = previewUrl;
+  
+  if (!imageUrl) {
+    // Map collection types to fallback image URLs (only used if no preview available)
+    const imageMap = {
+      images:
+        "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80",
+      videos:
+        "https://images.unsplash.com/photo-1533750516457-a7f992034fec?auto=format&fit=crop&w=600&q=80",
+      audio:
+        "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80",
+      documents:
+        "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80",
+      spreadsheets:
+        "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80",
+      presentations:
+        "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80",
+      archives:
+        "https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=600&q=80",
+      other:
+        "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80",
+    };
+    imageUrl = imageMap[collection.type] || imageMap["other"];
+  }
+  
+  // Construct full URL if previewUrl is a relative path
+  if (previewUrl && !previewUrl.startsWith('http') && !previewUrl.startsWith('data:')) {
+    imageUrl = `${API_CONFIG.baseURL}${previewUrl.startsWith('/') ? '' : '/'}${previewUrl}`;
+  } else if (previewUrl) {
+    imageUrl = previewUrl;
+  }
+  
   const fileCount = stats.file_count || 0;
   const storageUsed =
     stats.storage_used_formatted || stats.storage_used || "0 B";
@@ -1460,6 +1511,7 @@ function createCollectionCard(collection, stats) {
       src="${imageUrl}"
       alt="${collection.name || collection.type}"
       loading="lazy"
+      onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 100 100\\'%3E%3Crect fill=\\'%23ddd\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50\\' y=\\'50\\' text-anchor=\\'middle\\' dy=\\'.3em\\' font-size=\\'14\\' fill=\\'%23999\\'%3E${escapeHtml(collection.name || collection.type)}%3C/text%3E%3C/svg%3E'"
     />
     <div class="collection-meta">
       <h3>${escapeHtml(collection.name || collection.type)}</h3>

@@ -29,6 +29,32 @@ html[data-theme='dark'] {
   --shadow: 0 12px 24px rgba(5, 9, 22, 0.45);
 }
 
+/* Ensure all text elements use proper colors in dark mode */
+html[data-theme='dark'] {
+  color: var(--text-primary);
+}
+
+html[data-theme='dark'] * {
+  color: inherit;
+}
+
+html[data-theme='dark'] h1,
+html[data-theme='dark'] h2,
+html[data-theme='dark'] h3,
+html[data-theme='dark'] h4,
+html[data-theme='dark'] h5,
+html[data-theme='dark'] h6,
+html[data-theme='dark'] p,
+html[data-theme='dark'] span,
+html[data-theme='dark'] div,
+html[data-theme='dark'] label,
+html[data-theme='dark'] input:not([type="checkbox"]):not([type="radio"]),
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] select,
+html[data-theme='dark'] button {
+  color: var(--text-primary);
+}
+
 html[data-theme='dark'] .trend-up {
   color: #34d399;
 }
@@ -142,12 +168,13 @@ body {
   gap: 12px;
   flex: 1;
   max-width: 460px;
-  padding: 12px 18px;
+  padding: 8px 16px;
   border-radius: 14px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   margin-left: auto;
+  height: fit-content;
 }
 
 .search-field:focus-within {
@@ -159,7 +186,8 @@ body {
   all: unset;
   flex: 1;
   font-size: 16px; /* Prevent iOS zoom */
-  padding: 0.75rem 0;
+  padding: 0;
+  color: var(--text-primary);
 }
 
 .search-icon {
