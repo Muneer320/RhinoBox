@@ -108,45 +108,45 @@ docker run -p 8090:8090 -v ./data:/data rhinobox
 
 ## 📡 API Endpoints
 
-| Method | Endpoint                    | Description                                    |
-| ------ | --------------------------- | ---------------------------------------------- |
-| GET    | `/healthz`                  | Health check endpoint                          |
-| POST   | `/ingest`                   | Unified endpoint for all file types            |
-| POST   | `/ingest/media`             | Media-specific upload (images, videos, audio)  |
-| POST   | `/ingest/json`              | JSON document ingestion with decision engine   |
-| POST   | `/ingest/async`             | **Async unified ingestion** - returns job ID   |
-| POST   | `/ingest/media/async`       | **Async media upload** - background processing |
-| POST   | `/ingest/json/async`        | **Async JSON ingestion** - queued processing   |
-| GET    | `/jobs`                     | List all active and recent jobs                |
-| GET    | `/jobs/{job_id}`            | Get job status with progress percentage        |
-| GET    | `/jobs/{job_id}/result`     | Get detailed job results                       |
-| DELETE | `/jobs/{job_id}`            | Cancel a job (if not completed)                |
-| GET    | `/jobs/stats`               | Queue statistics (pending, processing, etc.)   |
-| GET    | `/files/search`             | Search by metadata + content (text files)      |
-| GET    | `/files`                    | List files with pagination and filtering       |
-| GET    | `/files/browse`             | Browse directory structure                     |
-| GET    | `/files/categories`         | Get all file categories                        |
-| GET    | `/files/stats`              | Get storage statistics                         |
-| GET    | `/files/download`           | Download file by hash or path                  |
-| GET    | `/files/stream`             | Stream file with range request support         |
-| GET    | `/files/metadata`           | Get file metadata without downloading          |
-| POST   | `/files/{file_id}/copy`     | Copy a file                                    |
-| POST   | `/files/copy/batch`         | Batch copy files                               |
-| PATCH  | `/files/{file_id}/move`     | Move file to different category                |
-| PATCH  | `/files/batch/move`         | Batch move files                               |
-| DELETE | `/files/{file_id}`          | Delete file by ID                              |
-| PATCH  | `/files/{file_id}/metadata` | Update file metadata                           |
-| PATCH  | `/files/rename`             | Rename a file                                  |
-| POST   | `/files/metadata/batch`     | Batch update file metadata                     |
-| GET    | `/files/type/{type}`        | Get all files of a specific type               |
-| GET    | `/files/{file_id}/notes`    | Get notes for a file                           |
-| POST   | `/files/{file_id}/notes`    | Add a note to a file                           |
-| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                           |
-| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                           |
-| GET    | `/statistics`               | Get overall storage statistics                 |
-| GET    | `/collections`              | Get all file collections                       |
-| GET    | `/collections/{type}/stats` | Get collection-specific statistics             |
-| GET    | `/api/config`               | Get API configuration                          |
+| Method | Endpoint                           | Description                                    |
+| ------ | ---------------------------------- | ---------------------------------------------- |
+| GET    | `/healthz`                         | Health check endpoint                          |
+| POST   | `/ingest`                          | Unified endpoint for all file types            |
+| POST   | `/ingest/media`                    | Media-specific upload (images, videos, audio)  |
+| POST   | `/ingest/json`                     | JSON document ingestion with decision engine   |
+| POST   | `/ingest/async`                    | **Async unified ingestion** - returns job ID   |
+| POST   | `/ingest/media/async`              | **Async media upload** - background processing |
+| POST   | `/ingest/json/async`               | **Async JSON ingestion** - queued processing   |
+| GET    | `/jobs`                            | List all active and recent jobs                |
+| GET    | `/jobs/{job_id}`                   | Get job status with progress percentage        |
+| GET    | `/jobs/{job_id}/result`            | Get detailed job results                       |
+| DELETE | `/jobs/{job_id}`                   | Cancel a job (if not completed)                |
+| GET    | `/jobs/stats`                      | Queue statistics (pending, processing, etc.)   |
+| GET    | `/files/search`                    | Search by metadata + content (text files)      |
+| GET    | `/files`                           | List files with pagination and filtering       |
+| GET    | `/files/browse`                    | Browse directory structure                     |
+| GET    | `/files/categories`                | Get all file categories                        |
+| GET    | `/files/stats`                     | Get storage statistics                         |
+| GET    | `/files/download`                  | Download file by hash or path                  |
+| GET    | `/files/stream`                    | Stream file with range request support         |
+| GET    | `/files/metadata`                  | Get file metadata without downloading          |
+| POST   | `/files/{file_id}/copy`            | Copy a file                                    |
+| POST   | `/files/copy/batch`                | Batch copy files                               |
+| PATCH  | `/files/{file_id}/move`            | Move file to different category                |
+| PATCH  | `/files/batch/move`                | Batch move files                               |
+| DELETE | `/files/{file_id}`                 | Delete file by ID                              |
+| PATCH  | `/files/{file_id}/metadata`        | Update file metadata                           |
+| PATCH  | `/files/rename`                    | Rename a file                                  |
+| POST   | `/files/metadata/batch`            | Batch update file metadata                     |
+| GET    | `/files/type/{type}`               | Get all files of a specific type               |
+| GET    | `/files/{file_id}/notes`           | Get notes for a file                           |
+| POST   | `/files/{file_id}/notes`           | Add a note to a file                           |
+| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                                  |
+| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                                  |
+| GET    | `/statistics`                      | Get overall storage statistics                 |
+| GET    | `/collections`                     | Get all file collections                       |
+| GET    | `/collections/{type}/stats`        | Get collection-specific statistics             |
+| GET    | `/api/config`                      | Get API configuration                          |
 
 **See `docs/API_REFERENCE.md` for detailed API documentation.**
 

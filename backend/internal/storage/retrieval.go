@@ -237,9 +237,20 @@ func (m *Manager) GetFilesByType(req GetFilesByTypeRequest) (*GetFilesByTypeResp
 		req.Limit = 1000 // Max limit to prevent excessive memory usage
 	}
 
-	m.mu.Lock()
-	allFiles := m.index.FindByType(req.Type)
-	m.mu.Unlock()
+	// Special-case JSON collections: they are stored as NDJSON batches on disk
+	// and are not part of the metadata index. Enumerate JSON batches directly.
+	var allFiles []FileMetadata
+	if strings.ToLower(req.Type) == "json" {
+		var err error
+		allFiles, err = m.ListJSONBatches()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list json batches: %v", err)
+		}
+	} else {
+		m.mu.Lock()
+		allFiles = m.index.FindByType(req.Type)
+		m.mu.Unlock()
+	}
 
 	// Filter by category if specified
 	filteredFiles := allFiles
@@ -292,4 +303,82 @@ func (m *Manager) GetFilesByType(req GetFilesByTypeRequest) (*GetFilesByTypeResp
 		Limit:      req.Limit,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// ListJSONBatches scans the json directory for NDJSON batch files and returns
+// them as FileMetadata entries with namespace/engine information embedded in
+// the Metadata map so the API can expose namespace/collection names to the
+// frontend.
+func (m *Manager) ListJSONBatches() ([]FileMetadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	root := filepath.Join(m.root, "json")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []FileMetadata{}, nil
+		}
+		return nil, err
+	}
+
+	results := make([]FileMetadata, 0)
+	for _, engineEntry := range entries {
+		if !engineEntry.IsDir() {
+			continue
+		}
+		engine := engineEntry.Name()
+		enginePath := filepath.Join(root, engine)
+		nsEntries, err := os.ReadDir(enginePath)
+		if err != nil {
+			continue
+		}
+		for _, nsEntry := range nsEntries {
+			if !nsEntry.IsDir() {
+				continue
+			}
+			namespace := nsEntry.Name()
+			nsPath := filepath.Join(enginePath, namespace)
+			files, err := os.ReadDir(nsPath)
+			if err != nil {
+				continue
+			}
+			for _, f := range files {
+				if f.IsDir() {
+					continue
+				}
+				name := f.Name()
+				if !strings.HasPrefix(name, "batch_") || !strings.HasSuffix(name, ".ndjson") {
+					continue
+				}
+				info, err := f.Info()
+				if err != nil {
+					continue
+				}
+				rel := filepath.ToSlash(filepath.Join("json", engine, namespace, name))
+				meta := map[string]string{
+					"namespace": namespace,
+					"engine":    engine,
+				}
+				fm := FileMetadata{
+					Hash:         "",
+					OriginalName: name,
+					StoredPath:   rel,
+					Category:     "json/" + engine,
+					MimeType:     "application/x-ndjson",
+					Size:         info.Size(),
+					UploadedAt:   info.ModTime().UTC(),
+					Metadata:     meta,
+				}
+				results = append(results, fm)
+			}
+		}
+	}
+
+	// Sort by uploaded time (newest first)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].UploadedAt.After(results[j].UploadedAt)
+	})
+
+	return results, nil
 }

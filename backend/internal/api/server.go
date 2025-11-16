@@ -151,6 +151,7 @@ func (s *Server) routes() {
 	r.Post("/ingest/json", s.handleJSONIngest)
 	r.Patch("/files/rename", s.handleFileRename)
 	// More specific routes must come before parameterized routes
+	r.Get("/files", s.handleGetFiles)
 	r.Get("/files/type/{type}", s.handleGetFilesByType)
 	r.Get("/files/search", s.handleFileSearch)
 	r.Get("/files/download", s.handleFileDownload)
@@ -1067,6 +1068,8 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 		// Extract optional fields from metadata map
 		dimensions := ""
 		description := ""
+		namespace := ""
+		engine := ""
 		if file.Metadata != nil {
 			if dims, ok := file.Metadata["dimensions"]; ok {
 				dimensions = dims
@@ -1076,6 +1079,12 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 			}
 			if comment, ok := file.Metadata["comment"]; ok && description == "" {
 				description = comment
+			}
+			if ns, ok := file.Metadata["namespace"]; ok {
+				namespace = ns
+			}
+			if eng, ok := file.Metadata["engine"]; ok {
+				engine = eng
 			}
 		}
 
@@ -1099,6 +1108,9 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 			"fileDimensions": dimensions, // Alias for compatibility
 			"description":   description,
 			"comment":       description, // Alias for compatibility
+			"namespace":     namespace,
+			"collection":    namespace,
+			"engine":        engine,
 		})
 	}
 
@@ -1113,6 +1125,120 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// handleGetFiles returns a paginated list of files and supports common filters.
+func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
+	// Parse pagination parameters
+	page := 1
+	limit := 50
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	// Filters
+	opts := storage.ListOptions{
+		Page:     page,
+		Limit:    limit,
+		Category: r.URL.Query().Get("category"),
+		Type:     r.URL.Query().Get("type"),
+		MimeType: r.URL.Query().Get("mime_type"),
+		Extension: r.URL.Query().Get("extension"),
+		Name:     r.URL.Query().Get("name"),
+		SortBy:   r.URL.Query().Get("sort_by"),
+		Order:    r.URL.Query().Get("order"),
+	}
+
+	// Optional date filtering (RFC3339)
+	if df := r.URL.Query().Get("date_from"); df != "" {
+		if t, err := time.Parse(time.RFC3339, df); err == nil {
+			opts.DateFrom = t
+		}
+	}
+	if dt := r.URL.Query().Get("date_to"); dt != "" {
+		if t, err := time.Parse(time.RFC3339, dt); err == nil {
+			opts.DateTo = t
+		}
+	}
+
+	// Fetch from storage manager
+	result, err := s.storage.ListFiles(opts)
+	if err != nil {
+		s.handleError(w, r, apierrors.InternalServerError(fmt.Sprintf("failed to list files: %v", err)))
+		return
+	}
+
+	// Convert to response format expected by frontend
+	files := make([]map[string]any, 0, len(result.Files))
+	for _, file := range result.Files {
+		dimensions := ""
+		description := ""
+		namespace := ""
+		engine := ""
+		if file.Metadata != nil {
+			if dims, ok := file.Metadata["dimensions"]; ok {
+				dimensions = dims
+			}
+			if desc, ok := file.Metadata["description"]; ok {
+				description = desc
+			}
+			if comment, ok := file.Metadata["comment"]; ok && description == "" {
+				description = comment
+			}
+			if ns, ok := file.Metadata["namespace"]; ok {
+				namespace = ns
+			}
+			if eng, ok := file.Metadata["engine"]; ok {
+				engine = eng
+			}
+		}
+
+		files = append(files, map[string]any{
+			"id":            file.Hash,
+			"name":          file.OriginalName,
+			"fileName":      file.OriginalName,
+			"path":          file.StoredPath,
+			"filePath":      file.StoredPath,
+			"storedPath":    file.StoredPath,
+			"size":          file.Size,
+			"fileSize":      file.Size,
+			"type":          file.MimeType,
+			"fileType":      file.MimeType,
+			"date":          file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":    file.UploadedAt.Format(time.RFC3339),
+			"hash":          file.Hash,
+			"url":           fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":   fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":    dimensions,
+			"fileDimensions": dimensions,
+			"description":   description,
+			"comment":       description,
+			"namespace":     namespace,
+			"collection":    namespace,
+			"engine":        engine,
+		})
+	}
+
+	resp := map[string]any{
+		"files": files,
+		"pagination": map[string]any{
+			"page":       result.Pagination.Page,
+			"limit":      result.Pagination.Limit,
+			"total":      result.Pagination.Total,
+			"total_pages": result.Pagination.TotalPages,
+			"has_next":   result.Pagination.HasNext,
+			"has_prev":   result.Pagination.HasPrev,
+		},
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Helper structs

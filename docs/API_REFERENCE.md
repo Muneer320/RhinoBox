@@ -19,45 +19,45 @@ Configure via `RHINOBOX_ADDR` environment variable (default `:8090`).
 
 ## Endpoints Overview
 
-| Method | Endpoint                    | Purpose                                           |
-| ------ | --------------------------- | ------------------------------------------------- |
-| GET    | `/healthz`                  | Health check probe                                |
-| POST   | `/ingest`                   | **Unified ingestion** - handles all data types    |
-| POST   | `/ingest/media`             | Media-specific ingestion                          |
-| POST   | `/ingest/json`              | JSON-specific ingestion                           |
-| POST   | `/ingest/async`             | **Async unified ingestion** - returns job ID      |
-| POST   | `/ingest/media/async`       | **Async media ingestion** - background processing |
-| POST   | `/ingest/json/async`        | **Async JSON ingestion** - queued processing      |
-| GET    | `/jobs`                     | List all active and recent jobs                   |
-| GET    | `/jobs/{job_id}`            | Get job status with progress                      |
-| GET    | `/jobs/{job_id}/result`     | Get detailed job results                          |
-| DELETE | `/jobs/{job_id}`            | Cancel a job                                      |
-| GET    | `/jobs/stats`               | Queue statistics                                  |
-| PATCH  | `/files/rename`             | Rename a file                                     |
-| DELETE | `/files/{file_id}`          | Delete a file                                     |
-| PATCH  | `/files/{file_id}/metadata` | Update file metadata                              |
-| POST   | `/files/metadata/batch`     | Batch update file metadata                        |
-| GET    | `/files/search`             | Search files with content search support          |
-| GET    | `/files`                    | List files with pagination and filtering          |
-| GET    | `/files/browse`             | Browse directory structure                        |
-| GET    | `/files/categories`         | Get all file categories                           |
-| GET    | `/files/stats`              | Get storage statistics                            |
-| GET    | `/files/download`           | Download file by hash or path                     |
-| GET    | `/files/metadata`           | Get file metadata without downloading             |
-| GET    | `/files/stream`             | Stream file with range request support            |
-| POST   | `/files/{file_id}/copy`     | Copy a file                                       |
-| POST   | `/files/copy/batch`         | Batch copy files                                  |
-| PATCH  | `/files/{file_id}/move`     | Move a file to different category                 |
-| PATCH  | `/files/batch/move`         | Batch move files                                  |
-| GET    | `/files/type/{type}`        | Get files by type (images, videos, documents)     |
-| GET    | `/files/{file_id}/notes`    | Get notes/comments for a file                     |
-| POST   | `/files/{file_id}/notes`    | Add a note to a file                              |
-| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                             |
-| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                             |
-| GET    | `/statistics`               | Get overall storage statistics                    |
-| GET    | `/collections`              | Get all file collections                          |
-| GET    | `/collections/{type}/stats` | Get statistics for a specific collection          |
-| GET    | `/api/config`               | Get API configuration                             |
+| Method | Endpoint                           | Purpose                                           |
+| ------ | ---------------------------------- | ------------------------------------------------- |
+| GET    | `/healthz`                         | Health check probe                                |
+| POST   | `/ingest`                          | **Unified ingestion** - handles all data types    |
+| POST   | `/ingest/media`                    | Media-specific ingestion                          |
+| POST   | `/ingest/json`                     | JSON-specific ingestion                           |
+| POST   | `/ingest/async`                    | **Async unified ingestion** - returns job ID      |
+| POST   | `/ingest/media/async`              | **Async media ingestion** - background processing |
+| POST   | `/ingest/json/async`               | **Async JSON ingestion** - queued processing      |
+| GET    | `/jobs`                            | List all active and recent jobs                   |
+| GET    | `/jobs/{job_id}`                   | Get job status with progress                      |
+| GET    | `/jobs/{job_id}/result`            | Get detailed job results                          |
+| DELETE | `/jobs/{job_id}`                   | Cancel a job                                      |
+| GET    | `/jobs/stats`                      | Queue statistics                                  |
+| PATCH  | `/files/rename`                    | Rename a file                                     |
+| DELETE | `/files/{file_id}`                 | Delete a file                                     |
+| PATCH  | `/files/{file_id}/metadata`        | Update file metadata                              |
+| POST   | `/files/metadata/batch`            | Batch update file metadata                        |
+| GET    | `/files/search`                    | Search files with content search support          |
+| GET    | `/files`                           | List files with pagination and filtering          |
+| GET    | `/files/browse`                    | Browse directory structure                        |
+| GET    | `/files/categories`                | Get all file categories                           |
+| GET    | `/files/stats`                     | Get storage statistics                            |
+| GET    | `/files/download`                  | Download file by hash or path                     |
+| GET    | `/files/metadata`                  | Get file metadata without downloading             |
+| GET    | `/files/stream`                    | Stream file with range request support            |
+| POST   | `/files/{file_id}/copy`            | Copy a file                                       |
+| POST   | `/files/copy/batch`                | Batch copy files                                  |
+| PATCH  | `/files/{file_id}/move`            | Move a file to different category                 |
+| PATCH  | `/files/batch/move`                | Batch move files                                  |
+| GET    | `/files/type/{type}`               | Get files by type (images, videos, documents)     |
+| GET    | `/files/{file_id}/notes`           | Get notes/comments for a file                     |
+| POST   | `/files/{file_id}/notes`           | Add a note to a file                              |
+| PATCH  | `/files/{file_id}/notes/{note_id}` | Update a note                                     |
+| DELETE | `/files/{file_id}/notes/{note_id}` | Delete a note                                     |
+| GET    | `/statistics`                      | Get overall storage statistics                    |
+| GET    | `/collections`                     | Get all file collections                          |
+| GET    | `/collections/{type}/stats`        | Get statistics for a specific collection          |
+| GET    | `/api/config`                      | Get API configuration                             |
 
 ---
 
@@ -1041,16 +1041,16 @@ Get all files of a specific type (collection).
 
 ### Path Parameters
 
-| Parameter | Type   | Description                                    |
-| --------- | ------ | ---------------------------------------------- |
+| Parameter | Type   | Description                                                              |
+| --------- | ------ | ------------------------------------------------------------------------ |
 | `type`    | string | File type: `images`, `videos`, `audio`, `documents`, `archives`, `other` |
 
 ### Query Parameters
 
-| Parameter   | Type   | Description                    |
-| ----------- | ------ | ------------------------------ |
-| `page`      | int    | Page number (default: 1)       |
-| `page_size` | int    | Items per page (default: 50)   |
+| Parameter   | Type | Description                  |
+| ----------- | ---- | ---------------------------- |
+| `page`      | int  | Page number (default: 1)     |
+| `page_size` | int  | Items per page (default: 50) |
 
 ### Response
 
@@ -1234,9 +1234,9 @@ Get overall storage and file statistics.
   "total_size": 5368709120,
   "total_size_formatted": "5.0 GB",
   "by_category": {
-    "images": {"count": 450, "size": 2147483648},
-    "videos": {"count": 120, "size": 2147483648},
-    "documents": {"count": 680, "size": 1073741824}
+    "images": { "count": 450, "size": 2147483648 },
+    "videos": { "count": 120, "size": 2147483648 },
+    "documents": { "count": 680, "size": 1073741824 }
   },
   "recent_uploads": 25,
   "storage_used_percent": 45.5
@@ -1294,8 +1294,8 @@ Get detailed statistics for a specific collection.
 
 ### Path Parameters
 
-| Parameter | Type   | Description                    |
-| --------- | ------ | ------------------------------ |
+| Parameter | Type   | Description                      |
+| --------- | ------ | -------------------------------- |
 | `type`    | string | Collection type (e.g., `images`) |
 
 ### Response
