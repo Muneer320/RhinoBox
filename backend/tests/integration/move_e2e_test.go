@@ -26,6 +26,11 @@ func TestFileMoveEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -111,6 +116,11 @@ func TestBatchFileMoveEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -177,6 +187,11 @@ func TestFileMoveInvalidCategory(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -211,6 +226,11 @@ func TestFileMoveNotFound(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -229,4 +249,3 @@ func TestFileMoveNotFound(t *testing.T) {
 		t.Errorf("expected 404 for nonexistent file, got %d", w.Code)
 	}
 }
-

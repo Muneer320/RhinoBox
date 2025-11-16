@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,85 +25,66 @@ func NewRequestSizeLimitMiddleware(cfg config.SecurityConfig, logger *slog.Logge
 	}
 }
 
-// Handler returns the middleware handler function
+// Handler limits reads as they happen instead of buffering uploads in memory.
 func (r *RequestSizeLimitMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// Always allow OPTIONS requests through (CORS preflight)
-		if req.Method == "OPTIONS" {
+		if req.Method == http.MethodOptions || r.config.MaxRequestSize <= 0 {
 			next.ServeHTTP(w, req)
 			return
 		}
-		
-		if r.config.MaxRequestSize <= 0 {
-			next.ServeHTTP(w, req)
-			return
-		}
-
-		// Check Content-Length header first
 		if req.ContentLength > r.config.MaxRequestSize {
-			// Set CORS headers before error response (always set for wildcard)
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusRequestEntityTooLarge)
-			
-			// Provide detailed error message with size information
-			maxSizeMB := float64(r.config.MaxRequestSize) / (1024 * 1024)
-			requestSizeMB := float64(req.ContentLength) / (1024 * 1024)
-			errorMsg := fmt.Sprintf(`{"error":"Request entity too large","message":"File size (%.2f MB) exceeds maximum allowed size (%.2f MB). Maximum request size: %d bytes"}`, 
-				requestSizeMB, maxSizeMB, r.config.MaxRequestSize)
-			w.Write([]byte(errorMsg))
+			fmt.Fprintf(w, `{"error":"Request entity too large","max_bytes":%d}`, r.config.MaxRequestSize)
 			return
 		}
-
-		// Limit request body size
-		limitedReader := io.LimitReader(req.Body, r.config.MaxRequestSize+1)
-		bodyBytes := make([]byte, 0, 1024)
-		buf := make([]byte, 32*1024) // 32KB buffer
-
-		for {
-			n, err := limitedReader.Read(buf)
-			if n > 0 {
-				bodyBytes = append(bodyBytes, buf[:n]...)
-				if int64(len(bodyBytes)) > r.config.MaxRequestSize {
-					// Set CORS headers before error response (always set for wildcard)
-					w.Header().Set("Access-Control-Allow-Origin", "*")
-					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-					w.Header().Set("Content-Type", "application/json; charset=utf-8")
-					w.WriteHeader(http.StatusRequestEntityTooLarge)
-					
-					// Provide detailed error message with size information
-					maxSizeMB := float64(r.config.MaxRequestSize) / (1024 * 1024)
-					requestSizeMB := float64(len(bodyBytes)) / (1024 * 1024)
-					errorMsg := fmt.Sprintf(`{"error":"Request entity too large","message":"File size (%.2f MB) exceeds maximum allowed size (%.2f MB). Maximum request size: %d bytes"}`, 
-						requestSizeMB, maxSizeMB, r.config.MaxRequestSize)
-					w.Write([]byte(errorMsg))
-					return
-				}
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				// Set CORS headers before error response (always set for wildcard)
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("Error reading request body"))
-				return
-			}
+		if req.Body == nil || req.Body == http.NoBody {
+			next.ServeHTTP(w, req)
+			return
 		}
-
-		// Replace body with the read bytes
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		req.ContentLength = int64(len(bodyBytes))
-
-		next.ServeHTTP(w, req)
+		body := &limitedRequestBody{ReadCloser: http.MaxBytesReader(w, req.Body, r.config.MaxRequestSize)}
+		req.Body = body
+		next.ServeHTTP(&limitStatusWriter{ResponseWriter: w, body: body}, req)
 	})
+}
+
+type limitedRequestBody struct {
+	io.ReadCloser
+	exceeded bool
+}
+
+func (b *limitedRequestBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	var limitError *http.MaxBytesError
+	if errors.As(err, &limitError) {
+		b.exceeded = true
+	}
+	return n, err
+}
+
+// Preserve the correct status for handlers reporting a bounded-read error.
+type limitStatusWriter struct {
+	http.ResponseWriter
+	body        *limitedRequestBody
+	wroteHeader bool
+}
+
+func (w *limitStatusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *limitStatusWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	if w.body.exceeded {
+		status = http.StatusRequestEntityTooLarge
+	}
+	w.wroteHeader = true
+	w.ResponseWriter.WriteHeader(status)
+}
+func (w *limitStatusWriter) Write(data []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(data)
 }
 
 // IPFilterMiddleware filters requests based on IP whitelist/blacklist
@@ -199,4 +180,3 @@ func parseIP(ipStr string) net.IP {
 	ip := net.ParseIP(ipStr)
 	return ip
 }
-

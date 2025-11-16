@@ -3,6 +3,7 @@ package storage_test
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -63,8 +64,8 @@ func TestEdgeCaseVeryLongFilename(t *testing.T) {
 	}
 
 	// Filename should be sanitized/shortened
-	if len(result.Metadata.OriginalName) > 255 {
-		t.Errorf("filename should be sanitized, got length %d", len(result.Metadata.OriginalName))
+	if len(filepath.Base(result.Metadata.StoredPath)) > 255 {
+		t.Errorf("physical filename should be bounded, got length %d", len(filepath.Base(result.Metadata.StoredPath)))
 	}
 }
 
@@ -131,7 +132,7 @@ func TestEdgeCaseUnicodeFilename(t *testing.T) {
 
 	for _, name := range unicodeNames {
 		t.Run(name, func(t *testing.T) {
-			content := []byte("test content")
+			content := []byte("test content for " + name)
 			result, err := mgr.StoreFile(storage.StoreRequest{
 				Reader:   bytes.NewReader(content),
 				Filename: name,
@@ -456,7 +457,7 @@ func TestEdgeCaseVeryLargeFile(t *testing.T) {
 
 	// Create a 10MB file
 	largeContent := bytes.Repeat([]byte("x"), 10*1024*1024)
-	
+
 	result, err := mgr.StoreFile(storage.StoreRequest{
 		Reader:   bytes.NewReader(largeContent),
 		Filename: "large_file.txt",

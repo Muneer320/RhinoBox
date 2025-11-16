@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -16,9 +15,8 @@ type PostgresDB struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgresDB creates a new PostgreSQL connection pool with aggressive settings
-// for high-throughput workloads (100K+ inserts/sec target)
-func NewPostgresDB(ctx context.Context, connString string) (*PostgresDB, error) {
+// NewPostgresDB connects a bounded PostgreSQL pool and verifies connectivity.
+func NewPostgresDB(ctx context.Context, connString string, poolLimit ...int) (*PostgresDB, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -26,8 +24,11 @@ func NewPostgresDB(ctx context.Context, connString string) (*PostgresDB, error) 
 
 	// Aggressive pooling for high throughput
 	// MaxConns = 4x CPU cores for parallel INSERT/COPY operations
-	config.MaxConns = int32(runtime.NumCPU() * 4)
-	config.MinConns = int32(runtime.NumCPU())
+	config.MaxConns = 10
+	if len(poolLimit) > 0 && poolLimit[0] > 0 {
+		config.MaxConns = int32(min(poolLimit[0], 1000))
+	}
+	config.MinConns = 0
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.MaxConnLifetime = 1 * time.Hour
 	config.HealthCheckPeriod = 1 * time.Minute

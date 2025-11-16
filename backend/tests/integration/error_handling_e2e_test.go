@@ -17,25 +17,31 @@ import (
 	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
 )
 
-func setupTestServer(t *testing.T) (*api.Server, func()) {
+func setupErrorTestServer(t *testing.T) (*api.Server, func()) {
 	tempDir, err := os.MkdirTemp("", "rhinobox-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 
 	cfg := config.Config{
-		DataDir:      tempDir,
+		DataDir:        tempDir,
 		MaxUploadBytes: 10 * 1024 * 1024,
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("failed to create server: %v", err)
 	}
 
 	cleanup := func() {
+		server.Stop()
 		os.RemoveAll(tempDir)
 	}
 
@@ -43,7 +49,7 @@ func setupTestServer(t *testing.T) (*api.Server, func()) {
 }
 
 func TestErrorHandling_NotFound(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -56,21 +62,21 @@ func TestErrorHandling_NotFound(t *testing.T) {
 		{
 			name:           "Delete non-existent file",
 			method:         "DELETE",
-			path:           "/files/nonexistent-hash",
+			path:           "/files/0000000000000000000000000000000000000000000000000000000000000000",
 			expectedStatus: http.StatusNotFound,
 			expectedCode:   string(apierrors.ErrorCodeNotFound),
 		},
 		{
 			name:           "Get metadata for non-existent file",
 			method:         "GET",
-			path:           "/files/metadata?hash=nonexistent",
+			path:           "/files/metadata?hash=0000000000000000000000000000000000000000000000000000000000000000",
 			expectedStatus: http.StatusNotFound,
 			expectedCode:   string(apierrors.ErrorCodeNotFound),
 		},
 		{
 			name:           "Download non-existent file",
 			method:         "GET",
-			path:           "/files/download?hash=nonexistent",
+			path:           "/files/download?hash=0000000000000000000000000000000000000000000000000000000000000000",
 			expectedStatus: http.StatusNotFound,
 			expectedCode:   string(apierrors.ErrorCodeNotFound),
 		},
@@ -110,7 +116,7 @@ func TestErrorHandling_NotFound(t *testing.T) {
 }
 
 func TestErrorHandling_BadRequest(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -200,11 +206,11 @@ func TestErrorHandling_BadRequest(t *testing.T) {
 }
 
 func TestErrorHandling_ConsistentFormat(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Test that all error responses have consistent format
-	req := httptest.NewRequest("DELETE", "/files/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/files/0000000000000000000000000000000000000000000000000000000000000000", nil)
 	w := httptest.NewRecorder()
 
 	server.Router().ServeHTTP(w, req)
@@ -247,7 +253,7 @@ func TestErrorHandling_PanicRecovery(t *testing.T) {
 	// This test verifies that panics are caught and handled gracefully
 	// We can't easily trigger a panic in the actual handlers, but we can
 	// verify the middleware is in place by checking error handling works
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Make a request that would cause an error
@@ -271,10 +277,10 @@ func TestErrorHandling_PanicRecovery(t *testing.T) {
 }
 
 func TestErrorHandling_RequestID(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("DELETE", "/files/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/files/0000000000000000000000000000000000000000000000000000000000000000", nil)
 	req.Header.Set("X-Request-Id", "test-request-123")
 	w := httptest.NewRecorder()
 
@@ -294,7 +300,7 @@ func TestErrorHandling_RequestID(t *testing.T) {
 }
 
 func TestErrorHandling_StorageErrorMapping(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Test that storage errors are properly mapped
@@ -302,28 +308,28 @@ func TestErrorHandling_StorageErrorMapping(t *testing.T) {
 	testFile := bytes.NewBufferString("test content")
 	req := httptest.NewRequest("POST", "/ingest/media", nil)
 	req.Header.Set("Content-Type", "multipart/form-data")
-	
+
 	// This is a simplified test - in a real scenario we'd use multipart
 	// For now, just test that invalid operations return proper errors
-	
+
 	// Test invalid rename
-	renameReq := httptest.NewRequest("PATCH", "/files/rename", 
+	renameReq := httptest.NewRequest("PATCH", "/files/rename",
 		bytes.NewBufferString(`{"hash": "invalid", "new_name": "test.txt"}`))
 	renameReq.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	
+
 	server.Router().ServeHTTP(w, renameReq)
-	
+
 	if w.Code != http.StatusNotFound {
 		t.Logf("Note: Expected NotFound for invalid hash, got %d", w.Code)
 	}
-	
+
 	_ = testFile // suppress unused variable warning
 	_ = req
 }
 
 func TestErrorHandling_ErrorDetails(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Test error with details (if supported)
@@ -353,7 +359,7 @@ func TestErrorHandling_ErrorDetails(t *testing.T) {
 }
 
 func TestErrorHandling_ConcurrentRequests(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Test that error handling works correctly under concurrent load
@@ -362,7 +368,7 @@ func TestErrorHandling_ConcurrentRequests(t *testing.T) {
 
 	for i := 0; i < numRequests; i++ {
 		go func() {
-			req := httptest.NewRequest("DELETE", fmt.Sprintf("/files/nonexistent-%d", i), nil)
+			req := httptest.NewRequest("DELETE", fmt.Sprintf("/files/%064x", i+1), nil)
 			w := httptest.NewRecorder()
 			server.Router().ServeHTTP(w, req)
 
@@ -395,11 +401,11 @@ func TestErrorHandling_ConcurrentRequests(t *testing.T) {
 }
 
 func TestErrorHandling_ResponseTime(t *testing.T) {
-	server, cleanup := setupTestServer(t)
+	server, cleanup := setupErrorTestServer(t)
 	defer cleanup()
 
 	// Test that error responses are fast
-	req := httptest.NewRequest("DELETE", "/files/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/files/0000000000000000000000000000000000000000000000000000000000000000", nil)
 	w := httptest.NewRecorder()
 
 	start := time.Now()
@@ -414,4 +420,3 @@ func TestErrorHandling_ResponseTime(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
 }
-

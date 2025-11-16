@@ -253,7 +253,7 @@ func TestFileDeleteNotFound(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Try to delete non-existent file
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/files/nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/files/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", nil)
 	deleteResp := httptest.NewRecorder()
 	srv.router.ServeHTTP(deleteResp, deleteReq)
 
@@ -323,6 +323,11 @@ func newTestServer(t *testing.T) *Server {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

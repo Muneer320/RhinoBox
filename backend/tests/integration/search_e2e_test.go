@@ -23,7 +23,7 @@ import (
 
 // TestFileSearchE2E_RealWorldFiles tests the search endpoint with real files from Downloads directory
 func TestFileSearchE2E_RealWorldFiles(t *testing.T) {
-	downloadsDir := filepath.Join(os.Getenv("HOME"), "Downloads")
+	downloadsDir := fixtureDownloads(t)
 	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
 		t.Skipf("Downloads directory not found: %s", downloadsDir)
 	}
@@ -36,6 +36,11 @@ func TestFileSearchE2E_RealWorldFiles(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}

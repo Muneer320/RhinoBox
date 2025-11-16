@@ -27,6 +27,11 @@ func TestFilesByTypeEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -126,6 +131,11 @@ func TestFilesByTypeWithCategory(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -157,6 +167,11 @@ func TestFilesByTypeNonExistent(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -240,4 +255,3 @@ func uploadTestFileWithCategory(t *testing.T, srv *api.Server, filename string, 
 
 	return hash, path
 }
-

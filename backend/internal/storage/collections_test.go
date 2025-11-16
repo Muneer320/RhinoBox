@@ -17,14 +17,14 @@ func TestGetCollections(t *testing.T) {
 
 	// Verify expected collection types
 	expectedTypes := map[string]bool{
-		"images":       false,
-		"videos":       false,
-		"audio":        false,
-		"documents":    false,
-		"spreadsheets": false,
+		"images":        false,
+		"videos":        false,
+		"audio":         false,
+		"documents":     false,
+		"spreadsheets":  false,
 		"presentations": false,
-		"archives":     false,
-		"other":        false,
+		"archives":      false,
+		"other":         false,
 	}
 
 	for _, collection := range collections {
@@ -114,9 +114,9 @@ func TestGetCollectionStatsMultipleTypes(t *testing.T) {
 
 	// Store files of different types
 	files := []struct {
-		filename string
-		mimeType string
-		data     []byte
+		filename           string
+		mimeType           string
+		data               []byte
 		expectedCollection string
 	}{
 		{"test.jpg", "image/jpeg", []byte("image data"), "images"},
@@ -151,7 +151,7 @@ func TestGetCollectionStatsMultipleTypes(t *testing.T) {
 	}
 }
 
-func TestFormatBytes(t *testing.T) {
+func TestCollectionsFormatBytes(t *testing.T) {
 	tests := []struct {
 		bytes    int64
 		expected string
@@ -186,4 +186,3 @@ func cleanupManager(t *testing.T, manager *Manager) {
 	t.Helper()
 	// Cleanup is handled by t.TempDir()
 }
-

@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/Muneer320/RhinoBox/internal/storage"
 	"net/http"
 	"time"
 
@@ -20,7 +22,7 @@ func (s *Server) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 
 	notes, err := s.fileService.GetNotes(fileID)
 	if err != nil {
-		if err.Error() == "file not found" || err.Error() == "file_id is required" {
+		if errors.Is(err, storage.ErrFileNotFound) || err.Error() == "file_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -36,8 +38,8 @@ func (s *Server) handleGetNotes(w http.ResponseWriter, r *http.Request) {
 			"file_id":    note.FileID,
 			"text":       note.Text,
 			"author":     note.Author,
-			"created_at": note.CreatedAt.Format(time.RFC3339),
-			"updated_at": note.UpdatedAt.Format(time.RFC3339),
+			"created_at": note.CreatedAt.Format(time.RFC3339Nano),
+			"updated_at": note.UpdatedAt.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -78,7 +80,7 @@ func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 
 	note, err := s.fileService.AddNote(fileID, req.Text, req.Author)
 	if err != nil {
-		if err.Error() == "file not found" || err.Error() == "file_id is required" {
+		if errors.Is(err, storage.ErrFileNotFound) || err.Error() == "file_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -97,11 +99,11 @@ func (s *Server) handleAddNote(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         note.ID,
-		"file_id":   note.FileID,
-		"text":      note.Text,
+		"file_id":    note.FileID,
+		"text":       note.Text,
 		"author":     note.Author,
-		"created_at": note.CreatedAt.Format(time.RFC3339),
-		"updated_at": note.UpdatedAt.Format(time.RFC3339),
+		"created_at": note.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at": note.UpdatedAt.Format(time.RFC3339Nano),
 	})
 }
 
@@ -135,11 +137,11 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 
 	note, err := s.fileService.UpdateNote(fileID, noteID, req.Text)
 	if err != nil {
-		if err.Error() == "file not found" || err.Error() == "file_id is required" {
+		if errors.Is(err, storage.ErrFileNotFound) || err.Error() == "file_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if err.Error() == "note not found" || err.Error() == "note_id is required" {
+		if errors.Is(err, storage.ErrNoteNotFound) || err.Error() == "note_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -158,11 +160,11 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         note.ID,
-		"file_id":   note.FileID,
-		"text":      note.Text,
+		"file_id":    note.FileID,
+		"text":       note.Text,
 		"author":     note.Author,
-		"created_at": note.CreatedAt.Format(time.RFC3339),
-		"updated_at": note.UpdatedAt.Format(time.RFC3339),
+		"created_at": note.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at": note.UpdatedAt.Format(time.RFC3339Nano),
 	})
 }
 
@@ -182,11 +184,11 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 
 	err := s.fileService.DeleteNote(fileID, noteID)
 	if err != nil {
-		if err.Error() == "file not found" || err.Error() == "file_id is required" {
+		if errors.Is(err, storage.ErrFileNotFound) || err.Error() == "file_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if err.Error() == "note not found" || err.Error() == "note_id is required" {
+		if errors.Is(err, storage.ErrNoteNotFound) || err.Error() == "note_id is required" {
 			httpError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -205,4 +207,3 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 		"note_id": noteID,
 	})
 }
-

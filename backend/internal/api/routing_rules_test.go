@@ -8,11 +8,10 @@ import (
 	"testing"
 
 	"github.com/Muneer320/RhinoBox/internal/config"
-	"github.com/Muneer320/RhinoBox/internal/storage"
 	"log/slog"
 )
 
-func setupTestServer(t *testing.T) *Server {
+func setupRoutingRulesTestServer(t *testing.T) *Server {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
 		Addr:           ":8090",
@@ -21,24 +20,21 @@ func setupTestServer(t *testing.T) *Server {
 	}
 
 	logger := slog.Default()
-	store, err := storage.NewManager(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to create storage manager: %v", err)
-	}
-
 	s, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if s != nil {
+			s.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
-
-	// Replace storage with our test storage
-	s.storage = store
 
 	return s
 }
 
 func TestHandleSuggestRoutingRule(t *testing.T) {
-	s := setupTestServer(t)
+	s := setupRoutingRulesTestServer(t)
 
 	tests := []struct {
 		name        string
@@ -125,7 +121,7 @@ func TestHandleSuggestRoutingRule(t *testing.T) {
 }
 
 func TestHandleGetRoutingRules(t *testing.T) {
-	s := setupTestServer(t)
+	s := setupRoutingRulesTestServer(t)
 
 	// Add a rule first
 	ruleBody := map[string]any{
@@ -163,7 +159,7 @@ func TestHandleGetRoutingRules(t *testing.T) {
 }
 
 func TestHandleUpdateRoutingRule(t *testing.T) {
-	s := setupTestServer(t)
+	s := setupRoutingRulesTestServer(t)
 
 	// Add a rule first
 	ruleBody := map[string]any{
@@ -203,7 +199,7 @@ func TestHandleUpdateRoutingRule(t *testing.T) {
 }
 
 func TestHandleDeleteRoutingRule(t *testing.T) {
-	s := setupTestServer(t)
+	s := setupRoutingRulesTestServer(t)
 
 	// Add a rule first
 	ruleBody := map[string]any{
@@ -239,7 +235,7 @@ func TestHandleDeleteRoutingRule(t *testing.T) {
 }
 
 func TestHandleDeleteRoutingRuleNotFound(t *testing.T) {
-	s := setupTestServer(t)
+	s := setupRoutingRulesTestServer(t)
 
 	deleteBody := map[string]any{
 		"mime_type": "application/x-nonexistent",
@@ -254,4 +250,3 @@ func TestHandleDeleteRoutingRuleNotFound(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
 }
-

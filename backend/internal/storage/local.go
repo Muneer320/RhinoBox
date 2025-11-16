@@ -1,21 +1,22 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/Muneer320/RhinoBox/internal/cache"
 )
 
 // Manager provides a tiny abstraction over the filesystem for hackspeed storage.
@@ -27,7 +28,6 @@ type Manager struct {
 	index          *MetadataIndex
 	versionIndex   *VersionIndex
 	notesIndex     *NotesIndex
-	hashIndex      *cache.HashIndex
 	referenceIndex *ReferenceIndex
 	mu             sync.Mutex
 	scanState      scanState
@@ -35,12 +35,13 @@ type Manager struct {
 
 // StoreRequest captures parameters for the high-throughput storage path.
 type StoreRequest struct {
-	Reader       io.Reader
-	Filename     string
-	MimeType     string
-	Size         int64
-	Metadata     map[string]string
-	CategoryHint string
+	Reader           io.Reader
+	Filename         string
+	MimeType         string
+	Size             int64
+	Metadata         map[string]string
+	CategoryHint     string
+	CategoryOverride string
 }
 
 // StoreResult surfaces the outcome of a storage operation.
@@ -87,16 +88,6 @@ func NewManager(root string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to initialize notes index: %w", err)
 	}
 
-	// Initialize cache for deduplication
-	cacheConfig := cache.DefaultConfig()
-	cacheConfig.L3Path = filepath.Join(root, "cache")
-	cacheInstance, err := cache.New(cacheConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize cache: %w", err)
-	}
-
-	hashIndex := cache.NewHashIndex(cacheInstance)
-
 	return &Manager{
 		root:           root,
 		storageRoot:    storageRoot,
@@ -105,7 +96,6 @@ func NewManager(root string) (*Manager, error) {
 		index:          index,
 		versionIndex:   versionIndex,
 		notesIndex:     notesIndex,
-		hashIndex:      hashIndex,
 		referenceIndex: nil, // Lazily initialized when needed
 	}, nil
 }
@@ -130,8 +120,25 @@ func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 	if req.Reader == nil {
 		return nil, errors.New("store file: nil reader")
 	}
+	mediaType, _, parseErr := mime.ParseMediaType(req.MimeType)
+	if parseErr != nil || mediaType == "" {
+		prefix := make([]byte, 512)
+		n, readErr := io.ReadFull(req.Reader, prefix)
+		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+			return nil, readErr
+		}
+		req.Reader = io.MultiReader(bytes.NewReader(prefix[:n]), req.Reader)
+		mediaType, _, _ = mime.ParseMediaType(http.DetectContentType(prefix[:n]))
+	}
+	req.MimeType = mediaType
 
 	components := m.classifier.ClassifyWithRules(req.MimeType, req.Filename, req.CategoryHint, m.rulesMgr)
+	if req.CategoryOverride != "" {
+		if err := ValidateCategory(req.CategoryOverride); err != nil {
+			return nil, err
+		}
+		components = strings.Split(req.CategoryOverride, "/")
+	}
 	fullDir := filepath.Join(append([]string{m.storageRoot}, components...)...)
 	if err := os.MkdirAll(fullDir, 0o755); err != nil {
 		return nil, err
@@ -145,9 +152,19 @@ func (m *Manager) StoreFile(req StoreRequest) (*StoreResult, error) {
 		base = "file"
 	}
 	base = sanitize(base)
+	if base == "" {
+		base = "file"
+	}
+	if len(base) > 120 {
+		base = base[:120]
+	}
 	ext := strings.ToLower(filepath.Ext(req.Filename))
-	if ext == "" {
-		ext = ""
+	ext = sanitize(strings.TrimPrefix(ext, "."))
+	if len(ext) > 24 {
+		ext = ext[:24]
+	}
+	if ext != "" {
+		ext = "." + ext
 	}
 
 	hasher := sha256.New()
@@ -300,11 +317,11 @@ func (m *Manager) NextJSONBatchPath(engine, namespace string) string {
 
 // StatisticsResult contains aggregated statistics about stored files.
 type StatisticsResult struct {
-	TotalFiles   int64  `json:"total_files"`
-	StorageUsed  int64  `json:"storage_used_bytes"`
-	StorageUsedFormatted string `json:"storage_used"`
-	CollectionCount int `json:"collection_count"`
-	Collections map[string]int64 `json:"collections"`
+	TotalFiles           int64            `json:"total_files"`
+	StorageUsed          int64            `json:"storage_used_bytes"`
+	StorageUsedFormatted string           `json:"storage_used"`
+	CollectionCount      int              `json:"collection_count"`
+	Collections          map[string]int64 `json:"collections"`
 }
 
 // GetAllMetadata returns all file metadata entries.
@@ -343,11 +360,11 @@ func (m *Manager) GetStatistics() (*StatisticsResult, error) {
 	storageFormatted := formatBytes(totalStorage)
 
 	return &StatisticsResult{
-		TotalFiles:          totalFiles,
-		StorageUsed:         totalStorage,
+		TotalFiles:           totalFiles,
+		StorageUsed:          totalStorage,
 		StorageUsedFormatted: storageFormatted,
-		CollectionCount:    len(collectionSet),
-		Collections:        collectionMap,
+		CollectionCount:      len(collectionSet),
+		Collections:          collectionMap,
 	}, nil
 }
 

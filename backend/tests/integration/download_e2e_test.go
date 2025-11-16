@@ -27,6 +27,11 @@ func TestDownloadEndpointE2E(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -79,6 +84,11 @@ func TestDownloadByFileID(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -97,17 +107,17 @@ func TestDownloadByFileID(t *testing.T) {
 	if !bytes.Equal(downloadedContent, testContent) {
 		t.Errorf("downloaded content mismatch: expected %d bytes, got %d bytes", len(testContent), len(downloadedContent))
 	}
-	
+
 	// Step 3: Verify that download works with the hash (simulating file ID -> hash -> download flow)
 	// This tests the frontend's ability to use file ID to get hash, then download
 	req := httptest.NewRequest("GET", fmt.Sprintf("/files/download?hash=%s", hash), nil)
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
-	
+
 	if w.Code != http.StatusOK {
 		t.Errorf("download by hash failed: status %d", w.Code)
 	}
-	
+
 	downloadedBytes := w.Body.Bytes()
 	if !bytes.Equal(downloadedBytes, testContent) {
 		t.Errorf("downloaded content mismatch in second test: expected %d bytes, got %d bytes", len(testContent), len(downloadedBytes))
@@ -125,6 +135,11 @@ func TestDownloadEndpointErrorHandling(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -188,7 +203,7 @@ func uploadTestFileForDownload(t *testing.T, srv *api.Server, filename string, c
 
 	// Handle response format: {"data": {"stored": [{"hash": "...", "path": "...", ...}]}}
 	var hash, path string
-	
+
 	// Check if wrapped in "data" field (response middleware)
 	var storedArray []interface{}
 	if data, ok := response["data"].(map[string]interface{}); ok {
@@ -198,7 +213,7 @@ func uploadTestFileForDownload(t *testing.T, srv *api.Server, filename string, c
 	} else if stored, ok := response["stored"].([]interface{}); ok {
 		storedArray = stored
 	}
-	
+
 	if len(storedArray) > 0 {
 		fileInfo := storedArray[0].(map[string]interface{})
 		if h, ok := fileInfo["hash"].(string); ok {
@@ -239,4 +254,3 @@ func downloadFileByPathE2E(t *testing.T, srv *api.Server, path string) []byte {
 
 	return w.Body.Bytes()
 }
-

@@ -12,25 +12,25 @@ type Config struct {
 	Addr           string
 	DataDir        string
 	MaxUploadBytes int64
-	
+
 	// Database connection strings (optional - if empty, only NDJSON storage is used)
-	PostgresURL    string
-	MongoURL       string
-	DBMaxConns     int
-	
+	PostgresURL string
+	MongoURL    string
+	DBMaxConns  int
+
 	// Authentication configuration
 	AuthEnabled bool
-	
+
 	// Security configuration
 	Security SecurityConfig
 }
 
 // Load reads environment variables and falls back to sane defaults for hackathon usage.
 func Load() (Config, error) {
-	addr := getEnv("RHINOBOX_ADDR", ":8090")
+	addr := getEnv("RHINOBOX_ADDR", "127.0.0.1:8090")
 	dataDir := getEnv("RHINOBOX_DATA_DIR", filepath.Join(".", "data"))
 
-	maxUploadBytes := int64(25 * 1024 * 1024 * 1024) // 25 GiB default
+	maxUploadBytes := int64(512 * 1024 * 1024) // 512 MiB request limit
 	if raw := os.Getenv("RHINOBOX_MAX_UPLOAD_MB"); raw != "" {
 		if mb, err := strconv.ParseInt(raw, 10, 64); err == nil && mb > 0 {
 			maxUploadBytes = mb * 1024 * 1024
@@ -44,8 +44,8 @@ func Load() (Config, error) {
 	// Database configuration (optional)
 	postgresURL := getEnv("RHINOBOX_POSTGRES_URL", "")
 	mongoURL := getEnv("RHINOBOX_MONGO_URL", "")
-	
-	dbMaxConns := 100
+
+	dbMaxConns := 10
 	if raw := os.Getenv("RHINOBOX_DB_MAX_CONNS"); raw != "" {
 		if conns, err := strconv.Atoi(raw); err == nil && conns > 0 {
 			dbMaxConns = conns

@@ -304,7 +304,7 @@ func RegisterAllSchemas(validator *Validator, maxUploadBytes int64) {
 					if !valid && actionStr != "" {
 						errors = append(errors, ValidationError{
 							Field:   "action",
-							Message: fmt.Sprintf("action must be one of: %s (or empty for merge)", strings.Join(allowedActions, ", ")),
+							Message: fmt.Sprintf("invalid action: must be one of: %s (or empty for merge)", strings.Join(allowedActions, ", ")),
 						})
 					}
 				} else {
@@ -528,7 +528,7 @@ func RegisterAllSchemas(validator *Validator, maxUploadBytes int64) {
 	validator.RegisterSchema("GET:/files/search", &Schema{
 		QueryParams: map[string]QueryParamRule{
 			"name": {
-				Required: true,
+				Required: false,
 				Validate: func(value string) error {
 					if len(value) == 0 {
 						return fmt.Errorf("name query parameter cannot be empty")
@@ -602,4 +602,3 @@ func RegisterAllSchemas(validator *Validator, maxUploadBytes int64) {
 		},
 	})
 }
-

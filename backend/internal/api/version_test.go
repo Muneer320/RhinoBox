@@ -14,15 +14,20 @@ import (
 	"log/slog"
 )
 
-func setupTestServer(t *testing.T) (*Server, string) {
+func setupVersionTestServer(t *testing.T) (*Server, string) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
-		DataDir:       tmpDir,
+		DataDir:        tmpDir,
 		MaxUploadBytes: 10 * 1024 * 1024, // 10MB
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -58,7 +63,7 @@ func createMultipartForm(t *testing.T, filename string, content []byte, comment 
 }
 
 func TestCreateVersion(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// First, upload an initial file
 	initialContent := []byte("initial file content")
@@ -118,7 +123,7 @@ func TestCreateVersion(t *testing.T) {
 }
 
 func TestListVersions(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// Upload initial file
 	initialContent := []byte("version 1")
@@ -180,7 +185,7 @@ func TestListVersions(t *testing.T) {
 }
 
 func TestGetVersion(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// Upload initial file
 	initialContent := []byte("version 1")
@@ -242,7 +247,7 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestRevertVersion(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// Upload initial file
 	initialContent := []byte("version 1")
@@ -297,7 +302,7 @@ func TestRevertVersion(t *testing.T) {
 }
 
 func TestVersionDiff(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// Upload initial file
 	initialContent := []byte("small")
@@ -352,7 +357,7 @@ func TestVersionDiff(t *testing.T) {
 }
 
 func TestVersionErrors(t *testing.T) {
-	server, _ := setupTestServer(t)
+	server, _ := setupVersionTestServer(t)
 
 	// Test listing versions for non-existent file
 	req := httptest.NewRequest("GET", "/files/non-existent/versions", nil)
@@ -381,4 +386,3 @@ func TestVersionErrors(t *testing.T) {
 		t.Errorf("expected status 400, got %d", w3.Code)
 	}
 }
-

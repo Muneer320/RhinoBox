@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +31,11 @@ func TestFileRetrievalEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -88,7 +95,7 @@ func TestFileRetrievalEndToEnd(t *testing.T) {
 
 // TestFileRetrievalWithRealWorldFiles tests with actual files from Downloads directory
 func TestFileRetrievalWithRealWorldFiles(t *testing.T) {
-	downloadsDir := filepath.Join(os.Getenv("HOME"), "Downloads")
+	downloadsDir := fixtureDownloads(t)
 	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
 		t.Skip("Downloads directory not found, skipping real-world file test")
 	}
@@ -102,6 +109,11 @@ func TestFileRetrievalWithRealWorldFiles(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -160,12 +172,17 @@ func TestFileRetrievalNotFound(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
 
 	// Test non-existent hash
-	req := httptest.NewRequest("GET", "/files/download?hash=nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234", nil)
+	req := httptest.NewRequest("GET", "/files/download?hash=0000000000000000000000000000000000000000000000000000000000000000", nil)
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
@@ -183,7 +200,7 @@ func TestFileRetrievalNotFound(t *testing.T) {
 	}
 
 	// Test metadata for non-existent file
-	req = httptest.NewRequest("GET", "/files/metadata?hash=nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234", nil)
+	req = httptest.NewRequest("GET", "/files/metadata?hash=0000000000000000000000000000000000000000000000000000000000000000", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
@@ -192,7 +209,7 @@ func TestFileRetrievalNotFound(t *testing.T) {
 	}
 
 	// Test get file by ID for non-existent file
-	req = httptest.NewRequest("GET", "/files/nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234", nil)
+	req = httptest.NewRequest("GET", "/files/0000000000000000000000000000000000000000000000000000000000000000", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
@@ -212,6 +229,11 @@ func TestFileRetrievalPathTraversal(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -246,6 +268,11 @@ func TestFileStreamRangeRequests(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -311,10 +338,16 @@ func TestFileStreamRangeRequests(t *testing.T) {
 // Helper functions
 
 func uploadTestFile(t *testing.T, srv *api.Server, filename string, content []byte, mimeType string) (string, string) {
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(filename))
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile("file", filename)
+	part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": filename})}, "Content-Type": {mimeType}})
 	if err != nil {
 		t.Fatalf("CreateFormFile: %v", err)
 	}
@@ -350,6 +383,10 @@ func uploadTestFile(t *testing.T, srv *api.Server, filename string, content []by
 }
 
 func uploadRealFile(t *testing.T, srv *api.Server, filePath, filename string) (string, string) {
+	mimeType := mime.TypeByExtension(filepath.Ext(filename))
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		t.Fatalf("Open file: %v", err)
@@ -359,7 +396,7 @@ func uploadRealFile(t *testing.T, srv *api.Server, filePath, filename string) (s
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile("file", filename)
+	part, err := writer.CreatePart(textproto.MIMEHeader{"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": filename})}, "Content-Type": {mimeType}})
 	if err != nil {
 		t.Fatalf("CreateFormFile: %v", err)
 	}

@@ -32,6 +32,11 @@ func setupSecurityTestServer(t *testing.T, securityCfg config.SecurityConfig) (*
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -130,8 +135,8 @@ func TestSecurityHeaders_EndToEnd(t *testing.T) {
 		ContentTypeOptions:     "nosniff",
 		FrameOptions:           "DENY",
 		XSSProtection:          "1; mode=block",
-		ReferrerPolicy:        "strict-origin-when-cross-origin",
-		PermissionsPolicy:     "geolocation=(), microphone=(), camera=()",
+		ReferrerPolicy:         "strict-origin-when-cross-origin",
+		PermissionsPolicy:      "geolocation=(), microphone=(), camera=()",
 	}
 
 	server, tempDir := setupSecurityTestServer(t, securityCfg)
@@ -162,9 +167,9 @@ func TestSecurityHeaders_EndToEnd(t *testing.T) {
 func TestRateLimiting_EndToEnd(t *testing.T) {
 	securityCfg := config.SecurityConfig{
 		RateLimitEnabled:    true,
-		RateLimitRequests:   5,              // 5 requests
+		RateLimitRequests:   5,               // 5 requests
 		RateLimitWindow:     1 * time.Second, // per second
-		RateLimitBurst:      2,              // burst of 2
+		RateLimitBurst:      0,               // burst of 2
 		RateLimitByIP:       true,
 		RateLimitByEndpoint: false,
 	}
@@ -239,10 +244,10 @@ func TestRequestSizeLimit_EndToEnd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body := strings.Repeat("a", tt.bodySize)
+			body := `{"document":{"value":"` + strings.Repeat("a", tt.bodySize) + `"}}`
 			req := httptest.NewRequest("POST", "/ingest/json", bytes.NewBufferString(body))
 			req.Header.Set("Content-Type", "application/json")
-			req.ContentLength = int64(tt.bodySize)
+			req.ContentLength = int64(len(body))
 
 			w := httptest.NewRecorder()
 			server.Router().ServeHTTP(w, req)
@@ -323,21 +328,21 @@ func TestIPFiltering_EndToEnd(t *testing.T) {
 // TestSecurityIntegration_EndToEnd tests all security features working together
 func TestSecurityIntegration_EndToEnd(t *testing.T) {
 	securityCfg := config.SecurityConfig{
-		CORSEnabled:          true,
-		CORSOrigins:          []string{"https://example.com"},
-		CORSAllowMethods:     []string{"GET", "POST"},
-		CORSAllowHeaders:     []string{"Content-Type"},
-		CORSMaxAge:           3600 * time.Second,
-		CORSAllowCreds:       true,
+		CORSEnabled:            true,
+		CORSOrigins:            []string{"https://example.com"},
+		CORSAllowMethods:       []string{"GET", "POST"},
+		CORSAllowHeaders:       []string{"Content-Type"},
+		CORSMaxAge:             3600 * time.Second,
+		CORSAllowCreds:         true,
 		SecurityHeadersEnabled: true,
 		ContentTypeOptions:     "nosniff",
 		FrameOptions:           "DENY",
 		XSSProtection:          "1; mode=block",
-		RateLimitEnabled:      true,
+		RateLimitEnabled:       true,
 		RateLimitRequests:      10,
 		RateLimitWindow:        1 * time.Minute,
 		RateLimitBurst:         5,
-		RateLimitByIP:           true,
+		RateLimitByIP:          true,
 		MaxRequestSize:         1024 * 1024, // 1MB
 	}
 
@@ -415,4 +420,3 @@ func parseIPListForTest(list string) []net.IPNet {
 
 	return result
 }
-

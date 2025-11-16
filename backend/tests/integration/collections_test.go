@@ -8,8 +8,8 @@ import (
 
 	"github.com/Muneer320/RhinoBox/internal/api"
 	"github.com/Muneer320/RhinoBox/internal/config"
-	"log/slog"
 	"io"
+	"log/slog"
 )
 
 // TestCollectionsEndpointIntegration tests the collections endpoint end-to-end
@@ -22,6 +22,11 @@ func TestCollectionsEndpointIntegration(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -38,17 +43,20 @@ func TestCollectionsEndpointIntegration(t *testing.T) {
 
 		var payload struct {
 			Collections []map[string]any `json:"collections"`
-			Count       int              `json:"count"`
+			Count       int              `json:"total"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
 
-		if payload.Count != 0 {
-			t.Errorf("expected 0 collections, got %d", payload.Count)
+		if payload.Count != len(payload.Collections) {
+			t.Errorf("total mismatch: %d != %d", payload.Count, len(payload.Collections))
 		}
-		if len(payload.Collections) != 0 {
-			t.Errorf("expected empty collections array, got %d items", len(payload.Collections))
+		for _, collection := range payload.Collections {
+			stats, ok := collection["stats"].(map[string]any)
+			if !ok || stats["file_count"] != float64(0) {
+				t.Errorf("empty collection has unexpected stats: %v", collection)
+			}
 		}
 	})
 
@@ -66,7 +74,7 @@ func TestCollectionsEndpointIntegration(t *testing.T) {
 
 		var payload struct {
 			Collections []map[string]any `json:"collections"`
-			Count       int              `json:"count"`
+			Count       int              `json:"total"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -78,4 +86,3 @@ func TestCollectionsEndpointIntegration(t *testing.T) {
 		}
 	})
 }
-

@@ -64,7 +64,7 @@ func TestValidator_ValidatePathParams(t *testing.T) {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
 
-	if errorResp.Error != "validation failed" {
+	if errorResp.Error == nil || errorResp.Error.Code != "BAD_REQUEST" {
 		t.Errorf("expected error message 'validation failed', got '%s'", errorResp.Error)
 	}
 }
@@ -254,9 +254,9 @@ func TestValidateHash(t *testing.T) {
 
 func TestValidateFilename(t *testing.T) {
 	tests := []struct {
-		name    string
+		name     string
 		filename string
-		wantErr bool
+		wantErr  bool
 	}{
 		{"valid", "test.txt", false},
 		{"valid with spaces", "my file.txt", false},
@@ -403,7 +403,7 @@ func TestValidator_ErrorResponseFormat(t *testing.T) {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
 
-	if errorResp.Error != "validation failed" {
+	if errorResp.Error == nil || errorResp.Error.Code != "BAD_REQUEST" {
 		t.Errorf("expected error message 'validation failed', got '%s'", errorResp.Error)
 	}
 
@@ -436,7 +436,7 @@ func TestValidator_FileUploadValidation(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	
+
 	// Parse multipart form
 	err := req.ParseMultipartForm(10 << 20)
 	if err != nil {
@@ -484,4 +484,3 @@ func TestValidator_BodyRestoration(t *testing.T) {
 		t.Errorf("body was not restored correctly. Expected: %s, Got: %s", originalBody, string(capturedBody))
 	}
 }
-

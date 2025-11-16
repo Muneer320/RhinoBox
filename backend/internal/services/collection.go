@@ -23,25 +23,25 @@ const (
 // CollectionService provides collection discovery and statistics aggregation.
 type CollectionService struct {
 	storage    *storage.Manager
-	cache     *cache.Cache
-	logger    *slog.Logger
-	cacheTTL  time.Duration
-	statsMu   sync.RWMutex
+	cache      *cache.Cache
+	logger     *slog.Logger
+	cacheTTL   time.Duration
+	statsMu    sync.RWMutex
 	statsCache map[string]*CachedStats
 }
 
 // CachedStats holds cached collection statistics with expiration.
 type CachedStats struct {
-	Stats      CollectionStats
-	ExpiresAt  time.Time
+	Stats     CollectionStats
+	ExpiresAt time.Time
 }
 
 // CollectionStats represents statistics for a collection.
 type CollectionStats struct {
-	Type         string `json:"type"`
-	FileCount    int    `json:"file_count"`
-	StorageUsed  int64  `json:"storage_used"`
-	LastUpdated  string `json:"last_updated"`
+	Type        string `json:"type"`
+	FileCount   int    `json:"file_count"`
+	StorageUsed int64  `json:"storage_used"`
+	LastUpdated string `json:"last_updated"`
 }
 
 // CollectionDTO represents a collection for frontend responses.
@@ -99,29 +99,29 @@ func NewCollectionService(storage *storage.Manager, cache *cache.Cache, logger *
 // DiscoverCollections discovers all collection types from storage metadata.
 func (s *CollectionService) DiscoverCollections() ([]CollectionDTO, error) {
 	collections := make([]CollectionDTO, 0, len(collectionTypes))
-	
+
 	// Get all metadata from storage
 	allMetadata := s.getAllMetadata()
-	
+
 	// Group by collection type
 	typeMap := make(map[string][]storage.FileMetadata)
 	for _, meta := range allMetadata {
 		collectionType := s.extractCollectionType(meta)
 		typeMap[collectionType] = append(typeMap[collectionType], meta)
 	}
-	
+
 	// Build collection DTOs
 	for _, ct := range collectionTypes {
 		metadata := typeMap[ct.Type]
 		stats := s.calculateStats(ct.Type, metadata)
-		
+
 		collections = append(collections, CollectionDTO{
 			Type:        ct.Type,
 			DisplayName: ct.DisplayName,
 			Stats:       stats,
 		})
 	}
-	
+
 	return collections, nil
 }
 
@@ -136,15 +136,15 @@ func (s *CollectionService) GetCollectionStats(collectionType string) (*Collecti
 			Stats:       *cached,
 		}, nil
 	}
-	
+
 	// Validate collection type
 	if !s.isValidCollectionType(collectionType) {
 		return nil, fmt.Errorf("invalid collection type: %s", collectionType)
 	}
-	
+
 	// Get all metadata
 	allMetadata := s.getAllMetadata()
-	
+
 	// Filter by collection type
 	filtered := make([]storage.FileMetadata, 0)
 	for _, meta := range allMetadata {
@@ -152,13 +152,13 @@ func (s *CollectionService) GetCollectionStats(collectionType string) (*Collecti
 			filtered = append(filtered, meta)
 		}
 	}
-	
+
 	// Calculate statistics
 	stats := s.calculateStats(collectionType, filtered)
-	
+
 	// Cache the result
 	s.setCachedStats(collectionType, stats)
-	
+
 	displayName := s.getDisplayName(collectionType)
 	return &CollectionStatsResponse{
 		Type:        collectionType,
@@ -177,23 +177,23 @@ func (s *CollectionService) GetAllCollections() (*CollectionsResponse, error) {
 			return &response, nil
 		}
 	}
-	
+
 	collections, err := s.DiscoverCollections()
 	if err != nil {
 		return nil, fmt.Errorf("discover collections: %w", err)
 	}
-	
+
 	response := &CollectionsResponse{
 		Collections: collections,
 		Total:       len(collections),
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	
+
 	// Cache the response
 	if data, err := json.Marshal(response); err == nil {
 		_ = s.cache.Set(cacheKey, data)
 	}
-	
+
 	return response, nil
 }
 
@@ -203,13 +203,13 @@ func (s *CollectionService) extractCollectionType(meta storage.FileMetadata) str
 	if strings.HasPrefix(meta.StoredPath, "json/") {
 		return "json"
 	}
-	
+
 	// Extract from category (format: "category/subcategory" or just "category")
 	category := meta.Category
 	if category == "" {
 		return "other"
 	}
-	
+
 	// Split category by "/" and take the first part
 	parts := strings.Split(category, "/")
 	if len(parts) > 0 {
@@ -219,7 +219,7 @@ func (s *CollectionService) extractCollectionType(meta storage.FileMetadata) str
 			return firstPart
 		}
 	}
-	
+
 	return "other"
 }
 
@@ -227,11 +227,11 @@ func (s *CollectionService) extractCollectionType(meta storage.FileMetadata) str
 func (s *CollectionService) calculateStats(collectionType string, metadata []storage.FileMetadata) CollectionStats {
 	var totalSize int64
 	fileCount := len(metadata)
-	
+
 	for _, meta := range metadata {
 		totalSize += meta.Size
 	}
-	
+
 	return CollectionStats{
 		Type:        collectionType,
 		FileCount:   fileCount,
@@ -245,14 +245,14 @@ func (s *CollectionService) getAllMetadata() []storage.FileMetadata {
 	// Access the storage manager's metadata index
 	// We need to add a method to get all metadata
 	// For now, we'll use reflection or add a method to storage.Manager
-	
+
 	// Since we can't directly access the private index, we'll need to add a method
 	// to storage.Manager to get all metadata. For now, let's create a workaround.
-	
+
 	// Actually, we should add a GetAllMetadata method to storage.Manager
 	// But for now, let's use a different approach - we can iterate through
 	// the storage directory structure
-	
+
 	// For MVP, let's add a method to storage to get all metadata
 	return s.storage.GetAllMetadata()
 }
@@ -287,16 +287,16 @@ func (s *CollectionService) getDisplayName(collectionType string) string {
 func (s *CollectionService) getCachedStats(collectionType string) *CollectionStats {
 	s.statsMu.RLock()
 	defer s.statsMu.RUnlock()
-	
+
 	cached, ok := s.statsCache[collectionType]
 	if !ok {
 		return nil
 	}
-	
+
 	if time.Now().After(cached.ExpiresAt) {
 		return nil
 	}
-	
+
 	return &cached.Stats
 }
 
@@ -304,7 +304,7 @@ func (s *CollectionService) getCachedStats(collectionType string) *CollectionSta
 func (s *CollectionService) setCachedStats(collectionType string, stats CollectionStats) {
 	s.statsMu.Lock()
 	defer s.statsMu.Unlock()
-	
+
 	s.statsCache[collectionType] = &CachedStats{
 		Stats:     stats,
 		ExpiresAt: time.Now().Add(s.cacheTTL),
@@ -315,13 +315,17 @@ func (s *CollectionService) setCachedStats(collectionType string, stats Collecti
 func (s *CollectionService) InvalidateCache(collectionType string) {
 	s.statsMu.Lock()
 	defer s.statsMu.Unlock()
-	
+
 	if collectionType == "" {
 		// Invalidate all
 		s.statsCache = make(map[string]*CachedStats)
 		_ = s.cache.Delete("collections:all")
+		for _, collection := range collectionTypes {
+			_ = s.cache.Delete(cacheKeyPrefix + collection.Type)
+		}
 	} else {
 		delete(s.statsCache, collectionType)
+		_ = s.cache.Delete(cacheKeyPrefix + collectionType)
+		_ = s.cache.Delete(cacheKeyAll)
 	}
 }
-

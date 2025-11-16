@@ -26,6 +26,11 @@ func TestVersioningEndToEnd(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -325,6 +330,11 @@ func BenchmarkVersionOperations(b *testing.B) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := api.NewServer(cfg, logger)
+	b.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		b.Fatalf("failed to create server: %v", err)
 	}
@@ -365,6 +375,11 @@ func BenchmarkListVersions(b *testing.B) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := api.NewServer(cfg, logger)
+	b.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		b.Fatalf("failed to create server: %v", err)
 	}
@@ -426,4 +441,3 @@ func createMultipartFormBench(b *testing.B, filename string, content []byte, com
 
 	return body, writer.FormDataContentType()
 }
-

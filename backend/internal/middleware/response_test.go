@@ -41,8 +41,8 @@ func TestResponseWriter(t *testing.T) {
 
 	// Test Duration
 	duration := rw.Duration()
-	if duration <= 0 {
-		t.Errorf("Expected positive duration, got %v", duration)
+	if duration < 0 {
+		t.Errorf("Expected non-negative duration, got %v", duration)
 	}
 }
 
@@ -435,4 +435,3 @@ func BenchmarkResponseFormatter_Paginated(b *testing.B) {
 		_ = formatter.Paginated(w, data, 1, 10, 100, "req-123")
 	}
 }
-

@@ -19,6 +19,11 @@ func TestHandleFileCopy(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -69,7 +74,7 @@ func TestHandleFileCopy(t *testing.T) {
 
 	// Test copy with hard link
 	copyBody2 := map[string]any{
-		"new_name": "hardlink.txt",
+		"new_name":  "hardlink.txt",
 		"hard_link": true,
 	}
 	body2, _ := json.Marshal(copyBody2)
@@ -100,6 +105,11 @@ func TestHandleFileCopy_NotFound(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -126,6 +136,11 @@ func TestHandleBatchFileCopy(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -163,8 +178,8 @@ func TestHandleBatchFileCopy(t *testing.T) {
 				"new_name": "copy1.txt",
 			},
 			{
-				"hash":     result2.Metadata.Hash,
-				"new_name": "copy2.txt",
+				"hash":      result2.Metadata.Hash,
+				"new_name":  "copy2.txt",
 				"hard_link": true,
 			},
 		},
@@ -200,6 +215,11 @@ func TestHandleBatchFileCopy_Empty(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -226,6 +246,11 @@ func TestHandleBatchFileCopy_TooMany(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -254,4 +279,3 @@ func TestHandleBatchFileCopy_TooMany(t *testing.T) {
 		t.Errorf("expected status 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
-

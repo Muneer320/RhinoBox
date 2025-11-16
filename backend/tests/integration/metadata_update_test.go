@@ -24,6 +24,11 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -31,7 +36,7 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	// Step 1: Upload a file with initial metadata
 	fileContent := "test file content"
 	uploadResp := uploadTestFile(t, srv, "test.txt", fileContent, "initial comment")
-	
+
 	hash := uploadResp["hash"].(string)
 	if hash == "" {
 		t.Fatal("uploaded file has no hash")
@@ -41,14 +46,14 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	mergeReq := map[string]interface{}{
 		"action": "merge",
 		"metadata": map[string]string{
-			"author":      "John Doe",
-			"department":  "Engineering",
-			"project":     "RhinoBox",
+			"author":     "John Doe",
+			"department": "Engineering",
+			"project":    "RhinoBox",
 		},
 	}
 
 	mergeResp := updateMetadata(t, srv, hash, mergeReq, http.StatusOK)
-	
+
 	newMeta := mergeResp["new_metadata"].(map[string]interface{})
 	if len(newMeta) != 4 { // initial comment + 3 new fields
 		t.Errorf("expected 4 metadata fields after merge, got %d", len(newMeta))
@@ -72,7 +77,7 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	}
 
 	replaceResp := updateMetadata(t, srv, hash, replaceReq, http.StatusOK)
-	
+
 	newMeta = replaceResp["new_metadata"].(map[string]interface{})
 	if len(newMeta) != 2 {
 		t.Errorf("expected 2 metadata fields after replace, got %d", len(newMeta))
@@ -95,7 +100,7 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	}
 
 	mergeResp2 := updateMetadata(t, srv, hash, mergeReq2, http.StatusOK)
-	
+
 	newMeta = mergeResp2["new_metadata"].(map[string]interface{})
 	if len(newMeta) != 3 { // status, year, tags
 		t.Errorf("expected 3 metadata fields, got %d", len(newMeta))
@@ -108,7 +113,7 @@ func TestMetadataUpdateEndToEnd(t *testing.T) {
 	}
 
 	removeResp := updateMetadata(t, srv, hash, removeReq, http.StatusOK)
-	
+
 	newMeta = removeResp["new_metadata"].(map[string]interface{})
 	if len(newMeta) != 2 { // status, tags
 		t.Errorf("expected 2 metadata fields after remove, got %d", len(newMeta))
@@ -128,6 +133,11 @@ func TestMetadataUpdateValidation(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -175,7 +185,7 @@ func TestMetadataUpdateValidation(t *testing.T) {
 		},
 		{
 			name: "nonexistent file",
-			hash: "nonexistent123",
+			hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 			req: map[string]interface{}{
 				"action":   "merge",
 				"metadata": map[string]string{"key": "value"},
@@ -208,13 +218,13 @@ func TestMetadataUpdateValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := updateMetadata(t, srv, tt.hash, tt.req, tt.expectedStatus)
-			
+
 			if tt.expectedStatus != http.StatusOK {
-				errorMsg, ok := resp["error"].(string)
+				errorMsg, ok := resp["error"].(map[string]interface{})["message"].(string)
 				if !ok {
 					t.Fatalf("expected error message in response")
 				}
-				
+
 				if !strings.Contains(strings.ToLower(errorMsg), strings.ToLower(tt.errorContains)) {
 					t.Errorf("error message %q should contain %q", errorMsg, tt.errorContains)
 				}
@@ -232,6 +242,11 @@ func TestBatchMetadataUpdateEndToEnd(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -261,7 +276,7 @@ func TestBatchMetadataUpdateEndToEnd(t *testing.T) {
 				},
 			},
 			{
-				"hash":   "nonexistent",
+				"hash":   "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
 				"action": "merge",
 				"metadata": map[string]string{
 					"batch_field": "value3",
@@ -273,7 +288,7 @@ func TestBatchMetadataUpdateEndToEnd(t *testing.T) {
 	body, _ := json.Marshal(batchReq)
 	req := httptest.NewRequest("POST", "/files/metadata/batch", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 
@@ -326,6 +341,11 @@ func TestMetadataUpdateDefaultAction(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -342,9 +362,9 @@ func TestMetadataUpdateDefaultAction(t *testing.T) {
 	}
 
 	resp := updateMetadata(t, srv, hash, req, http.StatusOK)
-	
+
 	newMeta := resp["new_metadata"].(map[string]interface{})
-	
+
 	// Should have both original comment and new field
 	if len(newMeta) != 2 {
 		t.Errorf("expected 2 metadata fields (default merge), got %d", len(newMeta))
@@ -368,6 +388,11 @@ func TestMetadataUpdateLargePayload(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -385,8 +410,8 @@ func TestMetadataUpdateLargePayload(t *testing.T) {
 	}
 
 	resp := updateMetadata(t, srv, hash, req, http.StatusBadRequest)
-	
-	errorMsg := resp["error"].(string)
+
+	errorMsg := resp["error"].(map[string]interface{})["message"].(string)
 	if !strings.Contains(strings.ToLower(errorMsg), "too large") {
 		t.Errorf("error should mention size limit, got: %s", errorMsg)
 	}
@@ -401,6 +426,11 @@ func TestMetadataUpdateSpecialCharacters(t *testing.T) {
 	}
 
 	srv, err := api.NewServer(cfg, testLogger())
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -421,7 +451,7 @@ func TestMetadataUpdateSpecialCharacters(t *testing.T) {
 	}
 
 	resp := updateMetadata(t, srv, hash, req, http.StatusOK)
-	
+
 	newMeta := resp["new_metadata"].(map[string]interface{})
 	if len(newMeta) != 4 {
 		t.Errorf("expected 4 metadata fields, got %d", len(newMeta))
@@ -492,7 +522,7 @@ func updateMetadata(t *testing.T, srv *api.Server, hash string, reqBody map[stri
 
 	req := httptest.NewRequest("PATCH", "/files/"+hash+"/metadata", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 

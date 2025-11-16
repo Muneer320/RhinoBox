@@ -14,15 +14,15 @@ import (
 
 // Duplicate-related errors
 var (
-	ErrDuplicateNotFound     = errors.New("duplicate group not found")
-	ErrInvalidMergeRequest   = errors.New("invalid merge request")
-	ErrScanInProgress        = errors.New("scan already in progress")
-	ErrVerificationFailed    = errors.New("verification failed")
+	ErrDuplicateNotFound   = errors.New("duplicate group not found")
+	ErrInvalidMergeRequest = errors.New("invalid merge request")
+	ErrScanInProgress      = errors.New("scan already in progress")
+	ErrVerificationFailed  = errors.New("verification failed")
 )
 
 // DuplicateScanRequest contains parameters for scanning duplicates
 type DuplicateScanRequest struct {
-	DeepScan       bool `json:"deep_scan"`        // Re-compute hashes for all files
+	DeepScan        bool `json:"deep_scan"`        // Re-compute hashes for all files
 	IncludeMetadata bool `json:"include_metadata"` // Include full metadata in results
 }
 
@@ -32,7 +32,7 @@ type DuplicateScanResult struct {
 	TotalFiles      int       `json:"total_files"`
 	DuplicatesFound int       `json:"duplicates_found"`
 	StorageWasted   int64     `json:"storage_wasted"` // bytes
-	Status          string    `json:"status"`          // "completed", "in_progress", "failed"
+	Status          string    `json:"status"`         // "completed", "in_progress", "failed"
 	StartedAt       time.Time `json:"started_at,omitempty"`
 	CompletedAt     time.Time `json:"completed_at,omitempty"`
 	Error           string    `json:"error,omitempty"`
@@ -40,11 +40,11 @@ type DuplicateScanResult struct {
 
 // DuplicateGroup represents a group of duplicate files
 type DuplicateGroup struct {
-	Hash         string                 `json:"hash"`
-	Count        int                    `json:"count"`
-	Size         int64                  `json:"size"`         // size of one file
-	TotalWasted  int64                  `json:"total_wasted"` // (count - 1) * size
-	Files        []DuplicateFileInfo    `json:"files"`
+	Hash        string              `json:"hash"`
+	Count       int                 `json:"count"`
+	Size        int64               `json:"size"`         // size of one file
+	TotalWasted int64               `json:"total_wasted"` // (count - 1) * size
+	Files       []DuplicateFileInfo `json:"files"`
 }
 
 // DuplicateFileInfo contains information about a duplicate file
@@ -59,18 +59,18 @@ type DuplicateFileInfo struct {
 
 // VerificationResult contains the results of system verification
 type VerificationResult struct {
-	MetadataIndexCount int64              `json:"metadata_index_count"`
-	PhysicalFilesCount int64              `json:"physical_files_count"`
-	HashMismatches     int                `json:"hash_mismatches"`
-	OrphanedFiles      int                `json:"orphaned_files"`
-	MissingFiles       int                `json:"missing_files"`
+	MetadataIndexCount int64               `json:"metadata_index_count"`
+	PhysicalFilesCount int64               `json:"physical_files_count"`
+	HashMismatches     int                 `json:"hash_mismatches"`
+	OrphanedFiles      int                 `json:"orphaned_files"`
+	MissingFiles       int                 `json:"missing_files"`
 	Issues             []VerificationIssue `json:"issues"`
-	CompletedAt        time.Time          `json:"completed_at"`
+	CompletedAt        time.Time           `json:"completed_at"`
 }
 
 // VerificationIssue represents a problem found during verification
 type VerificationIssue struct {
-	Type    string `json:"type"`    // "orphaned_file", "missing_file", "hash_mismatch"
+	Type    string `json:"type"` // "orphaned_file", "missing_file", "hash_mismatch"
 	Path    string `json:"path"`
 	Message string `json:"message"`
 	Hash    string `json:"hash,omitempty"`
@@ -79,17 +79,17 @@ type VerificationIssue struct {
 // MergeRequest contains parameters for merging duplicates
 type MergeRequest struct {
 	Hash         string `json:"hash"`
-	Keep         string `json:"keep"`         // stored_path to keep
+	Keep         string `json:"keep"`          // stored_path to keep
 	RemoveOthers bool   `json:"remove_others"` // whether to remove other duplicates
 }
 
 // MergeResult contains the results of a merge operation
 type MergeResult struct {
-	Hash         string   `json:"hash"`
-	Kept         string   `json:"kept"`
-	Removed      []string `json:"removed"`
-	SpaceReclaimed int64  `json:"space_reclaimed"`
-	MergedAt     time.Time `json:"merged_at"`
+	Hash           string    `json:"hash"`
+	Kept           string    `json:"kept"`
+	Removed        []string  `json:"removed"`
+	SpaceReclaimed int64     `json:"space_reclaimed"`
+	MergedAt       time.Time `json:"merged_at"`
 }
 
 // scanState tracks the state of an ongoing scan
@@ -121,14 +121,14 @@ func (m *Manager) ScanForDuplicates(req DuplicateScanRequest) (*DuplicateScanRes
 	startedAt := time.Now()
 
 	result := &DuplicateScanResult{
-		ScanID:     scanID,
-		Status:     "in_progress",
-		StartedAt:  startedAt,
+		ScanID:    scanID,
+		Status:    "in_progress",
+		StartedAt: startedAt,
 	}
 
 	// Group files by hash
 	hashGroups := make(map[string][]FileMetadata)
-	
+
 	m.mu.Lock()
 	// Collect all metadata entries
 	for _, meta := range m.index.data {
@@ -206,7 +206,7 @@ func (m *Manager) verifyHashesOnDisk(hashGroups map[string][]FileMetadata) error
 	for hash, files := range hashGroups {
 		for _, file := range files {
 			fullPath := filepath.Join(m.root, file.StoredPath)
-			
+
 			// Open file and compute hash
 			f, err := os.Open(fullPath)
 			if err != nil {
@@ -431,7 +431,7 @@ func (m *Manager) MergeDuplicates(req MergeRequest) (*MergeResult, error) {
 			}
 
 			// Delete metadata entry
-			if err := m.index.Delete(meta.Hash); err != nil {
+			if err := m.index.DeletePath(meta.StoredPath); err != nil {
 				// Log but continue - file is already deleted
 				fmt.Fprintf(os.Stderr, "warning: failed to delete metadata for %s: %v\n", meta.StoredPath, err)
 			}
@@ -464,11 +464,10 @@ func (m *Manager) GetDuplicateStatistics() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"duplicate_groups":  totalGroups,
-		"total_duplicates":   totalDuplicates,
-		"storage_wasted":     totalWasted,
+		"duplicate_groups":      totalGroups,
+		"total_duplicates":      totalDuplicates,
+		"storage_wasted":        totalWasted,
 		"deduplication_savings": totalWasted,
-		"last_scan":         m.scanState.lastResult,
+		"last_scan":             m.scanState.lastResult,
 	}, nil
 }
-

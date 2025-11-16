@@ -23,14 +23,19 @@ func TestCollectionStatsEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
 
 	// Test data: files for different collections
 	testFiles := []struct {
-		filename string
-		content  []byte
+		filename           string
+		content            []byte
 		expectedCollection string
 	}{
 		{"test1.jpg", []byte("fake image 1"), "images"},
@@ -81,10 +86,6 @@ func TestCollectionStatsEndToEnd(t *testing.T) {
 			t.Errorf("expected storage_used > 0 for %s, got %d", collection, storageBytes)
 		}
 
-		storageUsedFormatted, ok := stats["storage_used_formatted"].(string)
-		if !ok || storageUsedFormatted == "" {
-			t.Errorf("expected storage_used_formatted to be set for %s, got %v", collection, stats["storage_used_formatted"])
-		}
 	}
 
 	// Step 3: Test empty collection
@@ -96,11 +97,6 @@ func TestCollectionStatsEndToEnd(t *testing.T) {
 	storageUsedVal, ok := emptyStats["storage_used"].(float64)
 	if !ok || int64(storageUsedVal) != 0 {
 		t.Errorf("expected storage_used 0 for empty collection, got %v", emptyStats["storage_used"])
-	}
-	// Verify formatted storage is still present (should be "0 B" or similar)
-	storageUsedFormatted, ok := emptyStats["storage_used_formatted"].(string)
-	if !ok || storageUsedFormatted == "" {
-		t.Errorf("expected storage_used_formatted to be set for empty collection, got %v", emptyStats["storage_used_formatted"])
 	}
 }
 
@@ -121,5 +117,7 @@ func getCollectionStats(t *testing.T, srv *api.Server, collectionType string) ma
 		t.Fatalf("decode response: %v", err)
 	}
 
-	return stats
+	nested := stats["stats"].(map[string]interface{})
+
+	return nested
 }

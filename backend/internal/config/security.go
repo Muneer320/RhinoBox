@@ -20,12 +20,12 @@ type SecurityConfig struct {
 	CORSAllowCreds   bool
 
 	// Security headers
-	SecurityHeadersEnabled bool
-	ContentTypeOptions     string
-	FrameOptions           string
-	XSSProtection          string
-	ReferrerPolicy         string
-	PermissionsPolicy      string
+	SecurityHeadersEnabled  bool
+	ContentTypeOptions      string
+	FrameOptions            string
+	XSSProtection           string
+	ReferrerPolicy          string
+	PermissionsPolicy       string
 	StrictTransportSecurity string
 
 	// Rate limiting
@@ -51,20 +51,20 @@ func LoadSecurityConfig() SecurityConfig {
 	cfg := SecurityConfig{
 		// CORS defaults
 		CORSEnabled:      getBoolEnv("RHINOBOX_CORS_ENABLED", true),
-		CORSOrigins:      getStringSliceEnv("RHINOBOX_CORS_ORIGINS", []string{"http://localhost:5173", "http://127.0.0.1:5173", "*"}),
+		CORSOrigins:      getStringSliceEnv("RHINOBOX_CORS_ORIGINS", []string{"http://localhost:5173", "http://127.0.0.1:5173"}),
 		CORSAllowMethods: getStringSliceEnv("RHINOBOX_CORS_METHODS", []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
 		CORSAllowHeaders: getStringSliceEnv("RHINOBOX_CORS_HEADERS", []string{"Content-Type", "Authorization", "X-Requested-With"}),
 		CORSMaxAge:       getDurationEnv("RHINOBOX_CORS_MAX_AGE", 3600*time.Second),
 		CORSAllowCreds:   getBoolEnv("RHINOBOX_CORS_CREDENTIALS", false),
 
 		// Security headers defaults
-		SecurityHeadersEnabled:     getBoolEnv("RHINOBOX_SECURITY_HEADERS_ENABLED", true),
-		ContentTypeOptions:          getEnv("RHINOBOX_HEADER_CONTENT_TYPE_OPTIONS", "nosniff"),
-		FrameOptions:                getEnv("RHINOBOX_HEADER_FRAME_OPTIONS", "DENY"),
-		XSSProtection:               getEnv("RHINOBOX_HEADER_XSS_PROTECTION", "1; mode=block"),
-		ReferrerPolicy:              getEnv("RHINOBOX_HEADER_REFERRER_POLICY", "strict-origin-when-cross-origin"),
-		PermissionsPolicy:           getEnv("RHINOBOX_HEADER_PERMISSIONS_POLICY", "geolocation=(), microphone=(), camera=()"),
-		StrictTransportSecurity:     getEnv("RHINOBOX_HEADER_HSTS", ""), // empty = disabled by default
+		SecurityHeadersEnabled:  getBoolEnv("RHINOBOX_SECURITY_HEADERS_ENABLED", true),
+		ContentTypeOptions:      getEnv("RHINOBOX_HEADER_CONTENT_TYPE_OPTIONS", "nosniff"),
+		FrameOptions:            getEnv("RHINOBOX_HEADER_FRAME_OPTIONS", "DENY"),
+		XSSProtection:           getEnv("RHINOBOX_HEADER_XSS_PROTECTION", "1; mode=block"),
+		ReferrerPolicy:          getEnv("RHINOBOX_HEADER_REFERRER_POLICY", "strict-origin-when-cross-origin"),
+		PermissionsPolicy:       getEnv("RHINOBOX_HEADER_PERMISSIONS_POLICY", "geolocation=(), microphone=(), camera=()"),
+		StrictTransportSecurity: getEnv("RHINOBOX_HEADER_HSTS", ""), // empty = disabled by default
 
 		// Rate limiting defaults
 		RateLimitEnabled:    getBoolEnv("RHINOBOX_RATE_LIMIT_ENABLED", true),
@@ -76,7 +76,7 @@ func LoadSecurityConfig() SecurityConfig {
 
 		// Request size limits (default 2GB to support large file uploads, separate from upload size)
 		// Note: This should be less than or equal to MaxUploadBytes in config.go (25 GiB)
-		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 2*1024*1024*1024),
+		MaxRequestSize: getInt64Env("RHINOBOX_MAX_REQUEST_SIZE", 512*1024*1024),
 
 		// IP filtering defaults
 		IPWhitelistEnabled: getBoolEnv("RHINOBOX_IP_WHITELIST_ENABLED", false),
@@ -231,4 +231,3 @@ func parseIPList(list string) []net.IPNet {
 
 	return result
 }
-

@@ -152,33 +152,33 @@ func (idx *ReferenceIndex) GetReferences(physicalPath string) []string {
 
 // CopyRequest captures parameters for copying a file.
 type CopyRequest struct {
-	Hash         string            `json:"hash"`
-	NewName      string            `json:"new_name,omitempty"`
-	NewCategory  string            `json:"new_category,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	HardLink     bool              `json:"hard_link,omitempty"`
+	Hash        string            `json:"hash"`
+	NewName     string            `json:"new_name,omitempty"`
+	NewCategory string            `json:"new_category,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	HardLink    bool              `json:"hard_link,omitempty"`
 }
 
 // CopyResult surfaces the outcome of a copy operation.
 type CopyResult struct {
-	OriginalHash string            `json:"original_hash"`
-	NewHash      string            `json:"new_hash"`
-	OriginalMeta FileMetadata      `json:"original_metadata"`
-	NewMeta      FileMetadata      `json:"new_metadata"`
-	HardLink     bool              `json:"hard_link"`
-	Message      string            `json:"message,omitempty"`
+	OriginalHash string       `json:"original_hash"`
+	NewHash      string       `json:"new_hash"`
+	OriginalMeta FileMetadata `json:"original_metadata"`
+	NewMeta      FileMetadata `json:"new_metadata"`
+	HardLink     bool         `json:"hard_link"`
+	Message      string       `json:"message,omitempty"`
 }
 
 // CopyLog captures audit trail for copy operations.
 type CopyLog struct {
-	OriginalHash string            `json:"original_hash"`
-	NewHash      string            `json:"new_hash"`
-	OriginalName string            `json:"original_name"`
-	NewName      string            `json:"new_name"`
-	OriginalPath string            `json:"original_path"`
-	NewPath      string            `json:"new_path"`
-	HardLink     bool              `json:"hard_link"`
-	CopiedAt     time.Time         `json:"copied_at"`
+	OriginalHash string    `json:"original_hash"`
+	NewHash      string    `json:"new_hash"`
+	OriginalName string    `json:"original_name"`
+	NewName      string    `json:"new_name"`
+	OriginalPath string    `json:"original_path"`
+	NewPath      string    `json:"new_path"`
+	HardLink     bool      `json:"hard_link"`
+	CopiedAt     time.Time `json:"copied_at"`
 }
 
 // CopyFile creates a copy of an existing file with new metadata.
@@ -217,6 +217,9 @@ func (m *Manager) CopyFile(req CopyRequest) (*CopyResult, error) {
 	newCategory := req.NewCategory
 	if newCategory == "" {
 		newCategory = original.Category
+	}
+	if err := ValidateCategory(newCategory); err != nil {
+		return nil, err
 	}
 
 	// Generate new hash for the copy (different from original)
@@ -424,4 +427,3 @@ func (m *Manager) logCopy(log CopyLog) error {
 	encoder := json.NewEncoder(file)
 	return encoder.Encode(log)
 }
-

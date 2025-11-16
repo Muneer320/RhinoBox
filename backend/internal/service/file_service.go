@@ -36,12 +36,13 @@ func (s *FileService) StoreFile(req FileStoreRequest) (*FileStoreResponse, error
 	}
 
 	storeReq := storage.StoreRequest{
-		Reader:       reader,
-		Filename:     req.Filename,
-		MimeType:     req.MimeType,
-		Size:         req.Size,
-		Metadata:     req.Metadata,
-		CategoryHint: req.CategoryHint,
+		Reader:           reader,
+		Filename:         req.Filename,
+		MimeType:         req.MimeType,
+		Size:             req.Size,
+		Metadata:         req.Metadata,
+		CategoryHint:     req.CategoryHint,
+		CategoryOverride: req.CategoryOverride,
 	}
 
 	result, err := s.storage.StoreFile(storeReq)
@@ -411,4 +412,3 @@ func (s *FileService) UpdateNote(fileID, noteID, text string) (*storage.Note, er
 func (s *FileService) DeleteNote(fileID, noteID string) error {
 	return s.storage.DeleteNote(fileID, noteID)
 }
-

@@ -6,9 +6,9 @@ import (
 
 // AppConfig represents the application configuration response
 type AppConfig struct {
-	AuthEnabled bool               `json:"auth_enabled"`
-	Version     string             `json:"version"`
-	Features    map[string]bool    `json:"features"`
+	AuthEnabled bool            `json:"auth_enabled"`
+	Version     string          `json:"version"`
+	Features    map[string]bool `json:"features"`
 }
 
 // handleConfig handles GET /api/config
@@ -21,7 +21,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		Version:     "1.0.0", // TODO: Get from build info or version file
 		Features: map[string]bool{
 			"authentication":  s.cfg.AuthEnabled,
-			"multi_tenant":    true, // Always enabled
+			"multi_tenant":    false, // Local single-user storage
 			"async_ingestion": false, // TODO: Read from config when implemented
 			"deduplication":   true,  // Always enabled
 		},
@@ -29,5 +29,3 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, config)
 }
-
-

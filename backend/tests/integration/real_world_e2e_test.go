@@ -20,24 +20,24 @@ import (
 
 // PerformanceMetrics tracks performance data for test reporting
 type PerformanceMetrics struct {
-	Operation          string
-	Duration           time.Duration
-	Throughput         float64 // ops/sec
-	LatencyP50         time.Duration
-	LatencyP95         time.Duration
-	LatencyP99         time.Duration
-	SuccessCount       int
-	FailureCount       int
-	TotalBytes         int64
-	AverageFileSize    int64
-	ErrorRate          float64
-	ConcurrentOps      int
-	Timestamp          time.Time
+	Operation       string
+	Duration        time.Duration
+	Throughput      float64 // ops/sec
+	LatencyP50      time.Duration
+	LatencyP95      time.Duration
+	LatencyP99      time.Duration
+	SuccessCount    int
+	FailureCount    int
+	TotalBytes      int64
+	AverageFileSize int64
+	ErrorRate       float64
+	ConcurrentOps   int
+	Timestamp       time.Time
 }
 
 // TestRealWorldEndToEnd performs comprehensive end-to-end testing with real files from Downloads
 func TestRealWorldEndToEnd(t *testing.T) {
-	downloadsDir := filepath.Join(os.Getenv("HOME"), "Downloads")
+	downloadsDir := fixtureDownloads(t)
 	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
 		t.Skip("Downloads directory not found, skipping real-world E2E test")
 	}
@@ -51,6 +51,11 @@ func TestRealWorldEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -76,7 +81,7 @@ func TestRealWorldEndToEnd(t *testing.T) {
 	t.Run("Upload_RealWorldFiles", func(t *testing.T) {
 		uploadMetrics := testUploadRealWorldFiles(t, srv, testFiles)
 		allMetrics = append(allMetrics, uploadMetrics...)
-		
+
 		// Collect hashes for subsequent tests
 		for _, file := range testFiles {
 			hash, _ := uploadRealFile(t, srv, file, filepath.Base(file))
@@ -129,7 +134,7 @@ func testUploadRealWorldFiles(t *testing.T, srv *api.Server, files []string) []P
 
 	for i, filePath := range files {
 		fileStart := time.Now()
-		
+
 		// Read file info
 		fileInfo, err := os.Stat(filePath)
 		if err != nil {
@@ -150,8 +155,8 @@ func testUploadRealWorldFiles(t *testing.T, srv *api.Server, files []string) []P
 		latencies = append(latencies, duration)
 		totalBytes += fileInfo.Size()
 
-		t.Logf("Uploaded [%d/%d] %s (%.2f KB, %v)", 
-			i+1, len(files), filepath.Base(filePath), 
+		t.Logf("Uploaded [%d/%d] %s (%.2f KB, %v)",
+			i+1, len(files), filepath.Base(filePath),
 			float64(fileInfo.Size())/1024, duration)
 	}
 
@@ -236,9 +241,9 @@ func testMetadataOperations(t *testing.T, srv *api.Server, hashes []string) []Pe
 		req := map[string]interface{}{
 			"action": "merge",
 			"metadata": map[string]string{
-				"test_tag":     fmt.Sprintf("e2e_test_%d", i),
+				"test_tag":       fmt.Sprintf("e2e_test_%d", i),
 				"test_timestamp": time.Now().Format(time.RFC3339),
-				"test_category": "real_world_e2e",
+				"test_category":  "real_world_e2e",
 			},
 		}
 		updateResp := updateMetadata(t, srv, hash, req, http.StatusOK)
@@ -425,7 +430,7 @@ func findRealWorldTestFiles(t *testing.T, dir string, maxSize int64) []string {
 		if entry.IsDir() {
 			continue
 		}
-		
+
 		// Skip hidden files and system files
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -440,7 +445,7 @@ func findRealWorldTestFiles(t *testing.T, dir string, maxSize int64) []string {
 		if info.Size() > 0 && info.Size() <= maxSize {
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
 			// Include common file types
-			validExts := []string{".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt", ".doc", ".docx", 
+			validExts := []string{".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt", ".doc", ".docx",
 				".mp4", ".mp3", ".wav", ".zip", ".epub", ".odt", ".webp"}
 			for _, validExt := range validExts {
 				if ext == validExt {
@@ -468,13 +473,13 @@ func calculatePercentiles(durations []time.Duration) (p50, p95, p99 time.Duratio
 	if len(durations) == 0 {
 		return 0, 0, 0
 	}
-	
+
 	sortDurations(durations)
-	
+
 	p50Idx := int(float64(len(durations)) * 0.50)
 	p95Idx := int(float64(len(durations)) * 0.95)
 	p99Idx := int(float64(len(durations)) * 0.99)
-	
+
 	if p50Idx >= len(durations) {
 		p50Idx = len(durations) - 1
 	}
@@ -484,7 +489,7 @@ func calculatePercentiles(durations []time.Duration) (p50, p95, p99 time.Duratio
 	if p99Idx >= len(durations) {
 		p99Idx = len(durations) - 1
 	}
-	
+
 	return durations[p50Idx], durations[p95Idx], durations[p99Idx]
 }
 
@@ -492,7 +497,7 @@ func printMetricsReport(t *testing.T, metrics []PerformanceMetrics) {
 	t.Log("\n" + strings.Repeat("=", 80))
 	t.Log("COMPREHENSIVE PERFORMANCE METRICS REPORT")
 	t.Log(strings.Repeat("=", 80))
-	
+
 	for _, m := range metrics {
 		t.Logf("\nOperation: %s", m.Operation)
 		t.Logf("  Duration: %v", m.Duration)
@@ -511,7 +516,7 @@ func printMetricsReport(t *testing.T, metrics []PerformanceMetrics) {
 			t.Logf("  Total Bytes: %.2f MB", float64(m.TotalBytes)/(1024*1024))
 		}
 	}
-	
+
 	t.Log(strings.Repeat("=", 80))
 }
 
@@ -524,7 +529,7 @@ func updateMetadata(t *testing.T, srv *api.Server, hash string, reqBody map[stri
 
 	req := httptest.NewRequest("PATCH", "/files/"+hash+"/metadata", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	w := httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)
 

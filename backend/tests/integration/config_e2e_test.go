@@ -65,8 +65,19 @@ func TestConfigEndpointE2E(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			server, err := api.NewServer(cfg, logger)
+			t.Cleanup(func() {
+				if server != nil {
+					server.Stop()
+				}
+			})
+			if tt.expectAuth {
+				if err == nil {
+					t.Fatal("unsupported authentication must fail startup")
+				}
+				return
+			}
 			if err != nil {
-				t.Fatalf("failed to create server: %v", err)
+				t.Fatal(err)
 			}
 
 			// Test endpoint
@@ -101,11 +112,16 @@ func TestConfigEndpointPublicAccess(t *testing.T) {
 		Addr:           ":0",
 		DataDir:        t.TempDir(),
 		MaxUploadBytes: 32 * 1024 * 1024,
-		AuthEnabled:    true, // Even with auth enabled, config should be public
+		AuthEnabled:    false, // Config is public in the local demo
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -119,4 +135,3 @@ func TestConfigEndpointPublicAccess(t *testing.T) {
 		t.Errorf("expected status 200 (public access), got %d: %s", rr.Code, rr.Body.String())
 	}
 }
-

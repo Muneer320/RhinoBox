@@ -17,7 +17,7 @@ import (
 	"log/slog"
 )
 
-func setupTestServer(t *testing.T) (*api.Server, string) {
+func setupValidationTestServer(t *testing.T) (*api.Server, string) {
 	tempDir, err := os.MkdirTemp("", "rhinobox_test_*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -31,6 +31,11 @@ func setupTestServer(t *testing.T) (*api.Server, string) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -39,8 +44,8 @@ func setupTestServer(t *testing.T) (*api.Server, string) {
 }
 
 func TestValidation_JSONIngest_Valid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	body := map[string]interface{}{
 		"namespace": "test",
@@ -62,8 +67,8 @@ func TestValidation_JSONIngest_Valid(t *testing.T) {
 }
 
 func TestValidation_JSONIngest_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name string
@@ -129,8 +134,8 @@ func TestValidation_JSONIngest_Invalid(t *testing.T) {
 }
 
 func TestValidation_FileRename_Valid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	body := map[string]interface{}{
 		"hash":     "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
@@ -153,8 +158,8 @@ func TestValidation_FileRename_Valid(t *testing.T) {
 }
 
 func TestValidation_FileRename_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name string
@@ -205,8 +210,8 @@ func TestValidation_FileRename_Invalid(t *testing.T) {
 }
 
 func TestValidation_FileDelete_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Test missing file_id
 	req := httptest.NewRequest("DELETE", "/files/", nil)
@@ -229,8 +234,8 @@ func TestValidation_FileDelete_Invalid(t *testing.T) {
 }
 
 func TestValidation_FileSearch_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Test missing name parameter
 	req := httptest.NewRequest("GET", "/files/search", nil)
@@ -252,8 +257,8 @@ func TestValidation_FileSearch_Invalid(t *testing.T) {
 }
 
 func TestValidation_FileDownload_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Test missing both hash and path
 	req := httptest.NewRequest("GET", "/files/download", nil)
@@ -275,8 +280,8 @@ func TestValidation_FileDownload_Invalid(t *testing.T) {
 }
 
 func TestValidation_FileMetadata_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Test missing hash
 	req := httptest.NewRequest("GET", "/files/metadata", nil)
@@ -298,8 +303,8 @@ func TestValidation_FileMetadata_Invalid(t *testing.T) {
 }
 
 func TestValidation_MetadataUpdate_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name string
@@ -360,15 +365,15 @@ func TestValidation_MetadataUpdate_Invalid(t *testing.T) {
 }
 
 func TestValidation_MediaIngest_FileSize(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Create a file that's too large (assuming MaxUploadBytes is 10MB)
 	// We'll test with a smaller limit by creating a large multipart form
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", "large.jpg")
-	
+
 	// Write data larger than typical limit (but we can't easily test this without modifying config)
 	// For now, just test that the endpoint accepts valid files
 	part.Write([]byte("fake image data"))
@@ -387,8 +392,8 @@ func TestValidation_MediaIngest_FileSize(t *testing.T) {
 }
 
 func TestValidation_BatchMetadataUpdate_Invalid(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name string
@@ -439,8 +444,8 @@ func TestValidation_BatchMetadataUpdate_Invalid(t *testing.T) {
 }
 
 func TestValidation_ErrorResponseFormat(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Make a request that will fail validation
 	req := httptest.NewRequest("POST", "/ingest/json", strings.NewReader(`{}`))
@@ -476,11 +481,7 @@ func TestValidation_ErrorResponseFormat(t *testing.T) {
 
 // Benchmark validation middleware performance
 func BenchmarkValidation_JSONIngest(b *testing.B) {
-	tempDir, err := os.MkdirTemp("", "rhinobox_bench_*")
-	if err != nil {
-		b.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := b.TempDir()
 
 	cfg := config.Config{
 		Addr:           ":0",
@@ -490,6 +491,11 @@ func BenchmarkValidation_JSONIngest(b *testing.B) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	server, err := api.NewServer(cfg, logger)
+	b.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		b.Fatalf("failed to create server: %v", err)
 	}
@@ -512,8 +518,8 @@ func BenchmarkValidation_JSONIngest(b *testing.B) {
 }
 
 func TestValidation_ConsistentErrorFormat(t *testing.T) {
-	server, tempDir := setupTestServer(t)
-	defer os.RemoveAll(tempDir)
+	server, tempDir := setupValidationTestServer(t)
+	defer func() { server.Stop(); os.RemoveAll(tempDir) }()
 
 	// Test multiple endpoints to ensure consistent error format
 	endpoints := []struct {
@@ -555,4 +561,3 @@ func TestValidation_ConsistentErrorFormat(t *testing.T) {
 		})
 	}
 }
-

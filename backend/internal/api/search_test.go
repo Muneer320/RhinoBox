@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"testing"
@@ -33,7 +35,10 @@ func TestFileSearch_ByName(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -64,38 +69,38 @@ func TestFileSearch_ByName(t *testing.T) {
 
 	// Test search by name
 	tests := []struct {
-		name         string
-		query        string
-		expectedMin  int
-		expectedMax  int
+		name          string
+		query         string
+		expectedMin   int
+		expectedMax   int
 		shouldContain []string
 	}{
 		{
-			name:         "search by partial name",
-			query:        "?name=report",
-			expectedMin:  2,
-			expectedMax:  3,
+			name:          "search by partial name",
+			query:         "?name=report",
+			expectedMin:   2,
+			expectedMax:   3,
 			shouldContain: []string{"report_2024.pdf", "report_2023.pdf"},
 		},
 		{
-			name:         "search by exact name",
-			query:        "?name=document.txt",
-			expectedMin:  1,
-			expectedMax:  1,
+			name:          "search by exact name",
+			query:         "?name=document.txt",
+			expectedMin:   1,
+			expectedMax:   1,
 			shouldContain: []string{"document.txt"},
 		},
 		{
-			name:         "case insensitive search",
-			query:        "?name=REPORT",
-			expectedMin:  2,
-			expectedMax:  3,
+			name:          "case insensitive search",
+			query:         "?name=REPORT",
+			expectedMin:   2,
+			expectedMax:   3,
 			shouldContain: []string{"report_2024.pdf", "report_2023.pdf"},
 		},
 		{
-			name:         "no matches",
-			query:        "?name=nonexistent",
-			expectedMin:  0,
-			expectedMax:  0,
+			name:          "no matches",
+			query:         "?name=nonexistent",
+			expectedMin:   0,
+			expectedMax:   0,
 			shouldContain: []string{},
 		},
 	}
@@ -111,9 +116,9 @@ func TestFileSearch_ByName(t *testing.T) {
 			}
 
 			var payload struct {
-				Filters map[string]any   `json:"filters"`
+				Filters map[string]any         `json:"filters"`
 				Results []storage.FileMetadata `json:"results"`
-				Count   int                `json:"count"`
+				Count   int                    `json:"count"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode response: %v", err)
@@ -155,7 +160,10 @@ func TestFileSearch_ByExtension(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -173,32 +181,32 @@ func TestFileSearch_ByExtension(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		query        string
+		name          string
+		query         string
 		expectedCount int
 		shouldContain []string
 	}{
 		{
-			name:         "search by extension with dot",
-			query:        "?extension=.pdf",
+			name:          "search by extension with dot",
+			query:         "?extension=.pdf",
 			expectedCount: 2,
 			shouldContain: []string{"file1.pdf", "file2.PDF"},
 		},
 		{
-			name:         "search by extension without dot",
-			query:        "?extension=pdf",
+			name:          "search by extension without dot",
+			query:         "?extension=pdf",
 			expectedCount: 2,
 			shouldContain: []string{"file1.pdf", "file2.PDF"},
 		},
 		{
-			name:         "search case insensitive extension",
-			query:        "?extension=PDF",
+			name:          "search case insensitive extension",
+			query:         "?extension=PDF",
 			expectedCount: 2,
 			shouldContain: []string{"file1.pdf", "file2.PDF"},
 		},
 		{
-			name:         "search by jpg extension",
-			query:        "?extension=jpg",
+			name:          "search by jpg extension",
+			query:         "?extension=jpg",
 			expectedCount: 1,
 			shouldContain: []string{"file4.jpg"},
 		},
@@ -216,7 +224,7 @@ func TestFileSearch_ByExtension(t *testing.T) {
 
 			var payload struct {
 				Results []storage.FileMetadata `json:"results"`
-				Count   int                `json:"count"`
+				Count   int                    `json:"count"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode response: %v", err)
@@ -259,7 +267,10 @@ func TestFileSearch_ByType(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -277,31 +288,31 @@ func TestFileSearch_ByType(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		query        string
-		expectedMin  int
-		expectedMax  int
+		name          string
+		query         string
+		expectedMin   int
+		expectedMax   int
 		shouldContain []string
 	}{
 		{
-			name:         "search by image type",
-			query:        "?type=image",
-			expectedMin:  2,
-			expectedMax:  2,
+			name:          "search by image type",
+			query:         "?type=image",
+			expectedMin:   2,
+			expectedMax:   2,
 			shouldContain: []string{"photo1.jpg", "photo2.png"},
 		},
 		{
-			name:         "search by video type",
-			query:        "?type=video",
-			expectedMin:  1,
-			expectedMax:  1,
+			name:          "search by video type",
+			query:         "?type=video",
+			expectedMin:   1,
+			expectedMax:   1,
 			shouldContain: []string{"video1.mp4"},
 		},
 		{
-			name:         "search by audio type",
-			query:        "?type=audio",
-			expectedMin:  1,
-			expectedMax:  1,
+			name:          "search by audio type",
+			query:         "?type=audio",
+			expectedMin:   1,
+			expectedMax:   1,
 			shouldContain: []string{"audio1.mp3"},
 		},
 	}
@@ -318,7 +329,7 @@ func TestFileSearch_ByType(t *testing.T) {
 
 			var payload struct {
 				Results []storage.FileMetadata `json:"results"`
-				Count   int                `json:"count"`
+				Count   int                    `json:"count"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode response: %v", err)
@@ -359,7 +370,10 @@ func TestFileSearch_ByDateRange(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -383,33 +397,33 @@ func TestFileSearch_ByDateRange(t *testing.T) {
 	tomorrow := now.AddDate(0, 0, 1)
 
 	tests := []struct {
-		name         string
-		query        string
-		expectedMin  int
+		name          string
+		query         string
+		expectedMin   int
 		shouldContain []string
 	}{
 		{
-			name:         "search by date range (RFC3339)",
-			query:        "?date_from=" + url.QueryEscape(yesterday.Format(time.RFC3339)) + "&date_to=" + url.QueryEscape(tomorrow.Format(time.RFC3339)),
-			expectedMin:  len(files),
+			name:          "search by date range (RFC3339)",
+			query:         "?date_from=" + url.QueryEscape(yesterday.Format(time.RFC3339)) + "&date_to=" + url.QueryEscape(tomorrow.Format(time.RFC3339)),
+			expectedMin:   len(files),
 			shouldContain: []string{"file1.txt", "file2.txt", "file3.txt"},
 		},
 		{
-			name:         "search by date range (YYYY-MM-DD)",
-			query:        "?date_from=" + yesterday.Format("2006-01-02") + "&date_to=" + tomorrow.Format("2006-01-02"),
-			expectedMin:  len(files),
+			name:          "search by date range (YYYY-MM-DD)",
+			query:         "?date_from=" + yesterday.Format("2006-01-02") + "&date_to=" + tomorrow.Format("2006-01-02"),
+			expectedMin:   len(files),
 			shouldContain: []string{"file1.txt", "file2.txt", "file3.txt"},
 		},
 		{
-			name:         "search by date_from only",
-			query:        "?date_from=" + yesterday.Format("2006-01-02"),
-			expectedMin:  len(files),
+			name:          "search by date_from only",
+			query:         "?date_from=" + yesterday.Format("2006-01-02"),
+			expectedMin:   len(files),
 			shouldContain: []string{"file1.txt", "file2.txt", "file3.txt"},
 		},
 		{
-			name:         "search by date_to only",
-			query:        "?date_to=" + tomorrow.Format("2006-01-02"),
-			expectedMin:  len(files),
+			name:          "search by date_to only",
+			query:         "?date_to=" + tomorrow.Format("2006-01-02"),
+			expectedMin:   len(files),
 			shouldContain: []string{"file1.txt", "file2.txt", "file3.txt"},
 		},
 	}
@@ -426,7 +440,7 @@ func TestFileSearch_ByDateRange(t *testing.T) {
 
 			var payload struct {
 				Results []storage.FileMetadata `json:"results"`
-				Count   int                `json:"count"`
+				Count   int                    `json:"count"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode response: %v", err)
@@ -444,7 +458,7 @@ func TestFileSearch_ByMimeTypeQueryParam(t *testing.T) {
 
 	// Upload JPEG and PNG files with proper content
 	jpegContent := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46} // JPEG header
-	pngContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A} // PNG header
+	pngContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}              // PNG header
 
 	files := []struct {
 		name    string
@@ -452,15 +466,18 @@ func TestFileSearch_ByMimeTypeQueryParam(t *testing.T) {
 		mime    string
 	}{
 		{"photo1.jpg", jpegContent, "image/jpeg"},
-		{"photo2.jpg", jpegContent, "image/jpeg"},
+		{"photo2.jpg", append(append([]byte(nil), jpegContent...), 1), "image/jpeg"},
 		{"image1.png", pngContent, "image/png"},
-		{"image2.png", pngContent, "image/png"},
+		{"image2.png", append(append([]byte(nil), pngContent...), 1), "image/png"},
 	}
 
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -550,7 +567,10 @@ func TestFileSearch_CombinedFilters(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -568,26 +588,26 @@ func TestFileSearch_CombinedFilters(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		query        string
+		name          string
+		query         string
 		expectedCount int
 		shouldContain []string
 	}{
 		{
-			name:         "name and extension",
-			query:        "?name=report&extension=pdf",
+			name:          "name and extension",
+			query:         "?name=report&extension=pdf",
 			expectedCount: 2,
 			shouldContain: []string{"report_2024.pdf", "report_2023.pdf"},
 		},
 		{
-			name:         "name and type",
-			query:        "?name=report&type=image",
+			name:          "name and type",
+			query:         "?name=report&type=image",
 			expectedCount: 1,
 			shouldContain: []string{"image_report.png"},
 		},
 		{
-			name:         "extension and MIME type",
-			query:        "?extension=pdf&mime_type=application/pdf",
+			name:          "extension and MIME type",
+			query:         "?extension=pdf&mime_type=application/pdf",
 			expectedCount: 2,
 			shouldContain: []string{"report_2024.pdf", "report_2023.pdf"},
 		},
@@ -605,7 +625,7 @@ func TestFileSearch_CombinedFilters(t *testing.T) {
 
 			var payload struct {
 				Results []storage.FileMetadata `json:"results"`
-				Count   int                `json:"count"`
+				Count   int                    `json:"count"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode response: %v", err)
@@ -642,13 +662,15 @@ func TestFileSearch_NoFilters(t *testing.T) {
 	}
 
 	var errorPayload struct {
-		Error string `json:"error"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&errorPayload); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if !strings.Contains(errorPayload.Error, "at least one filter") {
-		t.Errorf("expected error about missing filters, got: %s", errorPayload.Error)
+	if !strings.Contains(errorPayload.Error.Message, "at least one search filter") {
+		t.Errorf("expected error about missing filters, got: %s", errorPayload.Error.Message)
 	}
 }
 
@@ -665,13 +687,15 @@ func TestFileSearch_InvalidDateFormat(t *testing.T) {
 	}
 
 	var errorPayload struct {
-		Error string `json:"error"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&errorPayload); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
-	if !strings.Contains(errorPayload.Error, "invalid date_from") {
-		t.Errorf("expected error about invalid date format, got: %s", errorPayload.Error)
+	if !strings.Contains(errorPayload.Error.Message, "invalid date_from") {
+		t.Errorf("expected error about invalid date format, got: %s", errorPayload.Error.Message)
 	}
 }
 
@@ -693,7 +717,10 @@ func TestFileSearch_ByMimeType(t *testing.T) {
 	for _, f := range files {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		fileWriter, err := writer.CreateFormFile("file", f.name)
+		fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+			"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": f.name})},
+			"Content-Type":        {f.mime},
+		})
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
@@ -731,7 +758,7 @@ func TestFileSearch_ByMimeType(t *testing.T) {
 
 	var payload struct {
 		Results []storage.FileMetadata `json:"results"`
-		Count   int                `json:"count"`
+		Count   int                    `json:"count"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)

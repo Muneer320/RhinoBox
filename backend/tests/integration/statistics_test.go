@@ -23,6 +23,11 @@ func TestStatisticsEndToEnd(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -40,7 +45,7 @@ func TestStatisticsEndToEnd(t *testing.T) {
 	testFiles := []struct {
 		name     string
 		content  []byte
-		category  string
+		category string
 		mimeType string
 	}{
 		{"image1.jpg", []byte("fake jpeg content"), "images", "image/jpeg"},
@@ -132,6 +137,11 @@ func TestStatisticsResponseFormat(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -145,11 +155,11 @@ func TestStatisticsResponseFormat(t *testing.T) {
 	// Verify all expected fields exist (for frontend compatibility)
 	requiredFields := []string{
 		"totalFiles",
-		"files",              // Alias
+		"files", // Alias
 		"storageUsed",
-		"storage",           // Alias
+		"storage", // Alias
 		"collections",
-		"collectionCount",   // Alias
+		"collectionCount", // Alias
 		"storageUsedBytes",
 		"collectionDetails",
 	}
@@ -190,5 +200,3 @@ func getStatistics(t *testing.T, srv *api.Server) map[string]interface{} {
 
 	return stats
 }
-
-

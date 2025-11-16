@@ -26,6 +26,11 @@ func TestNotesEndToEnd(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -276,4 +281,3 @@ func createMultipartFormForNotes(t *testing.T, filename string, content []byte, 
 	writer.Close()
 	return body, writer.FormDataContentType()
 }
-

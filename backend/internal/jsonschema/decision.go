@@ -78,14 +78,14 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 	if reason == "" {
 		reason = "simple consistent structure"
 	}
-	
+
 	// Switch to NoSQL only if we have clear indicators:
 	// 1. Deep nesting (> 3 levels) - strong NoSQL indicator
 	// 2. Very low consistency (< 0.5) - schema is too inconsistent
 	// 3. High field variation (> 30% unique field sets) - too flexible (only for multiple documents)
 	// 4. Low consistency (< 0.6) combined with nested structure (> 2 levels)
 	shouldUseNoSQL := false
-	
+
 	if analysis.MaxNestingDepth > 3 {
 		shouldUseNoSQL = true
 	}
@@ -112,7 +112,7 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 	if analysis.SchemaConsistency < 0.6 && analysis.MaxNestingDepth > 2 {
 		shouldUseNoSQL = true
 	}
-	
+
 	// Only switch to NoSQL if we have clear indicators
 	if shouldUseNoSQL {
 		engine = "nosql"
@@ -125,7 +125,7 @@ func DecideStorage(namespace string, docs []map[string]any, summary Summary, ana
 			reason = "optimized for flexible schema"
 		}
 	}
-	
+
 	reason = fmt.Sprintf("%s (score %.2f)", reason, score)
 
 	table := sanitizeIdentifier(namespace)
@@ -195,7 +195,7 @@ func nullability(field FieldSummary) string {
 }
 
 func quoteIdentifier(id string) string {
-	return fmt.Sprintf("\"%s\"", sanitizeIdentifier(id))
+	return `"` + strings.ReplaceAll(id, `"`, `""`) + `"`
 }
 
 func sanitizeIdentifier(id string) string {

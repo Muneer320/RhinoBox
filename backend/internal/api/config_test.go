@@ -26,8 +26,8 @@ func TestHandleConfig(t *testing.T) {
 				if cfg.AuthEnabled {
 					t.Error("expected auth_enabled to be false")
 				}
-				if !cfg.Features["multi_tenant"] {
-					t.Error("expected multi_tenant to be true")
+				if cfg.Features["multi_tenant"] {
+					t.Error("expected multi_tenant to be false")
 				}
 				if !cfg.Features["deduplication"] {
 					t.Error("expected deduplication to be true")
@@ -60,8 +60,19 @@ func TestHandleConfig(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 			server, err := NewServer(cfg, logger)
+			t.Cleanup(func() {
+				if server != nil {
+					server.Stop()
+				}
+			})
+			if tt.authEnabled {
+				if err == nil {
+					t.Fatal("unsupported authentication must fail startup")
+				}
+				return
+			}
 			if err != nil {
-				t.Fatalf("failed to create server: %v", err)
+				t.Fatal(err)
 			}
 
 			req := httptest.NewRequest("GET", "/api/config", nil)
@@ -98,11 +109,16 @@ func TestHandleConfigPublicAccess(t *testing.T) {
 	cfg := config.Config{
 		DataDir:        tmpDir,
 		MaxUploadBytes: 10 * 1024 * 1024,
-		AuthEnabled:    true, // Even with auth enabled, config should be public
+		AuthEnabled:    false, // Config is public in the unauthenticated local demo
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -127,6 +143,11 @@ func TestHandleConfigResponseFormat(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -161,5 +182,3 @@ func TestHandleConfigResponseFormat(t *testing.T) {
 		}
 	}
 }
-
-

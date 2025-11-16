@@ -64,7 +64,9 @@ func GeneratePostgresSchema(table string, docs []map[string]any) (string, map[st
 
 	columnDefs := map[string]ColumnDef{}
 	columns := make([]string, 0, len(stats)+2)
-	columns = append(columns, "    id SERIAL PRIMARY KEY")
+	if _, exists := stats["id"]; !exists {
+		columns = append(columns, "    id BIGSERIAL PRIMARY KEY")
+	}
 
 	keys := make([]string, 0, len(stats))
 	for k := range stats {
@@ -84,7 +86,9 @@ func GeneratePostgresSchema(table string, docs []map[string]any) (string, map[st
 		columns = append(columns, fmt.Sprintf("    %s %s %s", quoteIdentifier(field), sqlType, nullability))
 	}
 
-	columns = append(columns, "    created_at TIMESTAMPTZ DEFAULT NOW()")
+	if _, exists := stats["created_at"]; !exists {
+		columns = append(columns, "    created_at TIMESTAMPTZ DEFAULT NOW()")
+	}
 	ddl := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n%s\n);", quoteIdentifier(table), strings.Join(columns, ",\n"))
 	return ddl, columnDefs
 }
@@ -119,7 +123,7 @@ func inferKind(value any) (columnKind, int) {
 	case bool:
 		return kindBoolean, 0
 	case json.Number:
-		if strings.Contains(v.String(), ".") {
+		if strings.ContainsAny(v.String(), ".eE") {
 			return kindDouble, 0
 		}
 		return kindInteger, 0

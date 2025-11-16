@@ -20,12 +20,17 @@ import (
 func TestDuplicateScanE2E(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		DataDir:      root,
+		DataDir:        root,
 		MaxUploadBytes: 100 * 1024 * 1024, // 100MB
 	}
 	logger := slog.Default()
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -111,6 +116,7 @@ func TestDuplicateScanE2E(t *testing.T) {
 	}
 
 	// Reload server to pick up new metadata
+	server.Stop()
 	server, err = api.NewServer(cfg, logger)
 	if err != nil {
 		t.Fatalf("failed to reload server: %v", err)
@@ -163,12 +169,17 @@ func TestDuplicateScanE2E(t *testing.T) {
 func TestDuplicateVerifyE2E(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		DataDir:      root,
+		DataDir:        root,
 		MaxUploadBytes: 100 * 1024 * 1024,
 	}
 	logger := slog.Default()
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -216,12 +227,17 @@ func TestDuplicateVerifyE2E(t *testing.T) {
 func TestDuplicateMergeE2E(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		DataDir:      root,
+		DataDir:        root,
 		MaxUploadBytes: 100 * 1024 * 1024,
 	}
 	logger := slog.Default()
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -292,6 +308,7 @@ func TestDuplicateMergeE2E(t *testing.T) {
 	}
 
 	// Reload server
+	server.Stop()
 	server, err = api.NewServer(cfg, logger)
 	if err != nil {
 		t.Fatalf("failed to reload: %v", err)
@@ -317,12 +334,17 @@ func TestDuplicateMergeE2E(t *testing.T) {
 func TestDuplicateStatisticsE2E(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
-		DataDir:      root,
+		DataDir:        root,
 		MaxUploadBytes: 100 * 1024 * 1024,
 	}
 	logger := slog.Default()
 
 	server, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -356,4 +378,3 @@ func createMultipartBody(filename string, content []byte) *bytes.Buffer {
 	buf.WriteString("\r\n--testboundary--\r\n")
 	return &buf
 }
-

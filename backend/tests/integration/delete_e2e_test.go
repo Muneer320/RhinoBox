@@ -24,12 +24,7 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 		t.Skip("skipping real-world file test in short mode")
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home directory")
-	}
-
-	downloadsDir := filepath.Join(homeDir, "Downloads")
+	downloadsDir := fixtureDownloads(t)
 	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
 		t.Skip("Downloads folder not found")
 	}
@@ -43,6 +38,11 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 
 	// Step 5: Test deletion of non-existent file
 	t.Logf("Testing deletion of non-existent file...")
-	nonExistentHash := "nonexistent_hash_1234567890123456789012345678901234567890123456789012345678901234"
+	nonExistentHash := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	deleteReq := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/files/%s", nonExistentHash), nil)
 	deleteResp := httptest.NewRecorder()
 	srv.Router().ServeHTTP(deleteResp, deleteReq)
@@ -234,7 +234,7 @@ func TestFileDeletionEndToEndWithRealWorldData(t *testing.T) {
 	if err := json.Unmarshal(deleteResp.Body.Bytes(), &errorResp); err != nil {
 		t.Fatalf("failed to parse error response: %v", err)
 	}
-	if errorMsg, ok := errorResp["error"].(string); !ok || errorMsg == "" {
+	if errorMsg, ok := errorResp["error"].(map[string]interface{})["message"].(string); !ok || errorMsg == "" {
 		t.Fatalf("expected error message in response")
 	}
 
@@ -269,12 +269,7 @@ func TestFileDeletionBatchWithRealWorldData(t *testing.T) {
 		t.Skip("skipping real-world file test in short mode")
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home directory")
-	}
-
-	downloadsDir := filepath.Join(homeDir, "Downloads")
+	downloadsDir := fixtureDownloads(t)
 	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
 		t.Skip("Downloads folder not found")
 	}
@@ -288,6 +283,11 @@ func TestFileDeletionBatchWithRealWorldData(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

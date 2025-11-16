@@ -27,6 +27,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer srv.Stop()
 
 	// Configure high-performance HTTP server
 	server := &http.Server{
@@ -78,10 +79,7 @@ func main() {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutting down gracefully...")
-		
-		// Stop job queue first (commented out - method exists but may not be needed)
-		// srv.Stop()
-		
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

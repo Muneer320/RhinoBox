@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,12 +14,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Muneer320/RhinoBox/internal/cache"
 	"github.com/Muneer320/RhinoBox/internal/config"
+	"github.com/Muneer320/RhinoBox/internal/database"
 	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
-	"github.com/Muneer320/RhinoBox/internal/jsonschema"
 	"github.com/Muneer320/RhinoBox/internal/media"
 	"github.com/Muneer320/RhinoBox/internal/middleware"
 	errormiddleware "github.com/Muneer320/RhinoBox/internal/middleware"
@@ -35,20 +37,33 @@ import (
 
 // Server wires everything together.
 type Server struct {
-	cfg              config.Config
-	logger           *slog.Logger
-	router           chi.Router
-	storage          *storage.Manager
-	fileService      *service.FileService
+	cfg               config.Config
+	logger            *slog.Logger
+	router            chi.Router
+	storage           *storage.Manager
+	fileService       *service.FileService
 	collectionService *services.CollectionService
-	jobQueue         *queue.JobQueue
-	server           *http.Server
-	errorHandler     *errormiddleware.ErrorHandler
-	rateLimiter      *middleware.RateLimiter
+	jobQueue          *queue.JobQueue
+	server            *http.Server
+	errorHandler      *errormiddleware.ErrorHandler
+	rateLimiter       *middleware.RateLimiter
+	collectionCache   *cache.Cache
+	stopOnce          sync.Once
+	postgres          *database.PostgresDB
+	mongo             *database.MongoDB
 }
 
 // NewServer constructs the HTTP server with routing and dependencies.
 func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
+	if cfg.AuthEnabled {
+		return nil, fmt.Errorf("authentication is not implemented; this is a local, single-user demo")
+	}
+	if cfg.MaxUploadBytes <= 0 {
+		cfg.MaxUploadBytes = 512 << 20
+	}
+	if cfg.Security.MaxRequestSize <= 0 || cfg.Security.MaxRequestSize > cfg.MaxUploadBytes {
+		cfg.Security.MaxRequestSize = cfg.MaxUploadBytes
+	}
 	store, err := storage.NewManager(cfg.DataDir)
 	if err != nil {
 		return nil, err
@@ -69,14 +84,31 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	collectionService := services.NewCollectionService(store, cacheInstance, logger)
 
 	s := &Server{
-		cfg:              cfg,
-		logger:           logger,
-		router:           chi.NewRouter(),
-		storage:          store,
-		fileService:      fileService,
+		cfg:               cfg,
+		logger:            logger,
+		router:            chi.NewRouter(),
+		storage:           store,
+		fileService:       fileService,
 		collectionService: collectionService,
-		jobQueue:         nil, // TODO: Initialize when async endpoints are needed
+		collectionCache:   cacheInstance,
+		jobQueue:          nil, // TODO: Initialize when async endpoints are needed
 		errorHandler:      errorHandler,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if cfg.PostgresURL != "" {
+		s.postgres, err = database.NewPostgresDB(ctx, cfg.PostgresURL, cfg.DBMaxConns)
+		if err != nil {
+			s.Stop()
+			return nil, fmt.Errorf("connect PostgreSQL: %w", err)
+		}
+	}
+	if cfg.MongoURL != "" {
+		s.mongo, err = database.NewMongoDB(ctx, cfg.MongoURL, cfg.DBMaxConns)
+		if err != nil {
+			s.Stop()
+			return nil, fmt.Errorf("connect MongoDB: %w", err)
+		}
 	}
 	s.routes()
 	return s, nil
@@ -91,14 +123,29 @@ func (s *Server) setupValidation() *validationmw.Validator {
 
 // Stop gracefully stops the server and cleans up resources.
 func (s *Server) Stop() {
-	// Stop rate limiter cleanup goroutine
-	if s.rateLimiter != nil {
-		s.rateLimiter.Stop()
-	}
-	// Job queue shutdown will be implemented when async endpoints are added
-	if s.jobQueue != nil {
-		// s.jobQueue.Shutdown() // TODO: Implement when queue is initialized
-	}
+	s.stopOnce.Do(func() {
+		if s.postgres != nil {
+			s.postgres.Close()
+		}
+		if s.mongo != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.mongo.Close(ctx); err != nil {
+				s.logger.Error("close MongoDB", "err", err)
+			}
+		}
+		if s.rateLimiter != nil {
+			s.rateLimiter.Stop()
+		}
+		if s.jobQueue != nil {
+			s.jobQueue.Stop()
+		}
+		if s.collectionCache != nil {
+			if err := s.collectionCache.Close(); err != nil {
+				s.logger.Error("close collection cache", slog.Any("err", err))
+			}
+		}
+	})
 }
 
 func (s *Server) routes() {
@@ -128,57 +175,97 @@ func (s *Server) routes() {
 	// 5. Security Headers (after CORS)
 	securityHeaders := middleware.NewSecurityHeadersMiddleware(s.cfg.Security, s.logger)
 	r.Use(securityHeaders.Handler)
-	
+
 	// Response transformation middleware (keep for response formatting)
 	responseConfig := respmw.DefaultResponseConfig(s.logger)
 	responseConfig.EnableCORS = false // Disable CORS here since we have dedicated middleware
 	r.Use(respmw.NewResponseMiddleware(responseConfig).Handler)
-	
-	r.Use(s.customLogger)                    // Custom lightweight logger
-	r.Use(s.errorHandler.Handler)            // Centralized error handling with panic recovery
-	r.Use(chimw.Compress(5))                 // gzip level 5 (balance speed/compression)
 
-	// Setup validation as global middleware
-	// Validation will check route context after chi matches routes
+	r.Use(s.customLogger)         // Custom lightweight logger
+	r.Use(s.errorHandler.Handler) // Centralized error handling with panic recovery
+	r.Use(chimw.Compress(5))      // gzip level 5 (balance speed/compression)
+
+	// Apply validation to matched endpoints so chi path parameters are available.
 	validator := s.setupValidation()
-	r.Use(validator.Validate)
+	r.Group(func(r chi.Router) {
+		r.Use(validator.Validate)
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer func() {
+					if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+						s.collectionService.InvalidateCache("")
+					}
+				}()
+				next.ServeHTTP(w, r)
+			})
+		})
 
-	// Endpoints
-	r.Get("/healthz", s.handleHealth)
-	r.Get("/api/config", s.handleConfig)
-	r.Post("/ingest", s.handleUnifiedIngest)
-	r.Post("/ingest/media", s.handleMediaIngest)
-	r.Post("/ingest/json", s.handleJSONIngest)
-	r.Patch("/files/rename", s.handleFileRename)
-	// More specific routes must come before parameterized routes
-	r.Get("/files", s.handleGetFiles)
-	r.Get("/files/type/{type}", s.handleGetFilesByType)
-	r.Get("/files/search", s.handleFileSearch)
-	r.Get("/files/download", s.handleFileDownload)
-	r.Get("/files/metadata", s.handleFileMetadata)
-	r.Get("/files/stream", s.handleFileStream)
-	r.Delete("/files/{file_id}", s.handleFileDelete)
-	r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
-	r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+		// Endpoints
+		r.Get("/healthz", s.handleHealth)
+		r.Get("/api/config", s.handleConfig)
+		r.Get("/config", s.handleConfig)
+		r.Post("/ingest", s.handleUnifiedIngest)
+		r.Post("/ingest/media", s.handleMediaIngest)
+		r.Post("/ingest/json", s.handleJSONIngest)
+		r.Get("/routing-rules", s.handleGetRoutingRules)
+		r.Post("/routing-rules/suggest", s.handleSuggestRoutingRule)
+		r.Put("/routing-rules", s.handleUpdateRoutingRule)
+		r.Delete("/routing-rules", s.handleDeleteRoutingRule)
+		r.Patch("/files/rename", s.handleFileRename)
+		// More specific routes must come before parameterized routes
+		r.Get("/files", s.handleGetFiles)
+		r.Get("/files/browse", s.handleBrowseDirectory)
+		r.Get("/files/categories", s.handleGetCategories)
+		r.Get("/files/stats", s.handleStorageStats)
+		r.Get("/files/{file_id}", s.handleFileByID)
+		r.Get("/files/type/{type}", s.handleGetFilesByType)
+		r.Get("/files/search", s.handleFileSearch)
+		r.Get("/files/download", s.handleFileDownload)
+		r.Get("/files/metadata", s.handleFileMetadata)
+		r.Get("/files/stream", s.handleFileStream)
+		r.Delete("/files/{file_id}", s.handleFileDelete)
+		r.Patch("/files/{file_id}/metadata", s.handleMetadataUpdate)
+		r.Post("/files/metadata/batch", s.handleBatchMetadataUpdate)
+		r.Post("/files/{file_id}/copy", s.handleFileCopy)
+		r.Post("/files/copy/batch", s.handleBatchFileCopy)
+		r.Post("/files/{file_id}/move", s.handleFileMove)
+		r.Patch("/files/{file_id}/move", s.handleFileMove)
+		r.Post("/files/move/batch", s.handleBatchFileMove)
+		r.Patch("/files/move/batch", s.handleBatchFileMove)
+		r.Post("/files/{file_id}/versions", s.handleCreateVersion)
+		r.Get("/files/{file_id}/versions", s.handleListVersions)
+		r.Get("/files/{file_id}/versions/diff", s.handleVersionDiff)
+		r.Get("/files/{file_id}/versions/{version_number}", s.handleGetVersion)
+		r.Post("/files/{file_id}/revert", s.handleRevertVersion)
+		r.Get("/duplicates", s.handleGetDuplicates)
+		r.Get("/files/duplicates", s.handleGetDuplicates)
+		r.Post("/duplicates/scan", s.handleDuplicateScan)
+		r.Post("/files/duplicates/scan", s.handleDuplicateScan)
+		r.Post("/duplicates/verify", s.handleVerifyDuplicates)
+		r.Post("/files/duplicates/verify", s.handleVerifyDuplicates)
+		r.Post("/duplicates/merge", s.handleMergeDuplicates)
+		r.Post("/files/duplicates/merge", s.handleMergeDuplicates)
+		r.Get("/duplicates/statistics", s.handleDuplicateStatistics)
+		r.Get("/files/duplicates/statistics", s.handleDuplicateStatistics)
 
-	// Notes endpoints
-	r.Get("/files/{file_id}/notes", s.handleGetNotes)
-	r.Post("/files/{file_id}/notes", s.handleAddNote)
-	r.Patch("/files/{file_id}/notes/{note_id}", s.handleUpdateNote)
-	r.Delete("/files/{file_id}/notes/{note_id}", s.handleDeleteNote)
+		// Notes endpoints
+		r.Get("/files/{file_id}/notes", s.handleGetNotes)
+		r.Post("/files/{file_id}/notes", s.handleAddNote)
+		r.Patch("/files/{file_id}/notes/{note_id}", s.handleUpdateNote)
+		r.Delete("/files/{file_id}/notes/{note_id}", s.handleDeleteNote)
 
-	r.Get("/statistics", s.handleStatistics)
-	r.Get("/collections", s.handleGetCollections)
-	r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
+		r.Get("/statistics", s.handleStatistics)
+		r.Get("/collections", s.handleGetCollections)
+		r.Get("/collections/{type}/stats", s.handleGetCollectionStats)
+	})
 }
-
 
 // customLogger is a lightweight logger middleware for high-performance scenarios
 func (s *Server) customLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
-		
+
 		defer func() {
 			duration := time.Since(start)
 			s.logger.Debug("request",
@@ -188,7 +275,7 @@ func (s *Server) customLogger(next http.Handler) http.Handler {
 				slog.Duration("duration", duration),
 				slog.String("proto", r.Proto))
 		}()
-		
+
 		next.ServeHTTP(ww, r)
 	})
 }
@@ -203,7 +290,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMediaIngest(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		s.handleError(w, r, apierrors.BadRequestf("invalid multipart payload: %v", err))
 		return
 	}
@@ -411,56 +503,16 @@ func (s *Server) handleJSONIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	analyzer := jsonschema.NewAnalyzer(4, 256)
-	analyzer.AnalyzeBatch(docs)
-	summary := analyzer.BuildSummary()
-	analysis := analyzer.AnalyzeStructure(docs, summary)
-	analysis = jsonschema.IncorporateCommentHints(analysis, req.Comment)
-	decision := jsonschema.DecideStorage(req.Namespace, docs, summary, analysis)
-
-	batchRel := s.storage.NextJSONBatchPath(decision.Engine, req.Namespace)
-	if _, err := s.storage.AppendNDJSON(batchRel, docs); err != nil {
-		s.handleError(w, r, apierrors.InternalServerErrorf("store batch: %v", err))
+	result, err := s.persistJSON(r.Context(), req.Namespace, req.Comment, docs)
+	if err != nil {
+		s.handleError(w, r, apierrors.InternalServerErrorf("JSON ingestion failed: %v", err))
 		return
 	}
-
-	schemaPath := ""
-	if decision.Engine == "sql" {
-		schemaPayload := map[string]any{
-			"table":    decision.Table,
-			"ddl":      decision.Schema,
-			"columns":  decision.Columns,
-			"summary":  decision.Summary,
-			"analysis": decision.Analysis,
-		}
-		var err error
-		schemaPath, err = s.storage.WriteJSONFile(filepath.Join("json", "sql", decision.Table, "schema.json"), schemaPayload)
-		if err != nil {
-			s.handleError(w, r, apierrors.InternalServerErrorf("write schema: %v", err))
-			return
-		}
-	}
-
-	logRecord := map[string]any{
-		"namespace":   req.Namespace,
-		"comment":     req.Comment,
-		"metadata":    req.Metadata,
-		"decision":    decision.Engine,
-		"confidence":  decision.Confidence,
-		"documents":   len(docs),
-		"batch_path":  batchRel,
-		"schema_path": schemaPath,
-		"ingested_at": time.Now().UTC().Format(time.RFC3339),
-	}
-	if _, err := s.storage.AppendNDJSON(filepath.Join("json", "ingest_log.ndjson"), []map[string]any{logRecord}); err != nil {
-		s.logger.Warn("failed to append json log", slog.Any("err", err))
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"decision":    decision,
-		"batch_path":  batchRel,
-		"schema_path": schemaPath,
-		"documents":   len(docs),
+		"decision": result.Decision, "batch_path": result.BatchPath, "schema_path": result.SchemaPath,
+		"documents": len(docs), "storage_backend": result.StorageBackend,
+		"records_inserted": result.RecordsInserted, "records_archived": result.RecordsArchived,
+		"schema_created": result.SchemaCreated, "warnings": result.Warnings,
 	})
 }
 
@@ -487,14 +539,14 @@ func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-s.logger.Info("file renamed",
-slog.String("hash", req.Hash),
-slog.String("old_name", result.OldMetadata.OriginalName),
-slog.String("new_name", result.NewMetadata.OriginalName),
-slog.Bool("updated_stored_file", req.UpdateStoredFile),
-)
+	s.logger.Info("file renamed",
+		slog.String("hash", req.Hash),
+		slog.String("old_name", result.OldMetadata.OriginalName),
+		slog.String("new_name", result.NewMetadata.OriginalName),
+		slog.Bool("updated_stored_file", req.UpdateStoredFile),
+	)
 
-writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
@@ -548,16 +600,16 @@ func (s *Server) handleMetadataUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.handleError(w, r, err)
 		return
-	}// Add timestamp
-result.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	} // Add timestamp
+	result.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-s.logger.Info("metadata updated",
-slog.String("hash", req.Hash),
-slog.String("action", req.Action),
-slog.Int("field_count", len(result.NewMetadata)),
-)
+	s.logger.Info("metadata updated",
+		slog.String("hash", req.Hash),
+		slog.String("action", req.Action),
+		slog.Int("field_count", len(result.NewMetadata)),
+	)
 
-writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleBatchMetadataUpdate(w http.ResponseWriter, r *http.Request) {
@@ -580,59 +632,92 @@ func (s *Server) handleBatchMetadataUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-results, errs := s.storage.BatchUpdateFileMetadata(req.Updates)
+	results, errs := s.storage.BatchUpdateFileMetadata(req.Updates)
 
-// Add timestamps and count successes/failures
-successCount := 0
-failureCount := 0
-timestamp := time.Now().UTC().Format(time.RFC3339)
+	// Add timestamps and count successes/failures
+	successCount := 0
+	failureCount := 0
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 
-response := make([]map[string]any, len(results))
-for i := range results {
-if errs[i] != nil {
-response[i] = map[string]any{
-"hash":    req.Updates[i].Hash,
-"success": false,
-"error":   errs[i].Error(),
-}
-failureCount++
-} else {
-results[i].UpdatedAt = timestamp
-response[i] = map[string]any{
-"hash":         results[i].Hash,
-"success":      true,
-"old_metadata": results[i].OldMetadata,
-"new_metadata": results[i].NewMetadata,
-"action":       results[i].Action,
-"updated_at":   results[i].UpdatedAt,
-}
-successCount++
-}
-}
+	response := make([]map[string]any, len(results))
+	for i := range results {
+		if errs[i] != nil {
+			response[i] = map[string]any{
+				"hash":    req.Updates[i].Hash,
+				"success": false,
+				"error":   errs[i].Error(),
+			}
+			failureCount++
+		} else {
+			results[i].UpdatedAt = timestamp
+			response[i] = map[string]any{
+				"hash":         results[i].Hash,
+				"success":      true,
+				"old_metadata": results[i].OldMetadata,
+				"new_metadata": results[i].NewMetadata,
+				"action":       results[i].Action,
+				"updated_at":   results[i].UpdatedAt,
+			}
+			successCount++
+		}
+	}
 
-s.logger.Info("batch metadata update",
-slog.Int("total", len(req.Updates)),
-slog.Int("success", successCount),
-slog.Int("failed", failureCount),
-)
+	s.logger.Info("batch metadata update",
+		slog.Int("total", len(req.Updates)),
+		slog.Int("success", successCount),
+		slog.Int("failed", failureCount),
+	)
 
-writeJSON(w, http.StatusOK, map[string]any{
-"results":       response,
-"total":         len(req.Updates),
-"success_count": successCount,
-"failure_count": failureCount,
-})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results":       response,
+		"total":         len(req.Updates),
+		"success_count": successCount,
+		"failure_count": failureCount,
+	})
 }
 
 func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
-	// Get search query from URL parameter
-	query := r.URL.Query().Get("name")
-	if query == "" {
-		s.handleError(w, r, apierrors.BadRequest("name query parameter is required"))
+	query := r.URL.Query()
+	hasFilter := false
+	for _, key := range []string{"name", "extension", "type", "category", "mime_type", "content", "content_search", "date_from", "date_to"} {
+		if strings.TrimSpace(query.Get(key)) != "" {
+			hasFilter = true
+			break
+		}
+	}
+	if !hasFilter {
+		httpError(w, http.StatusBadRequest, "provide at least one search filter")
 		return
 	}
-
-	results := s.storage.FindByOriginalName(query)
+	filters := storage.SearchFilters{
+		Name: query.Get("name"), Extension: query.Get("extension"),
+		Type: query.Get("type"), Category: query.Get("category"), MimeType: query.Get("mime_type"),
+		ContentSearch: query.Get("content"),
+	}
+	if filters.ContentSearch == "" {
+		filters.ContentSearch = query.Get("content_search")
+	}
+	for _, input := range []struct {
+		key    string
+		target *time.Time
+	}{{"date_from", &filters.DateFrom}, {"date_to", &filters.DateTo}} {
+		if raw := query.Get(input.key); raw != "" {
+			parsed, err := time.Parse(time.RFC3339, raw)
+			if err != nil {
+				parsed, err = time.Parse("2006-01-02", raw)
+			}
+			if err != nil {
+				httpError(w, http.StatusBadRequest, "invalid "+input.key)
+				return
+			}
+			*input.target = parsed
+		}
+	}
+	if !filters.DateFrom.IsZero() && !filters.DateTo.IsZero() && filters.DateFrom.After(filters.DateTo) {
+		httpError(w, http.StatusBadRequest, "date_from must not be after date_to")
+		return
+	}
+	results := s.storage.SearchFiles(filters)
 
 	// Transform results to include frontend-friendly field names
 	formattedResults := make([]map[string]any, len(results))
@@ -711,7 +796,14 @@ func (s *Server) handleFileMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, metadata)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"hash": metadata.Hash, "original_name": metadata.OriginalName,
+		"mime_type": metadata.MimeType, "category": metadata.Category,
+		"size": metadata.Size, "stored_path": metadata.StoredPath,
+		"uploaded_at": metadata.UploadedAt, "metadata": metadata.Metadata,
+		"download_url": "/files/download?hash=" + metadata.Hash,
+		"stream_url":   "/files/stream?hash=" + metadata.Hash,
+	})
 }
 
 // handleFileStream streams a file with range request support for video/audio streaming.
@@ -973,13 +1065,13 @@ func (s *Server) handleStatistics(w http.ResponseWriter, r *http.Request) {
 
 	// Format response to match frontend expectations
 	response := map[string]any{
-		"totalFiles":   stats.TotalFiles,
-		"files":        stats.TotalFiles, // Alias for compatibility
-		"storageUsed":  stats.StorageUsedFormatted,
-		"storage":      stats.StorageUsedFormatted, // Alias for compatibility
-		"collections":  stats.CollectionCount,
-		"collectionCount": stats.CollectionCount, // Alias for compatibility
-		"storageUsedBytes": stats.StorageUsed,
+		"totalFiles":        stats.TotalFiles,
+		"files":             stats.TotalFiles, // Alias for compatibility
+		"storageUsed":       stats.StorageUsedFormatted,
+		"storage":           stats.StorageUsedFormatted, // Alias for compatibility
+		"collections":       stats.CollectionCount,
+		"collectionCount":   stats.CollectionCount, // Alias for compatibility
+		"storageUsedBytes":  stats.StorageUsed,
 		"collectionDetails": stats.Collections,
 	}
 
@@ -1089,38 +1181,39 @@ func (s *Server) handleGetFilesByType(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files = append(files, map[string]any{
-			"id":            file.Hash, // Use hash as ID
-			"name":          file.OriginalName,
-			"fileName":      file.OriginalName, // Alias for compatibility
-			"path":          file.StoredPath,
-			"filePath":      file.StoredPath, // Alias for compatibility
-			"storedPath":    file.StoredPath,
-			"size":          file.Size,
-			"fileSize":      file.Size, // Alias for compatibility
-			"type":          file.MimeType,
-			"fileType":      file.MimeType, // Alias for compatibility
-			"date":          file.UploadedAt.Format(time.RFC3339),
-			"uploadedAt":    file.UploadedAt.Format(time.RFC3339),
-			"hash":          file.Hash,
-			"url":           fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"downloadUrl":   fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"dimensions":    dimensions,
+			"id":             file.Hash, // Use hash as ID
+			"name":           file.OriginalName,
+			"fileName":       file.OriginalName, // Alias for compatibility
+			"path":           file.StoredPath,
+			"filePath":       file.StoredPath, // Alias for compatibility
+			"storedPath":     file.StoredPath,
+			"size":           file.Size,
+			"fileSize":       file.Size, // Alias for compatibility
+			"type":           file.MimeType,
+			"category":       file.Category,
+			"fileType":       file.MimeType, // Alias for compatibility
+			"date":           file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":     file.UploadedAt.Format(time.RFC3339),
+			"hash":           file.Hash,
+			"url":            fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":    fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":     dimensions,
 			"fileDimensions": dimensions, // Alias for compatibility
-			"description":   description,
-			"comment":       description, // Alias for compatibility
-			"namespace":     namespace,
-			"collection":    namespace,
-			"engine":        engine,
+			"description":    description,
+			"comment":        description, // Alias for compatibility
+			"namespace":      namespace,
+			"collection":     namespace,
+			"engine":         engine,
 		})
 	}
 
 	// Build response matching frontend expectations
 	response := map[string]any{
-		"files":      files,
-		"type":       collectionType,
-		"total":      result.Total,
-		"page":       result.Page,
-		"limit":      result.Limit,
+		"files":       files,
+		"type":        collectionType,
+		"total":       result.Total,
+		"page":        result.Page,
+		"limit":       result.Limit,
 		"total_pages": result.TotalPages,
 	}
 
@@ -1145,15 +1238,15 @@ func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
 
 	// Filters
 	opts := storage.ListOptions{
-		Page:     page,
-		Limit:    limit,
-		Category: r.URL.Query().Get("category"),
-		Type:     r.URL.Query().Get("type"),
-		MimeType: r.URL.Query().Get("mime_type"),
+		Page:      page,
+		Limit:     limit,
+		Category:  r.URL.Query().Get("category"),
+		Type:      r.URL.Query().Get("type"),
+		MimeType:  r.URL.Query().Get("mime_type"),
 		Extension: r.URL.Query().Get("extension"),
-		Name:     r.URL.Query().Get("name"),
-		SortBy:   r.URL.Query().Get("sort_by"),
-		Order:    r.URL.Query().Get("order"),
+		Name:      r.URL.Query().Get("name"),
+		SortBy:    r.URL.Query().Get("sort_by"),
+		Order:     r.URL.Query().Get("order"),
 	}
 
 	// Optional date filtering (RFC3339)
@@ -1201,40 +1294,41 @@ func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		files = append(files, map[string]any{
-			"id":            file.Hash,
-			"name":          file.OriginalName,
-			"fileName":      file.OriginalName,
-			"path":          file.StoredPath,
-			"filePath":      file.StoredPath,
-			"storedPath":    file.StoredPath,
-			"size":          file.Size,
-			"fileSize":      file.Size,
-			"type":          file.MimeType,
-			"fileType":      file.MimeType,
-			"date":          file.UploadedAt.Format(time.RFC3339),
-			"uploadedAt":    file.UploadedAt.Format(time.RFC3339),
-			"hash":          file.Hash,
-			"url":           fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"downloadUrl":   fmt.Sprintf("/files/download?hash=%s", file.Hash),
-			"dimensions":    dimensions,
+			"id":             file.Hash,
+			"name":           file.OriginalName,
+			"fileName":       file.OriginalName,
+			"path":           file.StoredPath,
+			"filePath":       file.StoredPath,
+			"storedPath":     file.StoredPath,
+			"size":           file.Size,
+			"fileSize":       file.Size,
+			"type":           file.MimeType,
+			"category":       file.Category,
+			"fileType":       file.MimeType,
+			"date":           file.UploadedAt.Format(time.RFC3339),
+			"uploadedAt":     file.UploadedAt.Format(time.RFC3339),
+			"hash":           file.Hash,
+			"url":            fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"downloadUrl":    fmt.Sprintf("/files/download?hash=%s", file.Hash),
+			"dimensions":     dimensions,
 			"fileDimensions": dimensions,
-			"description":   description,
-			"comment":       description,
-			"namespace":     namespace,
-			"collection":    namespace,
-			"engine":        engine,
+			"description":    description,
+			"comment":        description,
+			"namespace":      namespace,
+			"collection":     namespace,
+			"engine":         engine,
 		})
 	}
 
 	resp := map[string]any{
 		"files": files,
 		"pagination": map[string]any{
-			"page":       result.Pagination.Page,
-			"limit":      result.Pagination.Limit,
-			"total":      result.Pagination.Total,
+			"page":        result.Pagination.Page,
+			"limit":       result.Pagination.Limit,
+			"total":       result.Pagination.Total,
 			"total_pages": result.Pagination.TotalPages,
-			"has_next":   result.Pagination.HasNext,
-			"has_prev":   result.Pagination.HasPrev,
+			"has_next":    result.Pagination.HasNext,
+			"has_prev":    result.Pagination.HasPrev,
 		},
 	}
 
@@ -1244,11 +1338,11 @@ func (s *Server) handleGetFiles(w http.ResponseWriter, r *http.Request) {
 // Helper structs
 
 type jsonIngestRequest struct {
-Document  map[string]any   `json:"document"`
-Documents []map[string]any `json:"documents"`
-Namespace string           `json:"namespace"`
-Comment   string           `json:"comment"`
-Metadata  map[string]any   `json:"metadata"`
+	Document  map[string]any   `json:"document"`
+	Documents []map[string]any `json:"documents"`
+	Namespace string           `json:"namespace"`
+	Comment   string           `json:"comment"`
+	Metadata  map[string]any   `json:"metadata"`
 }
 
 // getRequestID extracts the request ID from the context
@@ -1263,6 +1357,14 @@ func getRequestID(r *http.Request) string {
 
 // handleError processes errors through the centralized error handler
 func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, storage.ErrFileNotFound):
+		err = apierrors.NotFound(err.Error())
+	case errors.Is(err, storage.ErrInvalidFilename), errors.Is(err, storage.ErrInvalidCategory), errors.Is(err, storage.ErrInvalidPath):
+		err = apierrors.BadRequest(err.Error())
+	case errors.Is(err, storage.ErrNameConflict), errors.Is(err, storage.ErrCopyConflict), errors.Is(err, storage.ErrCategoryConflict):
+		err = apierrors.Conflict(err.Error())
+	}
 	s.errorHandler.HandleError(w, r, err)
 }
 
@@ -1287,7 +1389,17 @@ func (s *Server) httpError(w http.ResponseWriter, r *http.Request, code int, msg
 
 // Legacy httpError for compatibility - creates a simple error
 func httpError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, map[string]any{"error": msg})
+	codes := map[int]apierrors.ErrorCode{
+		400: apierrors.ErrorCodeBadRequest, 401: apierrors.ErrorCodeUnauthorized,
+		403: apierrors.ErrorCodeForbidden, 404: apierrors.ErrorCodeNotFound,
+		409: apierrors.ErrorCodeConflict, 413: apierrors.ErrorCodeRequestTooLarge,
+		416: apierrors.ErrorCodeRangeNotSatisfiable, 500: apierrors.ErrorCodeInternalServerError,
+	}
+	errorCode := codes[code]
+	if errorCode == "" {
+		errorCode = apierrors.ErrorCode(http.StatusText(code))
+	}
+	writeJSON(w, code, map[string]any{"error": apierrors.NewAPIError(errorCode, msg)})
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

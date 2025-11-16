@@ -24,7 +24,12 @@ func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
@@ -92,8 +97,8 @@ func (s *Server) handleCreateVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]any{
-		"file_id":    result.FileID,
-		"version":    result.Version,
+		"file_id":     result.FileID,
+		"version":     result.Version,
 		"is_new_file": result.IsNewFile,
 	}
 
@@ -311,4 +316,3 @@ func (s *Server) handleVersionDiff(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, diff)
 }
-

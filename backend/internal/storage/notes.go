@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var ErrNoteNotFound = errors.New("note not found")
+
 // Note represents a single note/comment associated with a file.
 type Note struct {
 	ID        string    `json:"id"`
@@ -159,7 +161,7 @@ func (idx *NotesIndex) UpdateNote(fileID, noteID, text string) (*Note, error) {
 
 	notes, exists := idx.data[fileID]
 	if !exists {
-		return nil, errors.New("file not found")
+		return nil, ErrFileNotFound
 	}
 
 	// Find the note
@@ -177,7 +179,7 @@ func (idx *NotesIndex) UpdateNote(fileID, noteID, text string) (*Note, error) {
 		}
 	}
 
-	return nil, errors.New("note not found")
+	return nil, ErrNoteNotFound
 }
 
 // DeleteNote removes a note by ID.
@@ -194,7 +196,7 @@ func (idx *NotesIndex) DeleteNote(fileID, noteID string) error {
 
 	notes, exists := idx.data[fileID]
 	if !exists {
-		return errors.New("file not found")
+		return ErrFileNotFound
 	}
 
 	// Find and remove the note
@@ -211,7 +213,7 @@ func (idx *NotesIndex) DeleteNote(fileID, noteID string) error {
 		}
 	}
 
-	return errors.New("note not found")
+	return ErrNoteNotFound
 }
 
 // DeleteAllNotes removes all notes for a file (useful when file is deleted).
@@ -230,4 +232,3 @@ func (idx *NotesIndex) DeleteAllNotes(fileID string) error {
 	delete(idx.data, fileID)
 	return idx.persistLocked()
 }
-

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ type UnifiedIngestRequest struct {
 
 // UnifiedIngestResponse combines results from all processing pipelines.
 type UnifiedIngestResponse struct {
+	Success bool                 `json:"success"`
 	JobID   string               `json:"job_id"`
 	Status  string               `json:"status"` // "completed", "processing", "queued"
 	Results UnifiedIngestResults `json:"results"`
@@ -39,20 +41,23 @@ type UnifiedIngestResults struct {
 }
 
 type MediaResult struct {
-	OriginalName      string         `json:"original_name"`
-	StoredPath        string         `json:"stored_path"`
-	Category          string         `json:"category"`
-	MimeType          string         `json:"mime_type"`
-	DetectedMimeType  string         `json:"detected_mime_type,omitempty"`
-	UserOverrideType  string         `json:"user_override_type,omitempty"`
-	ActualCategory    string         `json:"actual_category,omitempty"`
-	Size              int64          `json:"size"`
-	Hash              string         `json:"hash,omitempty"`
-	Duplicates        bool           `json:"duplicates"`
-	Metadata          map[string]any `json:"metadata,omitempty"`
+	OriginalName     string         `json:"original_name"`
+	StoredPath       string         `json:"stored_path"`
+	Category         string         `json:"category"`
+	MimeType         string         `json:"mime_type"`
+	DetectedMimeType string         `json:"detected_mime_type,omitempty"`
+	UserOverrideType string         `json:"user_override_type,omitempty"`
+	ActualCategory   string         `json:"actual_category,omitempty"`
+	Size             int64          `json:"size"`
+	Hash             string         `json:"hash,omitempty"`
+	Duplicates       bool           `json:"duplicates"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
 }
 
 type JSONResult struct {
+	StorageBackend        string              `json:"storage_backend"`
+	RecordsArchived       int                 `json:"records_archived"`
+	Warnings              []string            `json:"warnings,omitempty"`
 	StorageType           string              `json:"storage_type"` // "sql" or "nosql"
 	Database              string              `json:"database,omitempty"`
 	TableOrCollection     string              `json:"table_or_collection"`
@@ -61,6 +66,7 @@ type JSONResult struct {
 	RelationshipsDetected []string            `json:"relationships_detected,omitempty"`
 	Decision              jsonschema.Decision `json:"decision,omitempty"`
 	BatchPath             string              `json:"batch_path"`
+	SchemaPath            string              `json:"schema_path,omitempty"`
 }
 
 type GenericResult struct {
@@ -72,15 +78,20 @@ type GenericResult struct {
 	ActualCategory   string `json:"actual_category,omitempty"`
 	Size             int64  `json:"size"`
 	Hash             string `json:"hash,omitempty"`
-	Unrecognized     bool   `json:"unrecognized,omitempty"`    // true if format not recognized
-	RequiresRouting  bool   `json:"requires_routing,omitempty"` // true if user needs to suggest routing
+	Unrecognized     bool   `json:"unrecognized"`     // true if format not recognized
+	RequiresRouting  bool   `json:"requires_routing"` // true if user needs to suggest routing
 }
 
 // handleUnifiedIngest routes incoming data to appropriate pipelines based on content type.
 func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	if err := r.ParseMultipartForm(s.cfg.MaxUploadBytes); err != nil {
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		httpError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart payload: %v", err))
 		return
 	}
@@ -126,7 +137,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 		processingStart := time.Now()
 		for fieldName, headers := range r.MultipartForm.File {
 			for _, header := range headers {
-				result, err := s.routeFile(header, fieldName, comment, namespace, overrideType)
+				result, err := s.routeFile(r.Context(), header, fieldName, comment, namespace, overrideType)
 				if err != nil {
 					response.Errors = append(response.Errors, fmt.Sprintf("%s: %v", header.Filename, err))
 					continue
@@ -148,7 +159,7 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 	// Process inline JSON data
 	if dataStr != "" {
 		jsonStart := time.Now()
-		result, err := s.processInlineJSON(dataStr, namespace, comment, metadata)
+		result, err := s.processInlineJSON(r.Context(), dataStr, namespace, comment, metadata)
 		if err != nil {
 			response.Errors = append(response.Errors, fmt.Sprintf("JSON processing: %v", err))
 		} else {
@@ -164,11 +175,12 @@ func (s *Server) handleUnifiedIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response.Success = true
 	writeJSON(w, http.StatusOK, response)
 }
 
 // routeFile determines content type and routes to appropriate pipeline.
-func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, namespace, overrideType string) (any, error) {
+func (s *Server) routeFile(ctx context.Context, header *multipart.FileHeader, fieldName, comment, namespace, overrideType string) (any, error) {
 	file, err := header.Open()
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
@@ -187,7 +199,7 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 	// Check if format is recognized
 	classifier := s.storage.Classifier()
 	rulesMgr := s.storage.RoutingRules()
-	
+
 	isRecognized := classifier.IsRecognized(detectedMimeType, header.Filename)
 	hasCustomRule := rulesMgr != nil && rulesMgr.FindRule(detectedMimeType, ext) != nil
 	isUnrecognized := !isRecognized && !hasCustomRule
@@ -198,7 +210,7 @@ func (s *Server) routeFile(header *multipart.FileHeader, fieldName, comment, nam
 	}
 
 	if isJSONType(detectedMimeType) {
-		return s.processJSONFile(header, namespace, comment)
+		return s.processJSONFile(ctx, header, namespace, comment)
 	}
 
 	// For generic files, check if unrecognized
@@ -226,7 +238,7 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detecte
 
 	// Determine actual category based on override
 	actualCategory := determineStorageCategory(detectedMimeType, overrideType)
-	
+
 	// Sanitize user-controlled inputs to prevent path traversal
 	sanitizedComment := sanitizePathSegment(comment)
 	sanitizedFilename := sanitizePathSegment(header.Filename)
@@ -252,12 +264,13 @@ func (s *Server) processMediaFile(header *multipart.FileHeader, comment, detecte
 	}
 
 	req := service.FileStoreRequest{
-		Reader:       file,
-		Filename:     sanitizedFilename,
-		MimeType:     detectedMimeType,
-		Size:         header.Size,
-		Metadata:     metadata,
-		CategoryHint: categoryHint,
+		Reader:           file,
+		Filename:         sanitizedFilename,
+		MimeType:         detectedMimeType,
+		Size:             header.Size,
+		Metadata:         metadata,
+		CategoryHint:     categoryHint,
+		CategoryOverride: explicitStorageCategory(detectedMimeType, overrideType),
 	}
 
 	result, err := s.fileService.StoreFile(req)
@@ -304,43 +317,30 @@ func (s *Server) processGenericFile(header *multipart.FileHeader, namespace, det
 	}
 	defer file.Close()
 
-	// Determine actual category based on override
 	actualCategory := determineStorageCategory(detectedMimeType, overrideType)
-	
-	category := actualCategory
-	if namespace != "" {
-		category = namespace
-	}
-
-	// If override is specified, use it for storage path
+	categoryOverride := ""
+	userOverrideType := ""
 	if overrideType != "" && overrideType != "auto" {
-		category = overrideType
+		categoryOverride = actualCategory
+		userOverrideType = overrideType
 	}
-
-	relPath, err := s.fileService.StoreMediaFile([]string{"files", category}, header.Filename, file)
+	stored, err := s.fileService.StoreFile(service.FileStoreRequest{
+		Reader: file, Filename: header.Filename, MimeType: detectedMimeType,
+		Size: header.Size, CategoryHint: namespace, CategoryOverride: categoryOverride,
+		Metadata: map[string]string{"namespace": namespace, "detected_mime_type": detectedMimeType, "user_override_type": userOverrideType},
+	})
 	if err != nil {
 		return GenericResult{}, err
 	}
-
-	// Only include UserOverrideType if it's not "auto"
-	userOverrideType := ""
-	if overrideType != "" && overrideType != "auto" {
-		userOverrideType = overrideType
-	}
-
 	return GenericResult{
-		OriginalName:     header.Filename,
-		StoredPath:       relPath,
-		FileType:         detectedMimeType,
-		DetectedMimeType: detectedMimeType,
-		UserOverrideType: userOverrideType,
-		ActualCategory:   actualCategory,
-		Size:             header.Size,
+		OriginalName: stored.OriginalName, StoredPath: stored.StoredPath, Hash: stored.Hash,
+		FileType: detectedMimeType, DetectedMimeType: detectedMimeType,
+		UserOverrideType: userOverrideType, ActualCategory: actualCategory, Size: stored.Size,
 	}, nil
 }
 
 // processJSONFile handles JSON files uploaded through multipart form.
-func (s *Server) processJSONFile(header *multipart.FileHeader, namespace, comment string) (JSONResult, error) {
+func (s *Server) processJSONFile(ctx context.Context, header *multipart.FileHeader, namespace, comment string) (JSONResult, error) {
 	file, err := header.Open()
 	if err != nil {
 		return JSONResult{}, fmt.Errorf("open file: %w", err)
@@ -354,13 +354,15 @@ func (s *Server) processJSONFile(header *multipart.FileHeader, namespace, commen
 	}
 
 	// Process using the inline JSON handler
-	return s.processInlineJSON(string(data), namespace, comment, nil)
+	return s.processInlineJSON(ctx, string(data), namespace, comment, nil)
 }
 
 // processInlineJSON handles JSON data from request body or form field.
-func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata map[string]any) (JSONResult, error) {
+func (s *Server) processInlineJSON(ctx context.Context, dataStr, namespace, comment string, metadata map[string]any) (JSONResult, error) {
 	var data any
-	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(dataStr))
+	decoder.UseNumber()
+	if err := decoder.Decode(&data); err != nil {
 		return JSONResult{}, fmt.Errorf("invalid JSON: %w", err)
 	}
 
@@ -370,9 +372,11 @@ func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata 
 		docs = []map[string]any{v}
 	case []any:
 		for _, item := range v {
-			if doc, ok := item.(map[string]any); ok {
-				docs = append(docs, doc)
+			doc, ok := item.(map[string]any)
+			if !ok {
+				return JSONResult{}, fmt.Errorf("every array item must be a JSON object")
 			}
+			docs = append(docs, doc)
 		}
 	default:
 		return JSONResult{}, fmt.Errorf("data must be object or array of objects")
@@ -382,38 +386,14 @@ func (s *Server) processInlineJSON(dataStr, namespace, comment string, metadata 
 		return JSONResult{}, fmt.Errorf("no valid documents in data")
 	}
 
-	analyzer := jsonschema.NewAnalyzer(4, 256)
-	analyzer.AnalyzeBatch(docs)
-	summary := analyzer.BuildSummary()
-	analysis := analyzer.AnalyzeStructure(docs, summary)
-	analysis = jsonschema.IncorporateCommentHints(analysis, comment)
-	decision := jsonschema.DecideStorage(namespace, docs, summary, analysis)
-
-	batchRel := s.fileService.NextJSONBatchPath(decision.Engine, namespace)
-	if _, err := s.fileService.AppendNDJSON(batchRel, docs); err != nil {
-		return JSONResult{}, fmt.Errorf("store batch: %w", err)
-	}
-
-	schemaCreated := false
-	if decision.Engine == "sql" && decision.Schema != "" {
-		schemaCreated = true
-	}
-
-	return JSONResult{
-		StorageType:       decision.Engine,
-		TableOrCollection: decision.Table,
-		RecordsInserted:   len(docs),
-		SchemaCreated:     schemaCreated,
-		Decision:          decision,
-		BatchPath:         batchRel,
-	}, nil
+	return s.persistJSON(ctx, namespace, comment, docs)
 }
 
 func detectMIMEType(header *multipart.FileHeader) string {
 	if ct := header.Header.Get("Content-Type"); ct != "" && ct != "application/octet-stream" {
 		return ct
 	}
-	
+
 	// Fallback to extension-based detection
 	ext := filepath.Ext(header.Filename)
 	switch strings.ToLower(ext) {
@@ -477,23 +457,23 @@ func sanitizePathSegment(input string) string {
 	if s == "" {
 		return ""
 	}
-	
+
 	// Remove or replace path separators and dangerous characters
 	s = strings.ReplaceAll(s, "/", "")
 	s = strings.ReplaceAll(s, "\\", "")
 	s = strings.ReplaceAll(s, "..", "")
-	
+
 	// Enforce safe character whitelist (alphanumerics, hyphen, underscore, dot)
 	s = pathSegmentPattern.ReplaceAllString(s, "_")
-	
+
 	// Trim leading/trailing separators that might have been converted
 	s = strings.Trim(s, "_.-")
-	
+
 	// Cap length to 100 characters
 	if len(s) > 100 {
 		s = s[:100]
 	}
-	
+
 	return s
 }
 
@@ -509,6 +489,13 @@ func isValidOverride(override string) bool {
 }
 
 // determineStorageCategory determines the storage category based on MIME type and override.
+func explicitStorageCategory(mimeType, override string) string {
+	if override == "" || override == "auto" {
+		return ""
+	}
+	return determineStorageCategory(mimeType, override)
+}
+
 func determineStorageCategory(mimeType, override string) string {
 	if override != "" && override != "auto" {
 		// Use override

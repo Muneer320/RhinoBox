@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -145,9 +147,9 @@ func TestFileList_Filtering(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Upload files with different types
-	uploadTestFile(t, srv, "img1.jpg", "content", "image/jpeg")
+	uploadTestFile(t, srv, "img1.jpg", "image one", "image/jpeg")
 	uploadTestFile(t, srv, "img2.png", "content", "image/png")
-	uploadTestFile(t, srv, "doc1.pdf", "content", "application/pdf")
+	uploadTestFile(t, srv, "doc1.pdf", "document one", "application/pdf")
 
 	// Wait for files to be indexed
 	time.Sleep(100 * time.Millisecond)
@@ -365,9 +367,9 @@ func TestGetCategories(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Upload files to different categories
-	uploadTestFile(t, srv, "img1.jpg", "content", "image/jpeg")
-	uploadTestFile(t, srv, "img2.jpg", "content", "image/jpeg")
-	uploadTestFile(t, srv, "doc1.pdf", "content", "application/pdf")
+	uploadTestFile(t, srv, "img1.jpg", "image one", "image/jpeg")
+	uploadTestFile(t, srv, "img2.jpg", "image two", "image/jpeg")
+	uploadTestFile(t, srv, "doc1.pdf", "document one", "application/pdf")
 
 	// Test categories endpoint
 	req := httptest.NewRequest(http.MethodGet, "/files/categories", nil)
@@ -380,7 +382,7 @@ func TestGetCategories(t *testing.T) {
 
 	var result struct {
 		Categories []storage.CategoryInfo `json:"categories"`
-		Count      int                     `json:"count"`
+		Count      int                    `json:"count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -400,8 +402,8 @@ func TestGetStorageStats(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Upload some files
-	uploadTestFile(t, srv, "test1.jpg", "content", "image/jpeg")
-	uploadTestFile(t, srv, "test2.pdf", "content", "application/pdf")
+	uploadTestFile(t, srv, "test1.jpg", "image data", "image/jpeg")
+	uploadTestFile(t, srv, "test2.pdf", "document data", "application/pdf")
 
 	// Test stats endpoint
 	req := httptest.NewRequest(http.MethodGet, "/files/stats", nil)
@@ -435,7 +437,10 @@ func TestGetStorageStats(t *testing.T) {
 func uploadTestFile(t *testing.T, srv *Server, filename, content, mimeType string) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	fileWriter, err := writer.CreateFormFile("file", filename)
+	fileWriter, err := writer.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": filename})},
+		"Content-Type":        {mimeType},
+	})
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}

@@ -16,12 +16,16 @@ type MongoDB struct {
 
 // NewMongoDB creates a new MongoDB client with connection pooling
 // optimized for high-throughput workloads (200K+ inserts/sec target)
-func NewMongoDB(ctx context.Context, uri string) (*MongoDB, error) {
-	// Configure client with aggressive connection pooling
+func NewMongoDB(ctx context.Context, uri string, poolLimit ...int) (*MongoDB, error) {
+	maxConns := uint64(10)
+	if len(poolLimit) > 0 && poolLimit[0] > 0 {
+		maxConns = uint64(min(poolLimit[0], 1000))
+	}
+	// Bound connections for the local demo.
 	clientOpts := options.Client().
 		ApplyURI(uri).
-		SetMaxPoolSize(100).        // 100 connections for parallel writes
-		SetMinPoolSize(10).          // Keep 10 connections warm
+		SetMaxPoolSize(maxConns). // 100 connections for parallel writes
+		SetMinPoolSize(0).        // Keep 10 connections warm
 		SetMaxConnIdleTime(5 * time.Minute).
 		SetCompressors([]string{"snappy", "zstd"}). // Wire compression for network efficiency
 		SetConnectTimeout(10 * time.Second).

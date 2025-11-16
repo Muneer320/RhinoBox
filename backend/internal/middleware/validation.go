@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	apierrors "github.com/Muneer320/RhinoBox/internal/errors"
 	chi "github.com/go-chi/chi/v5"
 )
 
@@ -22,8 +23,8 @@ type ValidationError struct {
 
 // ValidationErrorResponse is the standard error response format
 type ValidationErrorResponse struct {
-	Error   string           `json:"error"`
-	Details []ValidationError `json:"details,omitempty"`
+	Error   *apierrors.APIError `json:"error"`
+	Details []ValidationError   `json:"details,omitempty"`
 }
 
 // Validator holds validation configuration and schemas
@@ -62,12 +63,12 @@ type PathParamRule struct {
 
 // FileUploadRule defines validation for file uploads
 type FileUploadRule struct {
-	Required        bool
-	MaxSize         int64
-	AllowedTypes    []string
-	AllowedExts     []string
-	MaxFiles        int
-	FieldName       string // form field name (e.g., "file", "files")
+	Required     bool
+	MaxSize      int64
+	AllowedTypes []string
+	AllowedExts  []string
+	MaxFiles     int
+	FieldName    string // form field name (e.g., "file", "files")
 }
 
 // NewValidator creates a new validator instance
@@ -86,6 +87,11 @@ func (v *Validator) RegisterSchema(route string, schema *Schema) {
 // Validate is the middleware function that validates requests
 func (v *Validator) Validate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 		route := v.getRouteKey(r)
 		schema, exists := v.schemas[route]
 		if !exists {
@@ -156,7 +162,7 @@ func (v *Validator) getRouteKey(r *http.Request) string {
 	// Try to match against registered routes by pattern
 	path := r.URL.Path
 	method := r.Method
-	
+
 	// Match path patterns (e.g., /files/{file_id} matches /files/abc123)
 	for routeKey := range v.schemas {
 		if strings.HasPrefix(routeKey, method+":") {
@@ -166,7 +172,7 @@ func (v *Validator) getRouteKey(r *http.Request) string {
 			}
 		}
 	}
-	
+
 	// Fallback to method + exact path
 	return method + ":" + path
 }
@@ -176,11 +182,11 @@ func (v *Validator) matchRoutePattern(pattern, path string) bool {
 	// Convert pattern like "/files/{file_id}" to regex
 	patternParts := strings.Split(pattern, "/")
 	pathParts := strings.Split(path, "/")
-	
+
 	if len(patternParts) != len(pathParts) {
 		return false
 	}
-	
+
 	for i, patternPart := range patternParts {
 		if strings.HasPrefix(patternPart, "{") && strings.HasSuffix(patternPart, "}") {
 			// This is a parameter, match any non-empty value
@@ -191,7 +197,7 @@ func (v *Validator) matchRoutePattern(pattern, path string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -311,7 +317,7 @@ func (v *Validator) validateFileUpload(r *http.Request, rule *FileUploadRule) []
 	if r.MultipartForm == nil {
 		// We need to parse it, but we can't modify MaxUploadBytes here
 		// The server should have already parsed it, but if not, we'll try
-		if err := r.ParseMultipartForm(rule.MaxSize); err != nil {
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
 			return []ValidationError{{
 				Field:   "file",
 				Message: fmt.Sprintf("failed to parse multipart form: %v", err),
@@ -427,8 +433,12 @@ func (v *Validator) writeValidationError(w http.ResponseWriter, errors []Validat
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 
+	messages := make([]string, 0, len(errors))
+	for _, detail := range errors {
+		messages = append(messages, detail.Field+": "+detail.Message)
+	}
 	response := ValidationErrorResponse{
-		Error:   "validation failed",
+		Error:   apierrors.BadRequest(strings.Join(messages, "; ")),
 		Details: errors,
 	}
 
@@ -507,4 +517,3 @@ func ValidateOneOf(allowed ...string) func(string) error {
 		return fmt.Errorf("must be one of: %s", strings.Join(allowed, ", "))
 	}
 }
-

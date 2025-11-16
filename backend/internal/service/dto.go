@@ -6,12 +6,13 @@ import (
 
 // FileStoreRequest represents a request to store a file.
 type FileStoreRequest struct {
-	Reader       interface{}       // io.Reader
-	Filename     string
-	MimeType     string
-	Size         int64
-	Metadata     map[string]string
-	CategoryHint string
+	Reader           interface{} // io.Reader
+	Filename         string
+	MimeType         string
+	Size             int64
+	Metadata         map[string]string
+	CategoryHint     string
+	CategoryOverride string
 }
 
 // FileStoreResponse represents the response after storing a file.
@@ -60,13 +61,13 @@ type FileRenameRequest struct {
 
 // FileRenameResponse represents the response after renaming a file.
 type FileRenameResponse struct {
-	Hash         string            `json:"hash"`
-	OldName      string            `json:"old_name"`
-	NewName      string            `json:"new_name"`
-	OldStoredPath string           `json:"old_stored_path"`
-	NewStoredPath string           `json:"new_stored_path"`
-	Renamed      bool              `json:"renamed"`
-	Message      string            `json:"message,omitempty"`
+	Hash          string `json:"hash"`
+	OldName       string `json:"old_name"`
+	NewName       string `json:"new_name"`
+	OldStoredPath string `json:"old_stored_path"`
+	NewStoredPath string `json:"new_stored_path"`
+	Renamed       bool   `json:"renamed"`
+	Message       string `json:"message,omitempty"`
 }
 
 // FileDeleteRequest represents a request to delete a file.
@@ -148,4 +149,3 @@ type FileStreamRequest struct {
 	Hash string
 	Path string
 }
-

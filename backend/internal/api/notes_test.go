@@ -16,12 +16,17 @@ import (
 func setupNotesTestServerHelper(t *testing.T) (*Server, string) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
-		DataDir:       tmpDir,
+		DataDir:        tmpDir,
 		MaxUploadBytes: 100 * 1024 * 1024,
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	server, err := NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if server != nil {
+			server.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -246,8 +251,8 @@ func TestNotesValidation(t *testing.T) {
 	req := httptest.NewRequest("GET", "/files//notes", nil)
 	w := httptest.NewRecorder()
 	server.Router().ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected status 404 for missing file_id, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing file_id, got %d", w.Code)
 	}
 
 	// Test missing text in POST
@@ -349,4 +354,3 @@ func TestNotesMultipleNotes(t *testing.T) {
 		t.Errorf("expected count 5, got %f", count)
 	}
 }
-

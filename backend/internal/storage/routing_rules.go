@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,9 @@ import (
 	"sync"
 	"time"
 )
+
+var ErrInvalidRoutingRule = errors.New("invalid routing rule")
+var ErrRoutingRuleNotFound = errors.New("rule not found")
 
 // RoutingRule represents a user-defined routing rule for unrecognized file formats.
 type RoutingRule struct {
@@ -30,12 +34,12 @@ type RoutingRulesManager struct {
 // NewRoutingRulesManager creates a new routing rules manager.
 func NewRoutingRulesManager(dataDir string) (*RoutingRulesManager, error) {
 	rulesPath := filepath.Join(dataDir, "routing_rules.json")
-	
+
 	manager := &RoutingRulesManager{
 		rulesPath: rulesPath,
 		rules:     make(map[string]*RoutingRule),
 	}
-	
+
 	// Load existing rules
 	if err := manager.load(); err != nil {
 		// If file doesn't exist, that's okay - start with empty rules
@@ -43,7 +47,7 @@ func NewRoutingRulesManager(dataDir string) (*RoutingRulesManager, error) {
 			return nil, fmt.Errorf("load routing rules: %w", err)
 		}
 	}
-	
+
 	return manager, nil
 }
 
@@ -51,17 +55,17 @@ func NewRoutingRulesManager(dataDir string) (*RoutingRulesManager, error) {
 func (m *RoutingRulesManager) load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	data, err := os.ReadFile(m.rulesPath)
 	if err != nil {
 		return err
 	}
-	
+
 	var rules []RoutingRule
 	if err := json.Unmarshal(data, &rules); err != nil {
 		return fmt.Errorf("unmarshal routing rules: %w", err)
 	}
-	
+
 	m.rules = make(map[string]*RoutingRule, len(rules))
 	for i := range rules {
 		rule := &rules[i]
@@ -74,15 +78,13 @@ func (m *RoutingRulesManager) load() error {
 			m.rules[key] = rule
 		}
 	}
-	
+
 	return nil
 }
 
-// save writes routing rules to the JSON file.
+// save writes routing rules while the caller holds m.mu for writing.
 func (m *RoutingRulesManager) save() error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	
+
 	// Deduplicate rules (same rule might be indexed by both MIME and extension)
 	ruleMap := make(map[string]*RoutingRule)
 	for _, rule := range m.rules {
@@ -91,26 +93,26 @@ func (m *RoutingRulesManager) save() error {
 			ruleMap[key] = rule
 		}
 	}
-	
+
 	rules := make([]RoutingRule, 0, len(ruleMap))
 	for _, rule := range ruleMap {
 		rules = append(rules, *rule)
 	}
-	
+
 	data, err := json.MarshalIndent(rules, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal routing rules: %w", err)
 	}
-	
+
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(m.rulesPath), 0o755); err != nil {
 		return fmt.Errorf("create rules directory: %w", err)
 	}
-	
+
 	if err := os.WriteFile(m.rulesPath, data, 0o644); err != nil {
 		return fmt.Errorf("write routing rules: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -118,32 +120,44 @@ func (m *RoutingRulesManager) save() error {
 func (m *RoutingRulesManager) FindRule(mimeType, extension string) *RoutingRule {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Try MIME type first
 	if mimeType != "" && mimeType != "application/octet-stream" {
 		if rule, ok := m.rules[mimeType]; ok {
-			return rule
+			return cloneRoutingRule(rule)
 		}
 	}
-	
+
 	// Try extension
 	if extension != "" {
 		key := "ext:" + strings.ToLower(extension)
 		if rule, ok := m.rules[key]; ok {
-			return rule
+			return cloneRoutingRule(rule)
 		}
 	}
-	
+
 	return nil
 }
 
 // AddRule adds or updates a routing rule.
 func (m *RoutingRulesManager) AddRule(mimeType, extension string, destination []string) error {
+	if strings.TrimSpace(mimeType) == "" && strings.TrimSpace(extension) == "" {
+		return fmt.Errorf("%w: MIME type or extension is required", ErrInvalidRoutingRule)
+	}
+	if len(destination) == 0 {
+		return fmt.Errorf("%w: destination is required", ErrInvalidRoutingRule)
+	}
+	for _, part := range destination {
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "/\\:\x00") {
+			return fmt.Errorf("%w: destination must contain safe directory names", ErrInvalidRoutingRule)
+		}
+	}
+	destination = append([]string(nil), destination...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	
+
 	// Check if rule already exists
 	var rule *RoutingRule
 	if mimeType != "" {
@@ -153,7 +167,7 @@ func (m *RoutingRulesManager) AddRule(mimeType, extension string, destination []
 		key := "ext:" + strings.ToLower(extension)
 		rule = m.rules[key]
 	}
-	
+
 	if rule != nil {
 		// Update existing rule
 		rule.Destination = destination
@@ -169,7 +183,7 @@ func (m *RoutingRulesManager) AddRule(mimeType, extension string, destination []
 			UsageCount:  0,
 		}
 	}
-	
+
 	// Index by both MIME type and extension
 	if mimeType != "" {
 		m.rules[mimeType] = rule
@@ -178,7 +192,7 @@ func (m *RoutingRulesManager) AddRule(mimeType, extension string, destination []
 		key := "ext:" + strings.ToLower(extension)
 		m.rules[key] = rule
 	}
-	
+
 	// Save to disk
 	return m.save()
 }
@@ -187,7 +201,7 @@ func (m *RoutingRulesManager) AddRule(mimeType, extension string, destination []
 func (m *RoutingRulesManager) IncrementUsage(mimeType, extension string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	var rule *RoutingRule
 	if mimeType != "" {
 		rule = m.rules[mimeType]
@@ -196,7 +210,7 @@ func (m *RoutingRulesManager) IncrementUsage(mimeType, extension string) {
 		key := "ext:" + strings.ToLower(extension)
 		rule = m.rules[key]
 	}
-	
+
 	if rule != nil {
 		rule.UsageCount++
 		rule.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -211,7 +225,7 @@ func (m *RoutingRulesManager) IncrementUsage(mimeType, extension string) {
 func (m *RoutingRulesManager) GetAllRules() []RoutingRule {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Deduplicate rules
 	ruleMap := make(map[string]*RoutingRule)
 	for _, rule := range m.rules {
@@ -220,20 +234,26 @@ func (m *RoutingRulesManager) GetAllRules() []RoutingRule {
 			ruleMap[key] = rule
 		}
 	}
-	
+
 	rules := make([]RoutingRule, 0, len(ruleMap))
 	for _, rule := range ruleMap {
-		rules = append(rules, *rule)
+		rules = append(rules, *cloneRoutingRule(rule))
 	}
-	
+
 	return rules
+}
+
+func cloneRoutingRule(rule *RoutingRule) *RoutingRule {
+	clone := *rule
+	clone.Destination = append([]string(nil), rule.Destination...)
+	return &clone
 }
 
 // DeleteRule removes a routing rule by MIME type or extension.
 func (m *RoutingRulesManager) DeleteRule(mimeType, extension string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	var rule *RoutingRule
 	if mimeType != "" {
 		rule = m.rules[mimeType]
@@ -246,20 +266,18 @@ func (m *RoutingRulesManager) DeleteRule(mimeType, extension string) error {
 		}
 		delete(m.rules, key)
 	}
-	
+
 	if rule == nil {
-		return fmt.Errorf("rule not found")
+		return ErrRoutingRuleNotFound
 	}
-	
-	// Also delete the other index if it exists
-	if mimeType != "" && extension != "" {
-		key := "ext:" + strings.ToLower(extension)
-		delete(m.rules, key)
+
+	// Remove every index for this rule, including an omitted MIME/extension key.
+	for key, indexed := range m.rules {
+		if indexed == rule {
+			delete(m.rules, key)
+		}
 	}
-	if extension != "" && mimeType != "" {
-		delete(m.rules, mimeType)
-	}
-	
+
 	return m.save()
 }
 
@@ -273,8 +291,7 @@ func (m *RoutingRulesManager) IsRecognized(mimeType, extension string, classifie
 			return true
 		}
 	}
-	
+
 	// Check custom rules
 	return m.FindRule(mimeType, extension) != nil
 }
-

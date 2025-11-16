@@ -156,7 +156,7 @@ func validatePath(path string) error {
 	}
 
 	// Check for absolute paths (should be relative)
-	if filepath.IsAbs(path) {
+	if filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") || (len(path) >= 2 && path[1] == ':') {
 		return fmt.Errorf("absolute paths not allowed")
 	}
 

@@ -25,6 +25,11 @@ func TestInfoModalMetadataEndpoint(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -86,14 +91,14 @@ func TestInfoModalMetadataEndpoint(t *testing.T) {
 		w := httptest.NewRecorder()
 		srv.Router().ServeHTTP(w, req)
 
-		if w.Code != http.StatusNotFound {
-			t.Errorf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d, body: %s", w.Code, w.Body.String())
 		}
 	})
 
 	// Step 5: Test metadata endpoint with non-existent hash
 	t.Run("NonExistentHash", func(t *testing.T) {
-		nonExistentHash := "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234"
+		nonExistentHash := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 		req := httptest.NewRequest("GET", fmt.Sprintf("/files/metadata?hash=%s", nonExistentHash), nil)
 		w := httptest.NewRecorder()
 		srv.Router().ServeHTTP(w, req)
@@ -115,33 +120,38 @@ func TestInfoModalMetadataCompleteData(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
 
 	// Upload different file types to test various metadata scenarios
 	testCases := []struct {
-		name        string
-		filename    string
-		content     []byte
-		mimeType    string
-		expectSize  int
+		name           string
+		filename       string
+		content        []byte
+		mimeType       string
+		expectSize     int
 		expectCategory string
 	}{
 		{
-			name:        "TextFile",
-			filename:    "test.txt",
-			content:     []byte("Simple text content"),
-			mimeType:    "text/plain",
-			expectSize:  18,
+			name:           "TextFile",
+			filename:       "test.txt",
+			content:        []byte("Simple text content"),
+			mimeType:       "text/plain",
+			expectSize:     19,
 			expectCategory: "documents/txt",
 		},
 		{
-			name:        "JSONFile",
-			filename:    "data.json",
-			content:     []byte(`{"key": "value"}`),
-			mimeType:    "application/json",
-			expectSize:  17,
+			name:           "JSONFile",
+			filename:       "data.json",
+			content:        []byte(`{"key": "value"}`),
+			mimeType:       "application/json",
+			expectSize:     16,
 			expectCategory: "code/json",
 		},
 	}
@@ -188,4 +198,3 @@ func TestInfoModalMetadataCompleteData(t *testing.T) {
 		})
 	}
 }
-

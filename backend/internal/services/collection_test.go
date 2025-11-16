@@ -31,6 +31,7 @@ func setupTestCache(t *testing.T) *cache.Cache {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
+	t.Cleanup(func() { _ = cacheInstance.Close() })
 	return cacheInstance
 }
 
@@ -528,10 +529,10 @@ func TestCachedStats_Expiration(t *testing.T) {
 
 // Helper function
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && (s[:len(substr)] == substr || 
-		s[len(s)-len(substr):] == substr || 
-		containsMiddle(s, substr))))
+	return len(s) >= len(substr) && (s == substr ||
+		(len(s) > len(substr) && (s[:len(substr)] == substr ||
+			s[len(s)-len(substr):] == substr ||
+			containsMiddle(s, substr))))
 }
 
 func containsMiddle(s, substr string) bool {
@@ -542,4 +543,3 @@ func containsMiddle(s, substr string) bool {
 	}
 	return false
 }
-

@@ -17,17 +17,22 @@ import (
 	"github.com/Muneer320/RhinoBox/internal/config"
 )
 
-// setupTestServer creates a test server with temporary data directory.
-func setupTestServer(t *testing.T) (*httptest.Server, *api.Server) {
+// setupCollectionsTestServer creates a test server with temporary data directory.
+func setupCollectionsTestServer(t *testing.T) (*httptest.Server, *api.Server) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
-		DataDir:       tmpDir,
-		Addr:          ":0",
+		DataDir:        tmpDir,
+		Addr:           ":0",
 		MaxUploadBytes: 100 * 1024 * 1024, // 100MB
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	srv, err := api.NewServer(cfg, logger)
+	t.Cleanup(func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -76,7 +81,7 @@ func uploadTestFileForCollections(t *testing.T, serverURL, filename, mimeType st
 }
 
 func TestCollectionsEndpoint_EmptyStorage(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/collections")
@@ -116,7 +121,7 @@ func TestCollectionsEndpoint_EmptyStorage(t *testing.T) {
 }
 
 func TestCollectionsEndpoint_WithFiles(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	// Upload test files
@@ -141,8 +146,8 @@ func TestCollectionsEndpoint_WithFiles(t *testing.T) {
 			Type        string `json:"type"`
 			DisplayName string `json:"display_name"`
 			Stats       struct {
-				FileCount   int    `json:"file_count"`
-				StorageUsed int64  `json:"storage_used"`
+				FileCount   int   `json:"file_count"`
+				StorageUsed int64 `json:"storage_used"`
 			} `json:"stats"`
 		} `json:"collections"`
 		Total int `json:"total"`
@@ -189,7 +194,7 @@ func TestCollectionsEndpoint_WithFiles(t *testing.T) {
 }
 
 func TestCollectionStatsEndpoint_ValidType(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	// Upload test files
@@ -237,7 +242,7 @@ func TestCollectionStatsEndpoint_ValidType(t *testing.T) {
 }
 
 func TestCollectionStatsEndpoint_InvalidType(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/collections/invalid_type/stats")
@@ -261,7 +266,7 @@ func TestCollectionStatsEndpoint_InvalidType(t *testing.T) {
 }
 
 func TestCollectionStatsEndpoint_Caching(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	// Upload test file
@@ -309,13 +314,13 @@ func TestCollectionStatsEndpoint_Caching(t *testing.T) {
 
 	// Results should be the same
 	if result1.Stats.FileCount != result2.Stats.FileCount {
-		t.Errorf("cached result should match original: %d != %d", 
+		t.Errorf("cached result should match original: %d != %d",
 			result1.Stats.FileCount, result2.Stats.FileCount)
 	}
 }
 
 func TestCollectionsEndpoint_Performance(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	// Upload multiple files
@@ -347,11 +352,11 @@ func TestCollectionsEndpoint_Performance(t *testing.T) {
 }
 
 func TestCollectionStatsEndpoint_AllTypes(t *testing.T) {
-	ts, _ := setupTestServer(t)
+	ts, _ := setupCollectionsTestServer(t)
 	defer ts.Close()
 
 	// Test all valid collection types
-	validTypes := []string{"images", "videos", "audio", "documents", "spreadsheets", 
+	validTypes := []string{"images", "videos", "audio", "documents", "spreadsheets",
 		"presentations", "archives", "code", "other", "json"}
 
 	for _, typ := range validTypes {
@@ -364,7 +369,7 @@ func TestCollectionStatsEndpoint_AllTypes(t *testing.T) {
 
 			if resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
-				t.Fatalf("expected status 200 for type %s, got %d, body: %s", 
+				t.Fatalf("expected status 200 for type %s, got %d, body: %s",
 					typ, resp.StatusCode, string(body))
 			}
 
@@ -383,4 +388,3 @@ func TestCollectionStatsEndpoint_AllTypes(t *testing.T) {
 		})
 	}
 }
-

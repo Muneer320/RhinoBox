@@ -10,9 +10,9 @@ import (
 
 func TestValidateCategory(t *testing.T) {
 	tests := []struct {
-		name    string
+		name     string
 		category string
-		wantErr bool
+		wantErr  bool
 	}{
 		{"valid simple category", "documents/pdf", false},
 		{"valid nested category", "images/photos/vacation", false},
@@ -52,14 +52,14 @@ func TestMoveFile_Basic(t *testing.T) {
 	testContent := []byte("test file content for move operation")
 	testHash := "abc123def456"
 	testFilename := "test_move.txt"
-	
+
 	// Create source directory and file
 	sourceCategory := "documents/txt"
 	sourceDir := filepath.Join(manager.storageRoot, sourceCategory)
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
 		t.Fatalf("failed to create source directory: %v", err)
 	}
-	
+
 	sourcePath := filepath.Join(sourceDir, testHash[:12]+"_"+testFilename)
 	if err := os.WriteFile(sourcePath, testContent, 0o644); err != nil {
 		t.Fatalf("failed to create source file: %v", err)
@@ -244,13 +244,13 @@ func TestMoveFile_AtomicRollback(t *testing.T) {
 	testContent := []byte("test content")
 	testHash := "rollback_test_hash_12345678901234567890"
 	testFilename := "test.txt"
-	
+
 	sourceCategory := "documents/txt"
 	sourceDir := filepath.Join(manager.storageRoot, sourceCategory)
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
 		t.Fatalf("failed to create source directory: %v", err)
 	}
-	
+
 	sourcePath := filepath.Join(sourceDir, testHash[:12]+"_"+testFilename)
 	if err := os.WriteFile(sourcePath, testContent, 0o644); err != nil {
 		t.Fatalf("failed to create source file: %v", err)
@@ -279,7 +279,7 @@ func TestMoveFile_AtomicRollback(t *testing.T) {
 	manager.mu.Lock()
 	metadataPath := manager.index.path
 	manager.mu.Unlock()
-	
+
 	var originalPerms os.FileMode
 	if info, err := os.Stat(metadataPath); err == nil {
 		originalPerms = info.Mode().Perm()
@@ -339,9 +339,9 @@ func TestBatchMoveFile_Basic(t *testing.T) {
 		category string
 		content  []byte
 	}{
-		{"hash1", "file1.txt", "documents/txt", []byte("content1")},
-		{"hash2", "file2.jpg", "images/jpg", []byte("content2")},
-		{"hash3", "file3.pdf", "documents/pdf", []byte("content3")},
+		{"1111111111111111111111111111111111111111111111111111111111111111", "file1.txt", "documents/txt", []byte("content1")},
+		{"2222222222222222222222222222222222222222222222222222222222222222", "file2.jpg", "images/jpg", []byte("content2")},
+		{"3333333333333333333333333333333333333333333333333333333333333333", "file3.pdf", "documents/pdf", []byte("content3")},
 	}
 
 	for _, tf := range testFiles {
@@ -350,7 +350,7 @@ func TestBatchMoveFile_Basic(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("failed to create directory: %v", err)
 		}
-		
+
 		filePath := filepath.Join(dir, tf.hash[:12]+"_"+tf.filename)
 		if err := os.WriteFile(filePath, tf.content, 0o644); err != nil {
 			t.Fatalf("failed to create file: %v", err)
@@ -374,8 +374,8 @@ func TestBatchMoveFile_Basic(t *testing.T) {
 	// Batch move to new categories
 	batchReq := BatchMoveRequest{
 		Files: []MoveRequest{
-			{Hash: "hash1", NewCategory: "documents/archived", Reason: "archive"},
-			{Hash: "hash2", NewCategory: "images/photos", Reason: "organize"},
+			{Hash: "1111111111111111111111111111111111111111111111111111111111111111", NewCategory: "documents/archived", Reason: "archive"},
+			{Hash: "2222222222222222222222222222222222222222222222222222222222222222", NewCategory: "images/photos", Reason: "organize"},
 			{Hash: "nonexistent", NewCategory: "documents/pdf", Reason: "test"}, // This should fail
 		},
 	}
@@ -468,13 +468,13 @@ func TestMoveFile_CustomCategory(t *testing.T) {
 	testContent := []byte("test content")
 	testHash := "custom_test_hash_12345678901234567890"
 	testFilename := "test.txt"
-	
+
 	sourceCategory := "documents/txt"
 	sourceDir := filepath.Join(manager.storageRoot, sourceCategory)
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
 		t.Fatalf("failed to create source directory: %v", err)
 	}
-	
+
 	sourcePath := filepath.Join(sourceDir, testHash[:12]+"_"+testFilename)
 	if err := os.WriteFile(sourcePath, testContent, 0o644); err != nil {
 		t.Fatalf("failed to create source file: %v", err)
@@ -517,4 +517,3 @@ func TestMoveFile_CustomCategory(t *testing.T) {
 		t.Fatalf("custom category directory not created: %v", err)
 	}
 }
-
